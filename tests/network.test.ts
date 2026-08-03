@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { io as createClient, type Socket as ClientSocket } from "socket.io-client";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PLAYER_COLORS } from "../src/shared/constants";
+import { PLAYER_COLORS, RECONNECT_WINDOW_MS } from "../src/shared/constants";
 import type {
   Ack,
   ClientToServerEvents,
@@ -23,9 +23,10 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-async function createHarness(): Promise<{ client: TestClient; network: GameNetwork }> {
+async function createHarness(): Promise<{ client: TestClient; network: GameNetwork; room: GameRoom; url: string }> {
   const server = createServer();
-  const network = attachGameNetwork(server, new GameRoom(), "test-host-token");
+  const room = new GameRoom();
+  const network = attachGameNetwork(server, room, "test-host-token");
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Test server did not bind to a TCP port");
@@ -42,7 +43,7 @@ async function createHarness(): Promise<{ client: TestClient; network: GameNetwo
     await network.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
-  return { client, network };
+  return { client, network, room, url: `http://127.0.0.1:${address.port}` };
 }
 
 describe("game network", () => {
@@ -91,6 +92,37 @@ describe("game network", () => {
     expect(isAllowedLanOrigin("https://10.0.0.1.evil.example")).toBe(false);
     expect(isAllowedLanOrigin("https://172.16.0.1.evil.example")).toBe(false);
     expect(isAllowedLanOrigin("http://[::1]:5173")).toBe(true);
+  });
+
+  it("notifies observers when autonomous expiry returns a match to the lobby", async () => {
+    const { client: observer, network, url } = await createHarness();
+    const player = createClient(url, { transports: ["websocket"], forceNew: true });
+    await new Promise<void>((resolve, reject) => {
+      player.once("connect", resolve);
+      player.once("connect_error", reject);
+    });
+    cleanups.push(async () => {
+      player.disconnect();
+    });
+
+    const joinedState = new Promise<Parameters<ServerToClientEvents["roomState"]>[0]>((resolve) => {
+      observer.once("roomState", resolve);
+    });
+    await emitAck(player, "join", { nickname: "观察对象", color: PLAYER_COLORS[0] });
+    await expect(joinedState).resolves.toMatchObject({ players: [{ connected: true }] });
+    const disconnectedState = new Promise<Parameters<ServerToClientEvents["roomState"]>[0]>((resolve) => {
+      observer.once("roomState", resolve);
+    });
+    player.disconnect();
+    await expect(disconnectedState).resolves.toMatchObject({ players: [{ connected: false }] });
+
+    const roomState = new Promise<Parameters<ServerToClientEvents["roomState"]>[0]>((resolve) => {
+      observer.once("roomState", resolve);
+    });
+    network.advance(RECONNECT_WINDOW_MS + 1);
+
+    await expect(roomState).resolves.toMatchObject({ phase: "lobby", players: [] });
+    await network.close();
   });
 });
 

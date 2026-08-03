@@ -177,11 +177,11 @@ export class GameRoom {
     return applyPlayerInput(this.world, seat.id, input);
   }
 
-  tick(deltaMs: number): void {
-    if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
+  tick(deltaMs: number): boolean {
+    if (!Number.isFinite(deltaMs) || deltaMs <= 0) return false;
     this.clockMs += deltaMs;
-    this.expireReconnectTokens();
-    if (!this.world || this.world.phase === "finished") return;
+    const lifecycleChanged = this.expireReconnectTokens();
+    if (!this.world || this.world.phase === "finished") return lifecycleChanged;
 
     for (const player of this.world.players.values()) {
       if (!player.isBot || this.clockMs < (this.nextBotThinkAt.get(player.id) ?? 0)) continue;
@@ -189,6 +189,7 @@ export class GameRoom {
       this.nextBotThinkAt.set(player.id, this.clockMs + 180 + Math.random() * 120);
     }
     stepWorld(this.world, deltaMs);
+    return lifecycleChanged;
   }
 
   snapshot(): RoomSnapshot {
@@ -261,11 +262,13 @@ export class GameRoom {
     }
   }
 
-  private expireReconnectTokens(): void {
+  private expireReconnectTokens(): boolean {
+    let lifecycleChanged = false;
     for (const [id, seat] of this.seats) {
       if (seat.disconnectedAt === null || this.clockMs - seat.disconnectedAt <= RECONNECT_WINDOW_MS) continue;
       if (!this.world) {
         this.seats.delete(id);
+        lifecycleChanged = true;
         continue;
       }
       seat.reconnectToken = null;
@@ -276,7 +279,9 @@ export class GameRoom {
 
     if (this.world && ![...this.seats.values()].some((seat) => !seat.isBot)) {
       this.resetToLobby();
+      lifecycleChanged = true;
     }
+    return lifecycleChanged;
   }
 }
 

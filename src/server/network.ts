@@ -19,6 +19,7 @@ interface SocketData {}
 
 export interface GameNetwork {
   io: Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
+  advance: (deltaMs: number) => void;
   close: () => Promise<void>;
 }
 
@@ -93,18 +94,23 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
     });
   });
 
-  const interval = setInterval(() => {
-    room.tick(SERVER_TICK_MS);
-    snapshotAccumulator += SERVER_TICK_MS;
+  const advance = (deltaMs: number): void => {
+    if (room.tick(deltaMs)) broadcastRoom();
+    snapshotAccumulator += deltaMs;
     if (snapshotAccumulator >= 1_000 / SNAPSHOT_RATE) {
       snapshotAccumulator = 0;
       broadcastGame();
     }
+  };
+
+  const interval = setInterval(() => {
+    advance(SERVER_TICK_MS);
   }, SERVER_TICK_MS);
   interval.unref();
 
   return {
     io,
+    advance,
     close: async () => {
       clearInterval(interval);
       await new Promise<void>((resolve) => io.close(() => resolve()));
