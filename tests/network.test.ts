@@ -78,11 +78,19 @@ describe("game network", () => {
     expect(accepted.ok).toBe(true);
   });
 
-  it("accepts LAN origins and rejects public website origins", () => {
+  it("accepts local and RFC1918 origins but rejects public and lookalike hostnames", () => {
     expect(isAllowedLanOrigin(undefined)).toBe(true);
+    expect(isAllowedLanOrigin("http://localhost:5173")).toBe(true);
     expect(isAllowedLanOrigin("http://127.0.0.1:5173")).toBe(true);
+    expect(isAllowedLanOrigin("http://10.0.0.1:3000")).toBe(true);
     expect(isAllowedLanOrigin("http://192.168.1.8:3000")).toBe(true);
+    expect(isAllowedLanOrigin("http://172.16.0.1:3000")).toBe(true);
     expect(isAllowedLanOrigin("https://example.com")).toBe(false);
+    expect(isAllowedLanOrigin("https://127.0.0.1.evil.example")).toBe(false);
+    expect(isAllowedLanOrigin("https://192.168.1.8.evil.example")).toBe(false);
+    expect(isAllowedLanOrigin("https://10.0.0.1.evil.example")).toBe(false);
+    expect(isAllowedLanOrigin("https://172.16.0.1.evil.example")).toBe(false);
+    expect(isAllowedLanOrigin("http://[::1]:5173")).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { Server as HttpServer } from "node:http";
+import { isIP } from "node:net";
 
 import { Server } from "socket.io";
 
@@ -156,15 +157,15 @@ function sendAcknowledgement<T>(callback: ((result: Ack<T>) => void) | undefined
 export function isAllowedLanOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
   try {
-    const hostname = new URL(origin).hostname.toLowerCase();
-    return (
-      hostname === "localhost" ||
-      hostname === "::1" ||
-      /^127\./.test(hostname) ||
-      /^10\./.test(hostname) ||
-      /^192\.168\./.test(hostname) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
-    );
+    const parsedHostname = new URL(origin).hostname.toLowerCase();
+    const hostname = parsedHostname.startsWith("[") && parsedHostname.endsWith("]")
+      ? parsedHostname.slice(1, -1)
+      : parsedHostname;
+    if (hostname === "localhost" || hostname === "::1") return true;
+    if (isIP(hostname) !== 4) return false;
+
+    const [first, second = Number.NaN] = hostname.split(".").map(Number);
+    return first === 127 || first === 10 || (first === 192 && second === 168) || (first === 172 && second >= 16 && second <= 31);
   } catch {
     return false;
   }
