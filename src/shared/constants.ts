@@ -36,16 +36,16 @@ export const PLAYER_COLORS = [
 ] as const;
 
 export const SPAWN_POINTS: readonly Vec2[] = [
-  { x: 180, y: 180 },
-  { x: 800, y: 130 },
-  { x: 1_420, y: 180 },
-  { x: 180, y: 720 },
-  { x: 800, y: 770 },
-  { x: 1_420, y: 720 },
+  { x: 350, y: 440 },
+  { x: 800, y: 280 },
+  { x: 1_250, y: 440 },
+  { x: 350, y: 740 },
+  { x: 800, y: 760 },
+  { x: 1_250, y: 740 },
 ];
 
 export const ENERGY_SPAWN_POINTS: readonly Vec2[] = [
-  { x: 800, y: 450 },
+  { x: 800, y: 350 },
   { x: 680, y: 390 },
   { x: 920, y: 510 },
   { x: 330, y: 250 },

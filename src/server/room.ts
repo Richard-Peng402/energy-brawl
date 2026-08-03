@@ -93,6 +93,17 @@ export class GameRoom {
     if (player) {
       player.connected = true;
       player.isBot = false;
+      player.lastProcessedInput = 0;
+      player.input = {
+        seq: 0,
+        moveX: 0,
+        moveY: 0,
+        aimX: Math.cos(player.angle),
+        aimY: Math.sin(player.angle),
+        firing: false,
+      };
+      player.vx = 0;
+      player.vy = 0;
     }
     return { ok: true, data: { playerId: seat.id, reconnectToken: seat.reconnectToken } };
   }
@@ -251,12 +262,20 @@ export class GameRoom {
   }
 
   private expireReconnectTokens(): void {
-    for (const seat of this.seats.values()) {
+    for (const [id, seat] of this.seats) {
       if (seat.disconnectedAt === null || this.clockMs - seat.disconnectedAt <= RECONNECT_WINDOW_MS) continue;
+      if (!this.world) {
+        this.seats.delete(id);
+        continue;
+      }
       seat.reconnectToken = null;
       seat.isBot = true;
       const player = this.world?.players.get(seat.id);
       if (player) player.isBot = true;
+    }
+
+    if (this.world && ![...this.seats.values()].some((seat) => !seat.isBot)) {
+      this.resetToLobby();
     }
   }
 }

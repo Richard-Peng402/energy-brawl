@@ -1,4 +1,4 @@
-import type { ServerInfo } from "../shared/protocol";
+import type { GamePhase, GameSnapshot, RoomSnapshot, ServerInfo } from "../shared/protocol";
 import { GameNetworkClient } from "./network";
 
 export class HostApp {
@@ -39,10 +39,11 @@ export class HostApp {
 
   private render(): void {
     const room = this.network.room ?? this.info?.room;
+    const presentation = resolveHostPresentation(room ?? null, this.network.game);
     this.find("#host-connection").textContent = this.network.connected ? "服务器在线" : "正在连接";
     this.find("#host-connection").classList.toggle("is-offline", !this.network.connected);
-    this.find("#host-phase").textContent = phaseName(room?.phase ?? "lobby");
-    this.find("#host-count").textContent = `${room?.players.filter((player) => !player.isBot).length ?? 0} / 6`;
+    this.find("#host-phase").textContent = phaseName(presentation.phase);
+    this.find("#host-count").textContent = `${presentation.players.filter((player) => !player.isBot).length} / 6`;
     this.find("#host-message").textContent = this.token ? this.message : "主机令牌缺失，请从服务器启动窗口打开此页面";
 
     const joinUrl = this.info?.joinUrls[0] ?? "正在获取局域网地址";
@@ -53,7 +54,7 @@ export class HostApp {
       qr.classList.remove("is-loading");
     }
 
-    const players = room?.players ?? [];
+    const players = presentation.players;
     this.find("#host-roster").innerHTML = Array.from({ length: 6 }, (_, index) => players[index])
       .map((player, index) =>
         player
@@ -62,7 +63,7 @@ export class HostApp {
       )
       .join("");
 
-    const phase = room?.phase ?? "lobby";
+    const phase = presentation.phase;
     const hasToken = this.token.length > 0;
     this.find<HTMLButtonElement>("#host-start").disabled = !hasToken || !room?.canStart || phase !== "lobby";
     this.find<HTMLButtonElement>("#host-end").disabled = !hasToken || (phase !== "playing" && phase !== "overtime");
@@ -74,6 +75,27 @@ export class HostApp {
     if (!element) throw new Error(`Missing host UI element: ${selector}`);
     return element;
   }
+}
+
+export function resolveHostPresentation(
+  room: RoomSnapshot | null,
+  game: GameSnapshot | null,
+): { phase: GamePhase; players: RoomSnapshot["players"] } {
+  if (game) {
+    return {
+      phase: game.phase,
+      players: game.players.map(({ id, nickname, color, isBot, connected, ready, score }) => ({
+        id,
+        nickname,
+        color,
+        isBot,
+        connected,
+        ready,
+        score,
+      })),
+    };
+  }
+  return { phase: room?.phase ?? "lobby", players: room?.players ?? [] };
 }
 
 function hostTemplate(): string {

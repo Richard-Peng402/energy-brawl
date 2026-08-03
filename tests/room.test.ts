@@ -51,4 +51,43 @@ describe("game room", () => {
 
     expect(room.reconnectHuman("socket-2", token).ok).toBe(false);
   });
+
+  it("resets the accepted input sequence when a human reconnects", () => {
+    const room = new GameRoom();
+    const joined = room.joinHuman("socket-1", { nickname: "玩家一", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.handleInput("socket-1", { seq: 900, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false });
+    room.disconnect("socket-1");
+
+    room.reconnectHuman("socket-2", joined.data!.reconnectToken);
+
+    expect(room.gameSnapshot()?.players.find((player) => player.id === joined.data!.playerId)?.lastProcessedInput).toBe(0);
+    expect(room.handleInput("socket-2", { seq: 1, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false })).toBe(true);
+  });
+
+  it("removes expired disconnected seats from the lobby", () => {
+    const room = new GameRoom();
+    PLAYER_COLORS.forEach((color, index) => {
+      room.joinHuman(`socket-${index}`, { nickname: `玩家${index}`, color });
+      room.disconnect(`socket-${index}`);
+    });
+
+    room.tick(RECONNECT_WINDOW_MS + 1);
+
+    expect(room.snapshot().players).toHaveLength(0);
+    expect(room.joinHuman("new-socket", { nickname: "新玩家", color: PLAYER_COLORS[0] }).ok).toBe(true);
+  });
+
+  it("returns to an empty lobby when every human misses the reconnect window", () => {
+    const room = new GameRoom();
+    room.joinHuman("socket-1", { nickname: "玩家一", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.disconnect("socket-1");
+
+    room.tick(RECONNECT_WINDOW_MS + 1);
+
+    expect(room.snapshot()).toMatchObject({ phase: "lobby", players: [] });
+  });
 });

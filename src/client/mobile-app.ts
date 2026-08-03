@@ -172,18 +172,24 @@ export class MobileApp {
   }
 
   private readonly inputLoop = (time: number): void => {
-    if (time - this.lastInputSentAt >= 33 && (this.network.game?.phase === "playing" || this.network.game?.phase === "overtime")) {
+    const acceptingInput = this.network.game?.phase === "playing" || this.network.game?.phase === "overtime";
+    if (acceptingInput) {
       const move = this.moveStick.getValue();
       const aim = this.aimStick.getValue();
-      this.network.sendInput({
-        seq: ++this.inputSequence,
-        moveX: move.x,
-        moveY: move.y,
-        aimX: aim.x,
-        aimY: aim.y,
-        firing: aim.magnitude > 0.15,
-      });
-      this.lastInputSentAt = time;
+      this.renderer?.setLocalInput(move);
+      if (time - this.lastInputSentAt >= 33) {
+        this.network.sendInput({
+          seq: ++this.inputSequence,
+          moveX: move.x,
+          moveY: move.y,
+          aimX: aim.x,
+          aimY: aim.y,
+          firing: aim.magnitude > 0.15,
+        });
+        this.lastInputSentAt = time;
+      }
+    } else {
+      this.renderer?.setLocalInput({ x: 0, y: 0 });
     }
     requestAnimationFrame(this.inputLoop);
   };

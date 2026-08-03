@@ -12,7 +12,7 @@ import type {
   JoinResult,
   ServerToClientEvents,
 } from "../src/shared/protocol";
-import { attachGameNetwork, type GameNetwork } from "../src/server/network";
+import { attachGameNetwork, isAllowedLanOrigin, type GameNetwork } from "../src/server/network";
 import { GameRoom } from "../src/server/room";
 
 type TestClient = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
@@ -66,6 +66,23 @@ describe("game network", () => {
 
     expect(rejected).toMatchObject({ ok: false });
     expect(accepted).toMatchObject({ ok: true });
+  });
+
+  it("stays available when a client omits the acknowledgement callback", async () => {
+    const { client } = await createHarness();
+    const unsafeEmit = client.emit.bind(client) as unknown as (event: string, payload: unknown) => void;
+
+    unsafeEmit("hostCommand", { token: "wrong", command: "start" });
+    const accepted = await emitAck(client, "join", { nickname: "仍可加入", color: PLAYER_COLORS[0] });
+
+    expect(accepted.ok).toBe(true);
+  });
+
+  it("accepts LAN origins and rejects public website origins", () => {
+    expect(isAllowedLanOrigin(undefined)).toBe(true);
+    expect(isAllowedLanOrigin("http://127.0.0.1:5173")).toBe(true);
+    expect(isAllowedLanOrigin("http://192.168.1.8:3000")).toBe(true);
+    expect(isAllowedLanOrigin("https://example.com")).toBe(false);
   });
 });
 

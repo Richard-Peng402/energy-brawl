@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 
 import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, WALLS } from "../shared/constants";
-import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
+import type { GameSnapshot, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import { predictLocalPosition } from "./prediction";
 
 interface PlayerView {
   container: Phaser.GameObjects.Container;
@@ -55,6 +56,10 @@ export class GameRenderer {
     this.scene.setLocalPlayerId(playerId);
   }
 
+  setLocalInput(input: Vec2): void {
+    this.scene.setLocalInput(input);
+  }
+
   destroy(): void {
     this.game.destroy(true);
   }
@@ -65,6 +70,7 @@ class ArenaScene extends Phaser.Scene {
   private readonly projectileViews = new Map<string, MovingView>();
   private readonly energyViews = new Map<string, Phaser.GameObjects.Sprite>();
   private snapshot: GameSnapshot | null = null;
+  private localInput: Vec2 = { x: 0, y: 0 };
   private ready = false;
 
   constructor(private localPlayerId: string | null) {
@@ -82,8 +88,24 @@ class ArenaScene extends Phaser.Scene {
     if (this.snapshot) this.syncSnapshot(this.snapshot);
   }
 
-  override update(): void {
-    for (const view of this.playerViews.values()) {
+  override update(_time: number, delta: number): void {
+    for (const [id, view] of this.playerViews) {
+      if (id === this.localPlayerId && this.localPlayerCanMove()) {
+        const predicted = predictLocalPosition(view.container, this.localInput, delta);
+        view.container.setPosition(predicted.x, predicted.y);
+        const correctionDistance = Phaser.Math.Distance.Between(
+          view.container.x,
+          view.container.y,
+          view.targetX,
+          view.targetY,
+        );
+        const correction = Math.hypot(this.localInput.x, this.localInput.y) < 0.05 ? 0.16 : correctionDistance > 75 ? 0.06 : 0;
+        if (correction > 0) {
+          view.container.x = Phaser.Math.Linear(view.container.x, view.targetX, correction);
+          view.container.y = Phaser.Math.Linear(view.container.y, view.targetY, correction);
+        }
+        continue;
+      }
       view.container.x = Phaser.Math.Linear(view.container.x, view.targetX, 0.34);
       view.container.y = Phaser.Math.Linear(view.container.y, view.targetY, 0.34);
     }
@@ -101,6 +123,15 @@ class ArenaScene extends Phaser.Scene {
   setLocalPlayerId(playerId: string | null): void {
     this.localPlayerId = playerId;
     if (this.snapshot && this.ready) this.syncSnapshot(this.snapshot);
+  }
+
+  setLocalInput(input: Vec2): void {
+    this.localInput = input;
+  }
+
+  private localPlayerCanMove(): boolean {
+    if (!this.snapshot || (this.snapshot.phase !== "playing" && this.snapshot.phase !== "overtime")) return false;
+    return this.snapshot.players.find((player) => player.id === this.localPlayerId)?.alive === true;
   }
 
   private drawArena(): void {

@@ -24,6 +24,7 @@ export interface GameNetwork {
 export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostToken: string): GameNetwork {
   const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(httpServer, {
     cors: { origin: true, credentials: false },
+    allowRequest: (request, callback) => callback(null, isAllowedLanOrigin(request.headers.origin)),
     transports: ["websocket", "polling"],
   });
   const lastInputAt = new Map<string, number>();
@@ -42,7 +43,7 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
 
     socket.on("join", (payload, acknowledge) => {
       const result = isJoinPayload(payload) ? room.joinHuman(socket.id, payload) : invalid<import("../shared/protocol").JoinResult>("加入信息格式不正确");
-      acknowledge(result);
+      sendAcknowledgement(acknowledge, result);
       if (result.ok) broadcastRoom();
     });
 
@@ -50,7 +51,7 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
       const result = payload && typeof payload.token === "string"
         ? room.reconnectHuman(socket.id, payload.token)
         : invalid<import("../shared/protocol").JoinResult>("重连信息格式不正确");
-      acknowledge(result);
+      sendAcknowledgement(acknowledge, result);
       if (result.ok) {
         broadcastRoom();
         broadcastGame();
@@ -59,7 +60,7 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
 
     socket.on("setReady", (ready, acknowledge) => {
       const result = room.setReady(socket.id, ready === true);
-      acknowledge(result);
+      sendAcknowledgement(acknowledge, result);
       if (result.ok) broadcastRoom();
     });
 
@@ -72,11 +73,11 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
 
     socket.on("hostCommand", (payload, acknowledge) => {
       if (!payload || payload.token !== hostToken || !isHostCommand(payload.command)) {
-        acknowledge(invalid("主机权限无效"));
+        sendAcknowledgement(acknowledge, invalid("主机权限无效"));
         return;
       }
       const result = runHostCommand(room, payload.command);
-      acknowledge(result);
+      sendAcknowledgement(acknowledge, result);
       if (result.ok) {
         broadcastRoom();
         broadcastGame();
@@ -146,4 +147,25 @@ function isPlayerInput(input: unknown): input is PlayerInput {
 
 function invalid<T = undefined>(error: string): Ack<T> {
   return { ok: false, error };
+}
+
+function sendAcknowledgement<T>(callback: ((result: Ack<T>) => void) | undefined, result: Ack<T>): void {
+  if (typeof callback === "function") callback(result);
+}
+
+export function isAllowedLanOrigin(origin: string | undefined): boolean {
+  if (!origin) return true;
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    return (
+      hostname === "localhost" ||
+      hostname === "::1" ||
+      /^127\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+    );
+  } catch {
+    return false;
+  }
 }
