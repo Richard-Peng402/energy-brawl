@@ -1,6 +1,9 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  build: {
+    chunkSizeWarningLimit: 1_350,
+  },
   server: {
     host: "0.0.0.0",
     proxy: {
