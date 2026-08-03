@@ -11,8 +11,8 @@ describe("local movement prediction", () => {
   });
 
   it("does not predict through solid walls", () => {
-    const next = predictLocalPosition({ x: 420, y: 250 }, { x: 1, y: 0 }, 100);
+    const next = predictLocalPosition({ x: 900, y: 500 }, { x: 1, y: 0 }, 100);
 
-    expect(next.x).toBe(420);
+    expect(next.x).toBe(900);
   });
 });

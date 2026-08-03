@@ -3,28 +3,34 @@ import type { Rect, Vec2 } from "./protocol";
 export const MAX_PLAYERS = 6;
 export const MAX_HEALTH = 100;
 export const PROJECTILE_DAMAGE = 25;
-export const KILL_SCORE = 3;
+export const KILL_SCORE = 2;
+export const HOLDER_KILL_BONUS = 1;
 export const ENERGY_SCORE = 1;
 export const TARGET_SCORE = 15;
-export const MATCH_DURATION_MS = 300_000;
+export const MATCH_DURATION_MS = 480_000;
+export const HOLD_DURATION_MS = 30_000;
+export const LOBBY_RETURN_DELAY_MS = 8_000;
 export const RESPAWN_DELAY_MS = 3_000;
 export const SPAWN_SHIELD_MS = 1_500;
 export const RECONNECT_WINDOW_MS = 30_000;
-export const SERVER_TICK_RATE = 20;
+export const SERVER_TICK_RATE = 60;
 export const SERVER_TICK_MS = 1_000 / SERVER_TICK_RATE;
-export const SNAPSHOT_RATE = 15;
+export const SNAPSHOT_RATE = 30;
+export const REDUCED_SNAPSHOT_RATE = 20;
 
-export const ARENA_WIDTH = 1_600;
-export const ARENA_HEIGHT = 900;
+export const ARENA_WIDTH = 2_160;
+export const ARENA_HEIGHT = 1_215;
+export const VIEW_WIDTH = 1_280;
+export const VIEW_HEIGHT = 720;
 export const PLAYER_RADIUS = 27;
-export const PLAYER_SPEED = 310;
-export const FIRE_COOLDOWN_MS = 360;
+export const PLAYER_SPEED = 265;
+export const FIRE_COOLDOWN_MS = 450;
 export const PROJECTILE_RADIUS = 8;
-export const PROJECTILE_SPEED = 720;
-export const PROJECTILE_LIFETIME_MS = 1_600;
+export const PROJECTILE_SPEED = 620;
+export const PROJECTILE_LIFETIME_MS = 1_850;
 export const ENERGY_RADIUS = 18;
-export const ENERGY_RESPAWN_MS = 2_000;
-export const MAX_ENERGY = 10;
+export const ENERGY_RESPAWN_MS = 5_000;
+export const MAX_ENERGY = 6;
 
 export const PLAYER_COLORS = [
   "#ff5a5f",
@@ -36,34 +42,40 @@ export const PLAYER_COLORS = [
 ] as const;
 
 export const SPAWN_POINTS: readonly Vec2[] = [
-  { x: 350, y: 440 },
-  { x: 800, y: 280 },
-  { x: 1_250, y: 440 },
-  { x: 350, y: 740 },
-  { x: 800, y: 760 },
-  { x: 1_250, y: 740 },
+  { x: 260, y: 260 },
+  { x: 1080, y: 210 },
+  { x: 1900, y: 260 },
+  { x: 260, y: 955 },
+  { x: 1080, y: 1005 },
+  { x: 1900, y: 955 },
 ];
 
 export const ENERGY_SPAWN_POINTS: readonly Vec2[] = [
-  { x: 800, y: 350 },
-  { x: 680, y: 390 },
-  { x: 920, y: 510 },
-  { x: 330, y: 250 },
-  { x: 1_270, y: 250 },
-  { x: 330, y: 650 },
-  { x: 1_270, y: 650 },
-  { x: 800, y: 230 },
-  { x: 800, y: 670 },
-  { x: 520, y: 450 },
-  { x: 1_080, y: 450 },
-  { x: 200, y: 450 },
-  { x: 1_400, y: 450 },
+  { x: 1080, y: 350 },
+  { x: 1080, y: 865 },
+  { x: 520, y: 607 },
+  { x: 1640, y: 607 },
+  { x: 760, y: 300 },
+  { x: 1400, y: 915 },
+  { x: 760, y: 915 },
+  { x: 1400, y: 300 },
+  { x: 300, y: 607 },
+  { x: 1860, y: 607 },
 ];
 
 export const WALLS: readonly Rect[] = [
-  { x: 450, y: 180, width: 90, height: 210 },
-  { x: 1_060, y: 180, width: 90, height: 210 },
-  { x: 450, y: 510, width: 90, height: 210 },
-  { x: 1_060, y: 510, width: 90, height: 210 },
-  { x: 700, y: 400, width: 200, height: 100 },
+  { x: 930, y: 475, width: 300, height: 55 },
+  { x: 930, y: 685, width: 300, height: 55 },
+  { x: 790, y: 535, width: 55, height: 145 },
+  { x: 1315, y: 535, width: 55, height: 145 },
+  { x: 390, y: 330, width: 260, height: 55 },
+  { x: 390, y: 330, width: 55, height: 190 },
+  { x: 1510, y: 330, width: 260, height: 55 },
+  { x: 1715, y: 330, width: 55, height: 190 },
+  { x: 390, y: 830, width: 260, height: 55 },
+  { x: 390, y: 695, width: 55, height: 190 },
+  { x: 1510, y: 830, width: 260, height: 55 },
+  { x: 1715, y: 695, width: 55, height: 190 },
+  { x: 720, y: 155, width: 180, height: 45 },
+  { x: 1260, y: 1015, width: 180, height: 45 },
 ];

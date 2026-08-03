@@ -24,13 +24,13 @@ function createWorld() {
 }
 
 describe("authoritative simulation", () => {
-  it("awards three points for a defeat and respawns the victim", () => {
+  it("awards two points for a defeat and respawns the victim", () => {
     const world = createWorld();
     stepWorld(world, SPAWN_SHIELD_MS + 1);
 
     damagePlayer(world, "blue", "red", MAX_HEALTH);
 
-    expect(world.players.get("red")?.score).toBe(3);
+    expect(world.players.get("red")?.score).toBe(2);
     expect(world.players.get("red")?.kills).toBe(1);
     expect(world.players.get("blue")?.alive).toBe(false);
 
@@ -85,7 +85,7 @@ describe("authoritative simulation", () => {
     });
     stepWorld(world, 50);
 
-    expect(Math.hypot(player.vx, player.vy)).toBeLessThanOrEqual(310.001);
+    expect(Math.hypot(player.vx, player.vy)).toBeLessThanOrEqual(265.001);
     expect(player.lastProcessedInput).toBe(1);
   });
 });

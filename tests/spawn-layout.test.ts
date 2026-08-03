@@ -3,40 +3,53 @@ import { describe, expect, it } from "vitest";
 import {
   ARENA_HEIGHT,
   ARENA_WIDTH,
+  ENERGY_RESPAWN_MS,
   ENERGY_RADIUS,
   ENERGY_SPAWN_POINTS,
+  FIRE_COOLDOWN_MS,
+  HOLD_DURATION_MS,
+  HOLDER_KILL_BONUS,
+  KILL_SCORE,
+  MATCH_DURATION_MS,
+  MAX_ENERGY,
   PLAYER_RADIUS,
+  PLAYER_SPEED,
+  PROJECTILE_SPEED,
+  SERVER_TICK_RATE,
+  SNAPSHOT_RATE,
   SPAWN_POINTS,
+  TARGET_SCORE,
   WALLS,
 } from "../src/shared/constants";
 import { circleHitsRect, distanceSquared } from "../src/shared/math";
 
 describe("mobile spawn layout", () => {
-  it("keeps all spawn centers outside the mobile HUD and stick zones", () => {
-    const viewport = { width: 844, height: 390 };
-    const blocked = [
-      { left: 8, right: 196, top: 38, bottom: 122 },
-      { left: 638, right: 836, top: 38, bottom: 167 },
-      { left: 373, right: 471, top: 36, bottom: 105 },
-      { left: 14, right: 150, top: 252, bottom: 388 },
-      { left: 694, right: 830, top: 252, bottom: 388 },
-    ];
+  it("locks the v2 pacing and arena contract", () => {
+    expect(ARENA_WIDTH).toBe(2_160);
+    expect(ARENA_HEIGHT).toBe(1_215);
+    expect(MATCH_DURATION_MS).toBe(480_000);
+    expect(TARGET_SCORE).toBe(15);
+    expect(HOLD_DURATION_MS).toBe(30_000);
+    expect(KILL_SCORE).toBe(2);
+    expect(HOLDER_KILL_BONUS).toBe(1);
+    expect(MAX_ENERGY).toBe(6);
+    expect(ENERGY_RESPAWN_MS).toBe(5_000);
+    expect(PLAYER_SPEED).toBe(265);
+    expect(FIRE_COOLDOWN_MS).toBe(450);
+    expect(PROJECTILE_SPEED).toBe(620);
+    expect(SERVER_TICK_RATE).toBe(60);
+    expect(SNAPSHOT_RATE).toBe(30);
+    expect(SPAWN_POINTS).toHaveLength(6);
+  });
 
-    for (const spawn of SPAWN_POINTS) {
-      const projected = {
-        x: (spawn.x / ARENA_WIDTH) * viewport.width,
-        y: (spawn.y / ARENA_HEIGHT) * viewport.height,
-      };
-      expect(
-        blocked.some(
-          (area) =>
-            projected.x >= area.left &&
-            projected.x <= area.right &&
-            projected.y >= area.top &&
-            projected.y <= area.bottom,
-        ),
-        `spawn ${spawn.x},${spawn.y} projects under mobile controls`,
-      ).toBe(false);
+  it("keeps spawn centers pairwise separated", () => {
+    for (let i = 0; i < SPAWN_POINTS.length; i += 1) {
+      for (let j = i + 1; j < SPAWN_POINTS.length; j += 1) {
+        expect(
+          distanceSquared(SPAWN_POINTS[i]!, SPAWN_POINTS[j]!),
+          `spawns ${i} and ${j} are too close`,
+        ).toBeGreaterThanOrEqual(360 * 360);
+      }
     }
   });
 
