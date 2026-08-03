@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
@@ -50,6 +51,14 @@ httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`主机控制台: ${hostUrl}`);
   for (const url of joinUrls) console.log(`手机加入: ${url}`);
   console.log("按 Ctrl+C 停止服务器\n");
+  if (process.env.OPEN_HOST === "1" && process.platform === "win32") {
+    const opener = spawn("cmd.exe", ["/c", "start", "", hostUrl], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    opener.unref();
+  }
 });
 
 async function shutdown(): Promise<void> {
