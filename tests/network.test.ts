@@ -124,6 +124,28 @@ describe("game network", () => {
     await expect(roomState).resolves.toMatchObject({ phase: "lobby", players: [] });
     await network.close();
   });
+
+  it("returns a finished match to the lobby through the player event", async () => {
+    const { client, room } = await createHarness();
+    await emitAck(client, "join", { nickname: "Player", color: PLAYER_COLORS[0] });
+    await emitAck(client, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "end" });
+    const clearedGame = new Promise<void>((resolve) => {
+      const handleGameState: ServerToClientEvents["gameState"] = (snapshot) => {
+        if (snapshot !== null) return;
+        client.off("gameState", handleGameState);
+        resolve();
+      };
+      client.on("gameState", handleGameState);
+    });
+
+    const result = await new Promise<Ack>((resolve) => client.emit("returnToLobby", resolve));
+
+    expect(result.ok).toBe(true);
+    expect(room.snapshot()).toMatchObject({ phase: "lobby", players: [{ ready: false, isBot: false }] });
+    await expect(clearedGame).resolves.toBeUndefined();
+  });
 });
 
 function emitAck(client: TestClient, event: "join", payload: JoinPayload): Promise<Ack<JoinResult>>;

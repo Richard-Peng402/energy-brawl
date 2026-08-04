@@ -69,6 +69,10 @@ export class GameNetworkClient {
     return new Promise((resolve) => this.socket.emit("setReady", ready, resolve));
   }
 
+  async returnToLobby(): Promise<Ack> {
+    return new Promise((resolve) => this.socket.emit("returnToLobby", resolve));
+  }
+
   sendInput(input: PlayerInput): void {
     if (this.connected) this.socket.emit("playerInput", input);
   }

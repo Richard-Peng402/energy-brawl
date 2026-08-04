@@ -97,13 +97,14 @@ export interface ClientToServerEvents {
   join: (payload: JoinPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
   reconnectPlayer: (payload: ReconnectPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
   setReady: (ready: boolean, acknowledge: (result: Ack) => void) => void;
+  returnToLobby: (acknowledge: (result: Ack) => void) => void;
   playerInput: (input: PlayerInput) => void;
   hostCommand: (payload: { token: string; command: HostCommand }, acknowledge: (result: Ack) => void) => void;
 }
 
 export interface ServerToClientEvents {
   roomState: (snapshot: RoomSnapshot) => void;
-  gameState: (snapshot: GameSnapshot) => void;
+  gameState: (snapshot: GameSnapshot | null) => void;
   notice: (message: string) => void;
 }
 

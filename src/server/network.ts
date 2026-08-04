@@ -37,6 +37,7 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
     const snapshot = room.gameSnapshot();
     if (snapshot) io.emit("gameState", snapshot);
   };
+  const broadcastGameTransition = () => io.emit("gameState", room.gameSnapshot());
 
   io.on("connection", (socket) => {
     socket.emit("roomState", room.snapshot());
@@ -56,7 +57,7 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
       sendAcknowledgement(acknowledge, result);
       if (result.ok) {
         broadcastRoom();
-        broadcastGame();
+        broadcastGameTransition();
       }
     });
 
@@ -64,6 +65,15 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
       const result = room.setReady(socket.id, ready === true);
       sendAcknowledgement(acknowledge, result);
       if (result.ok) broadcastRoom();
+    });
+
+    socket.on("returnToLobby", (acknowledge) => {
+      const result = room.returnToLobby(socket.id);
+      sendAcknowledgement(acknowledge, result);
+      if (result.ok) {
+        broadcastRoom();
+        broadcastGameTransition();
+      }
     });
 
     socket.on("playerInput", (input) => {
@@ -82,7 +92,7 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
       sendAcknowledgement(acknowledge, result);
       if (result.ok) {
         broadcastRoom();
-        broadcastGame();
+        broadcastGameTransition();
       }
     });
 
@@ -95,11 +105,15 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
   });
 
   const advance = (deltaMs: number): void => {
-    if (room.tick(deltaMs)) broadcastRoom();
+    const transitioned = room.tick(deltaMs);
+    if (transitioned) {
+      broadcastRoom();
+      broadcastGameTransition();
+    }
     snapshotAccumulator += deltaMs;
     if (snapshotAccumulator >= 1_000 / SNAPSHOT_RATE) {
       snapshotAccumulator = 0;
-      broadcastGame();
+      if (!transitioned) broadcastGame();
     }
   };
 

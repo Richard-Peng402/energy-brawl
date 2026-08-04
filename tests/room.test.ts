@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PLAYER_COLORS, RECONNECT_WINDOW_MS } from "../src/shared/constants";
+import { LOBBY_RETURN_DELAY_MS, PLAYER_COLORS, RECONNECT_WINDOW_MS } from "../src/shared/constants";
 import { GameRoom } from "../src/server/room";
 
 describe("game room", () => {
@@ -131,5 +131,34 @@ describe("game room", () => {
 
     const snapshot = room.gameSnapshot()!;
     expect(snapshot.finishedAt).toBe(snapshot.serverTime);
+  });
+
+  it("automatically returns a finished match to the lobby after eight seconds", () => {
+    const room = new GameRoom();
+    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.endMatch();
+
+    expect(room.tick(LOBBY_RETURN_DELAY_MS - 1)).toBe(false);
+    expect(room.snapshot().phase).toBe("finished");
+    expect(room.tick(1)).toBe(true);
+    expect(room.snapshot()).toMatchObject({
+      phase: "lobby",
+      players: [{ nickname: "Host", connected: true, ready: false, isBot: false }],
+    });
+  });
+
+  it("allows only a connected seated human to return a finished match early", () => {
+    const room = new GameRoom();
+    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+
+    expect(room.returnToLobby("socket-1").ok).toBe(false);
+    room.endMatch();
+    expect(room.returnToLobby("spectator").ok).toBe(false);
+    expect(room.returnToLobby("socket-1").ok).toBe(true);
+    expect(room.snapshot()).toMatchObject({ phase: "lobby", players: [{ nickname: "Host", ready: false }] });
   });
 });

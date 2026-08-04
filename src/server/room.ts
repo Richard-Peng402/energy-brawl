@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  LOBBY_RETURN_DELAY_MS,
   MAX_PLAYERS,
   PLAYER_COLORS,
   RECONNECT_WINDOW_MS,
@@ -39,6 +40,7 @@ export class GameRoom {
   private readonly nextBotThinkAt = new Map<string, number>();
   private world: GameWorld | null = null;
   private clockMs = 0;
+  private autoResetAt: number | null = null;
   private nextPlayerNumber = 1;
 
   joinHuman(socketId: string, payload: JoinPayload): Ack<JoinResult> {
@@ -123,6 +125,7 @@ export class GameRoom {
     this.removeDisconnectedLobbySeats();
     this.fillBotSeats();
     this.world = createGameWorld([...this.seats.values()], this.clockMs);
+    this.autoResetAt = null;
     for (const seat of this.seats.values()) {
       const player = this.world.players.get(seat.id);
       if (!player) continue;
@@ -139,11 +142,20 @@ export class GameRoom {
     this.world.winnerIds = [];
     this.world.finishedAt = this.world.now;
     this.world.projectiles.clear();
+    this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
     return { ok: true };
+  }
+
+  returnToLobby(socketId: string): Ack {
+    const seat = this.seatForSocket(socketId);
+    if (!seat?.connected || seat.isBot) return { ok: false, error: "Player is not seated" };
+    if (!this.world || this.world.phase !== "finished") return { ok: false, error: "Match is not finished" };
+    return this.resetToLobby();
   }
 
   resetToLobby(): Ack {
     this.world = null;
+    this.autoResetAt = null;
     this.nextBotThinkAt.clear();
     for (const [id, seat] of this.seats) {
       if (seat.isBot || !seat.connected) {
@@ -183,15 +195,27 @@ export class GameRoom {
     if (!Number.isFinite(deltaMs) || deltaMs <= 0) return false;
     this.clockMs += deltaMs;
     const lifecycleChanged = this.expireReconnectTokens();
-    if (!this.world || this.world.phase === "finished") return lifecycleChanged;
+    if (!this.world) return lifecycleChanged;
+    if (this.world.phase === "finished") {
+      if (this.autoResetAt === null) this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
+      if (this.clockMs >= this.autoResetAt) {
+        this.resetToLobby();
+        return true;
+      }
+      return lifecycleChanged;
+    }
 
     for (const player of this.world.players.values()) {
       if (!player.isBot || this.clockMs < (this.nextBotThinkAt.get(player.id) ?? 0)) continue;
       applyPlayerInput(this.world, player.id, chooseBotInput(this.world, player.id));
       this.nextBotThinkAt.set(player.id, this.clockMs + 180 + Math.random() * 120);
     }
+    const wasFinished = this.worldIsFinished();
     stepWorld(this.world, deltaMs);
-    return lifecycleChanged;
+    if (this.worldIsFinished() && this.autoResetAt === null) {
+      this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
+    }
+    return lifecycleChanged || (!wasFinished && this.worldIsFinished());
   }
 
   snapshot(): RoomSnapshot {
@@ -233,6 +257,10 @@ export class GameRoom {
     if (this.world) return false;
     const humans = [...this.seats.values()].filter((seat) => !seat.isBot && seat.connected);
     return humans.length > 0 && humans.every((seat) => seat.ready);
+  }
+
+  private worldIsFinished(): boolean {
+    return this.world?.phase === "finished";
   }
 
   private seatForSocket(socketId: string): RoomSeat | undefined {
