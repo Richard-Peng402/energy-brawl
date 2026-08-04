@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
 
 import { io as createClient, type Socket as ClientSocket } from "socket.io-client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PLAYER_COLORS, RECONNECT_WINDOW_MS } from "../src/shared/constants";
+import { PLAYER_COLORS, RECONNECT_WINDOW_MS, SERVER_TICK_MS } from "../src/shared/constants";
 import type {
   Ack,
   ClientToServerEvents,
@@ -12,7 +12,12 @@ import type {
   JoinResult,
   ServerToClientEvents,
 } from "../src/shared/protocol";
-import { attachGameNetwork, isAllowedLanOrigin, type GameNetwork } from "../src/server/network";
+import {
+  advanceSnapshotDeadline,
+  attachGameNetwork,
+  isAllowedLanOrigin,
+  type GameNetwork,
+} from "../src/server/network";
 import { GameRoom } from "../src/server/room";
 
 type TestClient = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
@@ -47,6 +52,15 @@ async function createHarness(): Promise<{ client: TestClient; network: GameNetwo
 }
 
 describe("game network", () => {
+  it("skips a day of stale snapshot deadlines in one calculation", () => {
+    const serverTime = 86_400_000;
+
+    const deadline = advanceSnapshotDeadline(100, serverTime, 30);
+
+    expect(deadline).toBeGreaterThan(serverTime);
+    expect(deadline - serverTime).toBeCloseTo(1_000 / 30, 5);
+  });
+
   it("rejects blank nicknames and accepts a valid player", async () => {
     const { client } = await createHarness();
 
@@ -145,6 +159,90 @@ describe("game network", () => {
     expect(result.ok).toBe(true);
     expect(room.snapshot()).toMatchObject({ phase: "lobby", players: [{ ready: false, isBot: false }] });
     await expect(clearedGame).resolves.toBeUndefined();
+  });
+
+  it("keeps full and reduced snapshot cadences isolated per client", async () => {
+    const { client, network, room, url } = await createHarness();
+    const reducedClient = createClient(url, { transports: ["websocket"], forceNew: true });
+    await new Promise<void>((resolve, reject) => {
+      reducedClient.once("connect", resolve);
+      reducedClient.once("connect_error", reject);
+    });
+    cleanups.push(async () => {
+      reducedClient.disconnect();
+    });
+    await emitAck(client, "join", { nickname: "Player", color: PLAYER_COLORS[0] });
+    await emitAck(reducedClient, "join", { nickname: "Reduced", color: PLAYER_COLORS[1] });
+    await emitAck(client, "setReady", true);
+    await emitAck(reducedClient, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    const fullSocket = network.io.sockets.sockets.get(client.id!)!;
+    const reducedSocket = network.io.sockets.sockets.get(reducedClient.id!)!;
+    const received = new Promise<void>((resolve) => {
+      reducedSocket.once("performanceHint", () => queueMicrotask(resolve));
+    });
+
+    reducedClient.emit("performanceHint", { snapshotMode: "reduced", frameP95Ms: 28 });
+    await received;
+    const fullEmit = vi.spyOn(fullSocket.volatile, "emit");
+    const reducedEmit = vi.spyOn(reducedSocket.volatile, "emit");
+    const gameSnapshot = vi.spyOn(room, "gameSnapshot");
+
+    for (let tick = 0; tick < 180; tick += 1) network.advance(SERVER_TICK_MS);
+
+    const fullSnapshots = fullEmit.mock.calls.filter(([event]) => event === "gameState").length;
+    const reducedSnapshots = reducedEmit.mock.calls.filter(([event]) => event === "gameState").length;
+
+    expect(fullSocket.data.snapshotRate).toBe(30);
+    expect(reducedSocket.data.snapshotRate).toBe(20);
+    expect(fullSnapshots).toBeGreaterThanOrEqual(89);
+    expect(fullSnapshots).toBeLessThanOrEqual(90);
+    expect(reducedSnapshots).toBeGreaterThanOrEqual(59);
+    expect(reducedSnapshots).toBeLessThanOrEqual(60);
+    expect(gameSnapshot).toHaveBeenCalledTimes(90);
+  });
+
+  it("does not reset an existing snapshot deadline for repeated or invalid hints", async () => {
+    const { client, network } = await createHarness();
+    await emitAck(client, "join", { nickname: "Player", color: PLAYER_COLORS[0] });
+    await emitAck(client, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    network.advance(SERVER_TICK_MS * 2);
+    const serverSocket = network.io.sockets.sockets.get(client.id!)!;
+    const sendHint = async (hint: unknown) => {
+      const received = new Promise<void>((resolve) => {
+        serverSocket.once("performanceHint", () => queueMicrotask(resolve));
+      });
+      const unsafeEmit = client.emit.bind(client) as unknown as (event: string, payload: unknown) => void;
+      unsafeEmit("performanceHint", hint);
+      await received;
+    };
+
+    await sendHint({ snapshotMode: "reduced", frameP95Ms: 28 });
+    const previousDeadline = serverSocket.data.nextSnapshotAt;
+    await sendHint({ snapshotMode: "reduced", frameP95Ms: 35 });
+    await sendHint({ snapshotMode: "turbo", frameP95Ms: 2 });
+    await sendHint({ snapshotMode: "full", frameP95Ms: -1 });
+    await sendHint({ snapshotMode: "full", frameP95Ms: Number.NaN });
+    await sendHint({ snapshotMode: "full", frameP95Ms: Number.POSITIVE_INFINITY });
+    await sendHint({ snapshotMode: "full", frameP95Ms: 1_001 });
+
+    expect(serverSocket.data.snapshotRate).toBe(20);
+    expect(serverSocket.data.nextSnapshotAt).toBe(previousDeadline);
+  });
+
+  it("caps a production clock poll at three fixed simulation steps", async () => {
+    const { client, network, room } = await createHarness();
+    await emitAck(client, "join", { nickname: "Player", color: PLAYER_COLORS[0] });
+    await emitAck(client, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    const before = room.gameSnapshot()!.serverTime;
+    const pollStart = performance.now();
+    network.poll(pollStart);
+
+    expect(network.poll(pollStart + SERVER_TICK_MS * 20)).toBe(3);
+
+    expect(room.gameSnapshot()!.serverTime - before).toBeCloseTo(SERVER_TICK_MS * 3);
   });
 });
 

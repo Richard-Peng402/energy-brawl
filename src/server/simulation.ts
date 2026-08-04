@@ -133,6 +133,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
 
 export function applyPlayerInput(world: GameWorld, playerId: string, input: PlayerInput): boolean {
   if (world.phase === "finished") return false;
+  if (!Number.isSafeInteger(input.seq) || input.seq < 0) return false;
   const player = world.players.get(playerId);
   if (!player || input.seq <= player.lastProcessedInput) return false;
 

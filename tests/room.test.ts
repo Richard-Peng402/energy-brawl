@@ -66,6 +66,59 @@ describe("game room", () => {
     expect(room.handleInput("socket-2", { seq: 1, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false })).toBe(true);
   });
 
+  it("applies only the highest-sequence input once at the next simulation tick", () => {
+    const room = new GameRoom();
+    const joined = room.joinHuman("socket-1", { nickname: "Player", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+
+    expect(room.handleInput("socket-1", { seq: 1, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false })).toBe(true);
+    expect(room.handleInput("socket-1", { seq: 1.5, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false })).toBe(false);
+    expect(room.handleInput("socket-1", { seq: 3, moveX: 0, moveY: 1, aimX: 0, aimY: 1, firing: false })).toBe(true);
+    expect(room.handleInput("socket-1", { seq: 2, moveX: -1, moveY: 0, aimX: -1, aimY: 0, firing: false })).toBe(false);
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.lastProcessedInput).toBe(0);
+
+    room.tick(16);
+
+    const player = room.gameSnapshot()!.players.find((candidate) => candidate.id === joined.data!.playerId)!;
+    expect(player.lastProcessedInput).toBe(3);
+    expect(player.vy).toBeGreaterThan(0);
+  });
+
+  it("drops queued input when a player disconnects and reconnects", () => {
+    const room = new GameRoom();
+    const joined = room.joinHuman("socket-1", { nickname: "Player", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.handleInput("socket-1", { seq: 99, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false });
+
+    room.disconnect("socket-1");
+    room.reconnectHuman("socket-2", joined.data!.reconnectToken);
+    room.tick(16);
+
+    const player = room.gameSnapshot()!.players.find((candidate) => candidate.id === joined.data!.playerId)!;
+    expect(player.lastProcessedInput).toBe(0);
+    expect(player.vx).toBe(0);
+  });
+
+  it("does not carry queued input into a new match after reset", () => {
+    const room = new GameRoom();
+    const joined = room.joinHuman("socket-1", { nickname: "Player", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.handleInput("socket-1", { seq: 99, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false });
+
+    room.endMatch();
+    room.resetToLobby();
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.tick(16);
+
+    const player = room.gameSnapshot()!.players.find((candidate) => candidate.id === joined.data!.playerId)!;
+    expect(player.lastProcessedInput).toBe(0);
+    expect(player.vx).toBe(0);
+  });
+
   it("removes expired disconnected seats from the lobby", () => {
     const room = new GameRoom();
     PLAYER_COLORS.forEach((color, index) => {

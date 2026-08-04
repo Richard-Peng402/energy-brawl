@@ -7,6 +7,7 @@ import type {
   HostCommand,
   JoinPayload,
   JoinResult,
+  PerformanceHint,
   PlayerInput,
   RoomSnapshot,
   ServerToClientEvents,
@@ -75,6 +76,10 @@ export class GameNetworkClient {
 
   sendInput(input: PlayerInput): void {
     if (this.connected) this.socket.emit("playerInput", input);
+  }
+
+  sendPerformanceHint(hint: PerformanceHint): void {
+    if (this.connected) this.socket.emit("performanceHint", hint);
   }
 
   async hostCommand(token: string, command: HostCommand): Promise<Ack> {

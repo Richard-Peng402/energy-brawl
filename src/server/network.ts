@@ -3,23 +3,34 @@ import { isIP } from "node:net";
 
 import { Server } from "socket.io";
 
-import { SERVER_TICK_MS, SNAPSHOT_RATE } from "../shared/constants";
+import { performance } from "node:perf_hooks";
+
+import { REDUCED_SNAPSHOT_RATE, SERVER_TICK_MS, SNAPSHOT_RATE } from "../shared/constants";
 import type {
   Ack,
   ClientToServerEvents,
   HostCommand,
   JoinPayload,
+  PerformanceHint,
   PlayerInput,
   ServerToClientEvents,
 } from "../shared/protocol";
 import { GameRoom } from "./room";
+import { FixedStepAccumulator } from "./fixed-loop";
+import { RollingMetric } from "./performance";
 
 interface InterServerEvents {}
-interface SocketData {}
+const SNAPSHOT_DEADLINE_EPSILON_MS = 1e-6;
+
+interface SocketData {
+  snapshotRate: 20 | 30;
+  nextSnapshotAt: number;
+}
 
 export interface GameNetwork {
   io: Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
   advance: (deltaMs: number) => void;
+  poll: (nowMs: number) => number;
   close: () => Promise<void>;
 }
 
@@ -30,7 +41,9 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
     transports: ["websocket", "polling"],
   });
   const lastInputAt = new Map<string, number>();
-  let snapshotAccumulator = 0;
+  const fixedLoop = new FixedStepAccumulator(SERVER_TICK_MS, 3);
+  const simulationDuration = new RollingMetric();
+  let snapshotOpportunityMs = 0;
 
   const broadcastRoom = () => io.emit("roomState", room.snapshot());
   const broadcastGame = () => {
@@ -38,8 +51,23 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
     if (snapshot) io.emit("gameState", snapshot);
   };
   const broadcastGameTransition = () => io.emit("gameState", room.gameSnapshot());
+  const broadcastVolatileSnapshots = () => {
+    const snapshot = room.gameSnapshot();
+    if (!snapshot) return;
+    for (const socket of io.sockets.sockets.values()) {
+      if (snapshot.serverTime + SNAPSHOT_DEADLINE_EPSILON_MS < socket.data.nextSnapshotAt) continue;
+      socket.volatile.emit("gameState", snapshot);
+      socket.data.nextSnapshotAt = advanceSnapshotDeadline(
+        socket.data.nextSnapshotAt,
+        snapshot.serverTime,
+        socket.data.snapshotRate,
+      );
+    }
+  };
 
   io.on("connection", (socket) => {
+    socket.data.snapshotRate = SNAPSHOT_RATE;
+    socket.data.nextSnapshotAt = 0;
     socket.emit("roomState", room.snapshot());
     const currentGame = room.gameSnapshot();
     if (currentGame) socket.emit("gameState", currentGame);
@@ -76,6 +104,11 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
       }
     });
 
+    socket.on("performanceHint", (hint) => {
+      if (!isPerformanceHint(hint)) return;
+      socket.data.snapshotRate = hint.snapshotMode === "reduced" ? REDUCED_SNAPSHOT_RATE : SNAPSHOT_RATE;
+    });
+
     socket.on("playerInput", (input) => {
       const now = Date.now();
       if (now - (lastInputAt.get(socket.id) ?? 0) < 15 || !isPlayerInput(input)) return;
@@ -105,31 +138,52 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
   });
 
   const advance = (deltaMs: number): void => {
+    const startedAt = performance.now();
     const transitioned = room.tick(deltaMs);
+    simulationDuration.add(performance.now() - startedAt);
     if (transitioned) {
       broadcastRoom();
       broadcastGameTransition();
     }
-    snapshotAccumulator += deltaMs;
-    if (snapshotAccumulator >= 1_000 / SNAPSHOT_RATE) {
-      snapshotAccumulator = 0;
-      if (!transitioned) broadcastGame();
+    snapshotOpportunityMs += deltaMs;
+    if (snapshotOpportunityMs >= 1_000 / SNAPSHOT_RATE) {
+      snapshotOpportunityMs %= 1_000 / SNAPSHOT_RATE;
+      if (!transitioned) broadcastVolatileSnapshots();
     }
   };
 
+  const poll = (nowMs: number): number => fixedLoop.advance(nowMs, advance);
+
   const interval = setInterval(() => {
-    advance(SERVER_TICK_MS);
-  }, SERVER_TICK_MS);
+    poll(performance.now());
+  }, 4);
   interval.unref();
 
   return {
     io,
     advance,
+    poll,
     close: async () => {
       clearInterval(interval);
       await new Promise<void>((resolve) => io.close(() => resolve()));
     },
   };
+}
+
+export function advanceSnapshotDeadline(
+  currentDeadline: number,
+  serverTime: number,
+  snapshotRate: 20 | 30,
+): number {
+  const intervalMs = 1_000 / snapshotRate;
+  const baseDeadline = Number.isFinite(currentDeadline) && currentDeadline > 0
+    ? currentDeadline
+    : serverTime;
+  if (baseDeadline > serverTime + SNAPSHOT_DEADLINE_EPSILON_MS) return baseDeadline;
+  const missedIntervals = Math.floor(
+    (serverTime + SNAPSHOT_DEADLINE_EPSILON_MS - baseDeadline) / intervalMs,
+  ) + 1;
+  return baseDeadline + missedIntervals * intervalMs;
 }
 
 function runHostCommand(room: GameRoom, command: HostCommand): Ack {
@@ -157,12 +211,24 @@ function isPlayerInput(input: unknown): input is PlayerInput {
   if (!input || typeof input !== "object") return false;
   const candidate = input as Partial<PlayerInput>;
   return (
-    Number.isFinite(candidate.seq) &&
+    Number.isSafeInteger(candidate.seq) &&
+    candidate.seq! >= 0 &&
     Number.isFinite(candidate.moveX) &&
     Number.isFinite(candidate.moveY) &&
     Number.isFinite(candidate.aimX) &&
     Number.isFinite(candidate.aimY) &&
     typeof candidate.firing === "boolean"
+  );
+}
+
+function isPerformanceHint(hint: unknown): hint is PerformanceHint {
+  if (!hint || typeof hint !== "object") return false;
+  const candidate = hint as Partial<PerformanceHint>;
+  return (
+    (candidate.snapshotMode === "full" || candidate.snapshotMode === "reduced") &&
+    Number.isFinite(candidate.frameP95Ms) &&
+    candidate.frameP95Ms! >= 0 &&
+    candidate.frameP95Ms! <= 1_000
   );
 }
 

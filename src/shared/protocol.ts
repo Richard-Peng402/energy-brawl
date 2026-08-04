@@ -19,6 +19,11 @@ export interface PlayerInput {
   firing: boolean;
 }
 
+export interface PerformanceHint {
+  snapshotMode: "full" | "reduced";
+  frameP95Ms: number;
+}
+
 export interface PlayerSnapshot extends Vec2 {
   id: string;
   nickname: string;
@@ -98,6 +103,7 @@ export interface ClientToServerEvents {
   reconnectPlayer: (payload: ReconnectPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
   setReady: (ready: boolean, acknowledge: (result: Ack) => void) => void;
   returnToLobby: (acknowledge: (result: Ack) => void) => void;
+  performanceHint: (hint: PerformanceHint) => void;
   playerInput: (input: PlayerInput) => void;
   hostCommand: (payload: { token: string; command: HostCommand }, acknowledge: (result: Ack) => void) => void;
 }

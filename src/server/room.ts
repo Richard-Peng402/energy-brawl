@@ -38,6 +38,7 @@ export class GameRoom {
   private readonly seats = new Map<string, RoomSeat>();
   private readonly socketPlayers = new Map<string, string>();
   private readonly nextBotThinkAt = new Map<string, number>();
+  private readonly pendingInputs = new Map<string, PlayerInput>();
   private world: GameWorld | null = null;
   private clockMs = 0;
   private autoResetAt: number | null = null;
@@ -93,6 +94,7 @@ export class GameRoom {
     this.socketPlayers.set(socketId, seat.id);
     const player = this.world?.players.get(seat.id);
     if (player) {
+      this.pendingInputs.delete(seat.id);
       player.connected = true;
       player.isBot = false;
       player.lastProcessedInput = 0;
@@ -126,6 +128,7 @@ export class GameRoom {
     this.fillBotSeats();
     this.world = createGameWorld([...this.seats.values()], this.clockMs);
     this.autoResetAt = null;
+    this.pendingInputs.clear();
     for (const seat of this.seats.values()) {
       const player = this.world.players.get(seat.id);
       if (!player) continue;
@@ -157,6 +160,7 @@ export class GameRoom {
     this.world = null;
     this.autoResetAt = null;
     this.nextBotThinkAt.clear();
+    this.pendingInputs.clear();
     for (const [id, seat] of this.seats) {
       if (seat.isBot || !seat.connected) {
         this.seats.delete(id);
@@ -173,6 +177,7 @@ export class GameRoom {
     this.socketPlayers.delete(socketId);
     const seat = this.seats.get(playerId);
     if (!seat) return;
+    this.pendingInputs.delete(playerId);
     seat.socketId = null;
     seat.connected = false;
     seat.ready = false;
@@ -187,8 +192,13 @@ export class GameRoom {
 
   handleInput(socketId: string, input: PlayerInput): boolean {
     const seat = this.seatForSocket(socketId);
-    if (!seat || !seat.connected || seat.isBot || !this.world) return false;
-    return applyPlayerInput(this.world, seat.id, input);
+    if (!seat || !seat.connected || seat.isBot || !this.world || this.world.phase === "finished") return false;
+    if (!Number.isSafeInteger(input.seq) || input.seq < 0) return false;
+    const player = this.world.players.get(seat.id);
+    const queued = this.pendingInputs.get(seat.id);
+    if (!player || input.seq <= player.lastProcessedInput || (queued && input.seq <= queued.seq)) return false;
+    this.pendingInputs.set(seat.id, { ...input });
+    return true;
   }
 
   tick(deltaMs: number): boolean {
@@ -204,6 +214,9 @@ export class GameRoom {
       }
       return lifecycleChanged;
     }
+
+    for (const [playerId, input] of this.pendingInputs) applyPlayerInput(this.world, playerId, input);
+    this.pendingInputs.clear();
 
     for (const player of this.world.players.values()) {
       if (!player.isBot || this.clockMs < (this.nextBotThinkAt.get(player.id) ?? 0)) continue;
