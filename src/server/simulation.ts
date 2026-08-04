@@ -22,7 +22,9 @@ import {
   TARGET_SCORE,
   WALLS,
 } from "../shared/constants";
-import { circleHitsCircle, circleHitsRect, clamp, distanceSquared, normalize } from "../shared/math";
+import { firstWallHit, moveCircleSafely, sweepCircleCircle } from "../shared/collision";
+import { StaticSpatialIndex } from "../shared/spatial-index";
+import { circleHitsCircle, clamp, distanceSquared, normalize } from "../shared/math";
 import type {
   EnergySnapshot,
   GamePhase,
@@ -72,6 +74,8 @@ const EMPTY_INPUT: PlayerInput = {
   aimY: 0,
   firing: false,
 };
+
+const WALL_INDEX = new StaticSpatialIndex(WALLS);
 
 export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorld {
   const players = new Map<string, WorldPlayer>();
@@ -151,7 +155,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
       if (player.respawnAt !== null && world.now >= player.respawnAt) respawnPlayer(world, player);
       continue;
     }
-    movePlayer(player, safeDelta);
+    movePlayer(world, player, safeDelta);
     updateAimAndFire(world, player);
   }
 
@@ -218,19 +222,22 @@ function clampFinite(value: number): number {
   return Number.isFinite(value) ? clamp(value, -1, 1) : 0;
 }
 
-function movePlayer(player: WorldPlayer, deltaMs: number): void {
+function movePlayer(world: GameWorld, player: WorldPlayer, deltaMs: number): void {
   const direction = normalize({ x: player.input.moveX, y: player.input.moveY });
   player.vx = direction.x * PLAYER_SPEED;
   player.vy = direction.y * PLAYER_SPEED;
   const seconds = deltaMs / 1_000;
-
-  const previousX = player.x;
-  player.x = clamp(player.x + player.vx * seconds, PLAYER_RADIUS, ARENA_WIDTH - PLAYER_RADIUS);
-  if (WALLS.some((wall) => circleHitsRect(player, PLAYER_RADIUS, wall))) player.x = previousX;
-
-  const previousY = player.y;
-  player.y = clamp(player.y + player.vy * seconds, PLAYER_RADIUS, ARENA_HEIGHT - PLAYER_RADIUS);
-  if (WALLS.some((wall) => circleHitsRect(player, PLAYER_RADIUS, wall))) player.y = previousY;
+  const delta = { x: player.vx * seconds, y: player.vy * seconds };
+  const nearbyWalls = WALL_INDEX.query(movementBounds(player, delta));
+  const next = moveCircleSafely(
+    player,
+    delta,
+    PLAYER_RADIUS,
+    nearbyWalls,
+    { width: ARENA_WIDTH, height: ARENA_HEIGHT },
+  );
+  player.x = next.x;
+  player.y = next.y;
 }
 
 function updateAimAndFire(world: GameWorld, player: WorldPlayer): void {
@@ -255,25 +262,41 @@ function updateAimAndFire(world: GameWorld, player: WorldPlayer): void {
 }
 
 function advanceProjectiles(world: GameWorld, deltaMs: number): void {
-  const seconds = deltaMs / 1_000;
+  const frameStart = world.now - deltaMs;
   for (const projectile of [...world.projectiles.values()]) {
-    projectile.x += projectile.vx * seconds;
-    projectile.y += projectile.vy * seconds;
-    const outside = projectile.x < 0 || projectile.x > ARENA_WIDTH || projectile.y < 0 || projectile.y > ARENA_HEIGHT;
-    const hitsWall = WALLS.some((wall) => circleHitsRect(projectile, PROJECTILE_RADIUS, wall));
-    if (outside || hitsWall || projectile.expiresAt <= world.now) {
+    const activeMs = Math.min(deltaMs, projectile.expiresAt - frameStart);
+    if (activeMs <= 0) {
       world.projectiles.delete(projectile.id);
       continue;
     }
 
-    const target = [...world.players.values()].find(
-      (player) =>
-        player.id !== projectile.ownerId &&
-        player.alive &&
-        circleHitsCircle(projectile, PROJECTILE_RADIUS, player, PLAYER_RADIUS),
+    const delta = { x: projectile.vx * activeMs / 1_000, y: projectile.vy * activeMs / 1_000 };
+    const wallHit = firstWallHit(
+      projectile,
+      delta,
+      PROJECTILE_RADIUS,
+      WALL_INDEX.query(movementBounds(projectile, delta, PROJECTILE_RADIUS)),
     );
-    if (target) {
-      damagePlayer(world, target.id, projectile.ownerId, PROJECTILE_DAMAGE);
+    let targetHit: { player: WorldPlayer; time: number } | null = null;
+    for (const player of world.players.values()) {
+      if (player.id === projectile.ownerId || !player.alive) continue;
+      const hit = sweepCircleCircle(projectile, delta, PROJECTILE_RADIUS, player, PLAYER_RADIUS);
+      if (hit && (!targetHit || hit.time < targetHit.time)) targetHit = { player, time: hit.time };
+    }
+
+    if (wallHit && (!targetHit || wallHit.time <= targetHit.time)) {
+      world.projectiles.delete(projectile.id);
+      continue;
+    }
+    if (targetHit) {
+      damagePlayer(world, targetHit.player.id, projectile.ownerId, PROJECTILE_DAMAGE);
+      world.projectiles.delete(projectile.id);
+      continue;
+    }
+
+    projectile.x += delta.x;
+    projectile.y += delta.y;
+    if (activeMs < deltaMs || projectile.x < PROJECTILE_RADIUS || projectile.x > ARENA_WIDTH - PROJECTILE_RADIUS || projectile.y < PROJECTILE_RADIUS || projectile.y > ARENA_HEIGHT - PROJECTILE_RADIUS) {
       world.projectiles.delete(projectile.id);
     }
   }
@@ -337,24 +360,93 @@ function chooseSafeSpawn(world: GameWorld, playerId: string): Vec2 {
 
 function resolvePlayerSeparation(world: GameWorld): void {
   const alivePlayers = [...world.players.values()].filter((player) => player.alive);
-  for (let leftIndex = 0; leftIndex < alivePlayers.length; leftIndex += 1) {
-    const left = alivePlayers[leftIndex];
-    if (!left) continue;
-    for (let rightIndex = leftIndex + 1; rightIndex < alivePlayers.length; rightIndex += 1) {
-      const right = alivePlayers[rightIndex];
-      if (!right) continue;
-      const dx = right.x - left.x;
-      const dy = right.y - left.y;
-      const distance = Math.hypot(dx, dy);
-      const overlap = PLAYER_RADIUS * 2 - distance;
-      if (overlap <= 0) continue;
-      const direction = distance === 0 ? { x: 1, y: 0 } : { x: dx / distance, y: dy / distance };
-      left.x = clamp(left.x - direction.x * overlap * 0.5, PLAYER_RADIUS, ARENA_WIDTH - PLAYER_RADIUS);
-      left.y = clamp(left.y - direction.y * overlap * 0.5, PLAYER_RADIUS, ARENA_HEIGHT - PLAYER_RADIUS);
-      right.x = clamp(right.x + direction.x * overlap * 0.5, PLAYER_RADIUS, ARENA_WIDTH - PLAYER_RADIUS);
-      right.y = clamp(right.y + direction.y * overlap * 0.5, PLAYER_RADIUS, ARENA_HEIGHT - PLAYER_RADIUS);
+  for (let pass = 0; pass < Math.max(8, alivePlayers.length * 32); pass += 1) {
+    let foundOverlap = false;
+    for (let leftIndex = 0; leftIndex < alivePlayers.length; leftIndex += 1) {
+      const left = alivePlayers[leftIndex];
+      if (!left) continue;
+      for (let rightIndex = leftIndex + 1; rightIndex < alivePlayers.length; rightIndex += 1) {
+        const right = alivePlayers[rightIndex];
+        if (!right) continue;
+        foundOverlap = separatePlayerPair(world, left, right) || foundOverlap;
+      }
     }
+    if (!foundOverlap) break;
   }
+}
+
+function separatePlayerPair(world: GameWorld, left: WorldPlayer, right: WorldPlayer): boolean {
+  const requiredDistance = PLAYER_RADIUS * 2 + 0.001;
+  let dx = right.x - left.x;
+  let dy = right.y - left.y;
+  let distance = Math.hypot(dx, dy);
+  if (distance >= requiredDistance) return false;
+
+  let direction = distance === 0 ? { x: 1, y: 0 } : { x: dx / distance, y: dy / distance };
+  const correction = requiredDistance - distance;
+  const leftNext = safePlayerPosition(world, left, {
+    x: -direction.x * correction * 0.5,
+    y: -direction.y * correction * 0.5,
+  });
+  const rightNext = safePlayerPosition(world, right, {
+    x: direction.x * correction * 0.5,
+    y: direction.y * correction * 0.5,
+  });
+  left.x = leftNext.x;
+  left.y = leftNext.y;
+  right.x = rightNext.x;
+  right.y = rightNext.y;
+
+  dx = right.x - left.x;
+  dy = right.y - left.y;
+  distance = Math.hypot(dx, dy);
+  if (distance < requiredDistance) {
+    direction = distance === 0 ? { x: 1, y: 0 } : { x: dx / distance, y: dy / distance };
+    const residual = requiredDistance - distance;
+    const leftResidual = safePlayerPosition(world, left, {
+      x: -direction.x * residual,
+      y: -direction.y * residual,
+    });
+    left.x = leftResidual.x;
+    left.y = leftResidual.y;
+  }
+
+  dx = right.x - left.x;
+  dy = right.y - left.y;
+  distance = Math.hypot(dx, dy);
+  if (distance < requiredDistance) {
+    direction = distance === 0 ? { x: 1, y: 0 } : { x: dx / distance, y: dy / distance };
+    const residual = requiredDistance - distance;
+    const rightResidual = safePlayerPosition(world, right, {
+      x: direction.x * residual,
+      y: direction.y * residual,
+    });
+    right.x = rightResidual.x;
+    right.y = rightResidual.y;
+  }
+
+  return true;
+}
+
+function movementBounds(start: Vec2, delta: Vec2, padding = PLAYER_RADIUS) {
+  const minX = Math.min(start.x, start.x + delta.x) - padding;
+  const minY = Math.min(start.y, start.y + delta.y) - padding;
+  return {
+    x: minX,
+    y: minY,
+    width: Math.abs(delta.x) + padding * 2,
+    height: Math.abs(delta.y) + padding * 2,
+  };
+}
+
+function safePlayerPosition(world: GameWorld, player: WorldPlayer, delta: Vec2): Vec2 {
+  return moveCircleSafely(
+    player,
+    delta,
+    PLAYER_RADIUS,
+    WALL_INDEX.query(movementBounds(player, delta)),
+    { width: ARENA_WIDTH, height: ARENA_HEIGHT },
+  );
 }
 
 function finishNormalTime(world: GameWorld): void {

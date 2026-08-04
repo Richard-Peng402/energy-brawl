@@ -99,6 +99,44 @@ export function firstWallHit(
   return nearest;
 }
 
+/** Sweeps a moving circle against a stationary circle using relative motion. */
+export function sweepCircleCircle(
+  start: Vec2,
+  delta: Vec2,
+  radius: number,
+  target: Vec2,
+  targetRadius: number,
+): SweepHit | null {
+  const relative = { x: start.x - target.x, y: start.y - target.y };
+  const combinedRadius = radius + targetRadius;
+  const c = relative.x * relative.x + relative.y * relative.y - combinedRadius * combinedRadius;
+  if (c <= 0) {
+    const length = Math.hypot(relative.x, relative.y);
+    return {
+      time: 0,
+      normal: length > SKIN ? { x: relative.x / length, y: relative.y / length } : { x: -1, y: 0 },
+    };
+  }
+
+  const a = delta.x * delta.x + delta.y * delta.y;
+  if (a === 0) return null;
+  const b = 2 * (relative.x * delta.x + relative.y * delta.y);
+  const discriminant = b * b - 4 * a * c;
+  const discriminantTolerance = Number.EPSILON * Math.max(1, b * b, Math.abs(4 * a * c));
+  if (discriminant < -discriminantTolerance) return null;
+
+  const root = Math.sqrt(Math.max(0, discriminant));
+  const time = (-b - root) / (2 * a);
+  if (time < 0 || time > 1) return null;
+
+  const impact = { x: start.x + delta.x * time - target.x, y: start.y + delta.y * time - target.y };
+  const impactLength = Math.hypot(impact.x, impact.y);
+  return {
+    time,
+    normal: impactLength > SKIN ? { x: impact.x / impactLength, y: impact.y / impactLength } : { x: -1, y: 0 },
+  };
+}
+
 function clampToBounds(position: Vec2, radius: number, bounds: { width: number; height: number }): Vec2 {
   const minX = radius;
   const maxX = Math.max(radius, bounds.width - radius);

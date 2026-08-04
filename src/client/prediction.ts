@@ -5,8 +5,12 @@ import {
   PLAYER_SPEED,
   WALLS,
 } from "../shared/constants";
-import { circleHitsRect, clamp, normalize } from "../shared/math";
+import { moveCircleSafely } from "../shared/collision";
+import { StaticSpatialIndex } from "../shared/spatial-index";
+import { clamp, normalize } from "../shared/math";
 import type { Vec2 } from "../shared/protocol";
+
+const WALL_INDEX = new StaticSpatialIndex(WALLS);
 
 export function predictLocalPosition(position: Vec2, input: Vec2, deltaMs: number): Vec2 {
   if (!Number.isFinite(deltaMs) || deltaMs <= 0) return { ...position };
@@ -15,18 +19,21 @@ export function predictLocalPosition(position: Vec2, input: Vec2, deltaMs: numbe
     x: Number.isFinite(input.x) ? clamp(input.x, -1, 1) : 0,
     y: Number.isFinite(input.y) ? clamp(input.y, -1, 1) : 0,
   });
-  const distance = PLAYER_SPEED * Math.min(deltaMs, 100) / 1_000;
-  const next = { ...position };
-
-  const nextX = clamp(next.x + direction.x * distance, PLAYER_RADIUS, ARENA_WIDTH - PLAYER_RADIUS);
-  if (!WALLS.some((wall) => circleHitsRect({ x: nextX, y: next.y }, PLAYER_RADIUS, wall))) {
-    next.x = nextX;
-  }
-
-  const nextY = clamp(next.y + direction.y * distance, PLAYER_RADIUS, ARENA_HEIGHT - PLAYER_RADIUS);
-  if (!WALLS.some((wall) => circleHitsRect({ x: next.x, y: nextY }, PLAYER_RADIUS, wall))) {
-    next.y = nextY;
-  }
-
-  return next;
+  const distance = PLAYER_SPEED * deltaMs / 1_000;
+  const delta = { x: direction.x * distance, y: direction.y * distance };
+  const minX = Math.min(position.x, position.x + delta.x) - PLAYER_RADIUS;
+  const minY = Math.min(position.y, position.y + delta.y) - PLAYER_RADIUS;
+  const walls = WALL_INDEX.query({
+    x: minX,
+    y: minY,
+    width: Math.abs(delta.x) + PLAYER_RADIUS * 2,
+    height: Math.abs(delta.y) + PLAYER_RADIUS * 2,
+  });
+  return moveCircleSafely(
+    position,
+    delta,
+    PLAYER_RADIUS,
+    walls,
+    { width: ARENA_WIDTH, height: ARENA_HEIGHT },
+  );
 }

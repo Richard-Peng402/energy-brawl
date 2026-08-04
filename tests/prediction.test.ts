@@ -13,6 +13,13 @@ describe("local movement prediction", () => {
   it("does not predict through solid walls", () => {
     const next = predictLocalPosition({ x: 900, y: 500 }, { x: 1, y: 0 }, 100);
 
-    expect(next.x).toBe(900);
+    expect(next.x).toBeLessThanOrEqual(903);
+    expect(next.x).toBeGreaterThan(900);
+  });
+
+  it("uses the full movement delta just like the authoritative simulation", () => {
+    const next = predictLocalPosition({ x: 200, y: 200 }, { x: 1, y: 0 }, 200);
+
+    expect(next.x - 200).toBeCloseTo(PLAYER_SPEED * 0.2);
   });
 });

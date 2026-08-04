@@ -23,4 +23,11 @@ describe("static spatial index", () => {
     expect(index.query({ x: 0, y: 0, width: 0, height: 10 })).toEqual([]);
     expect(new StaticSpatialIndex([], 100).query({ x: -100, y: -100, width: 500, height: 500 })).toEqual([]);
   });
+
+  it("includes a wall touched exactly at the sweep query endpoint", () => {
+    const wall: Rect = { x: 90, y: 0, width: 10, height: 100 };
+    const index = new StaticSpatialIndex([wall], 100);
+
+    expect(index.query({ x: -8, y: 42, width: 98, height: 16 })).toEqual([wall]);
+  });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { firstWallHit, moveCircleSafely, sweepCircleRect } from "../src/shared/collision";
+import { firstWallHit, moveCircleSafely, sweepCircleCircle, sweepCircleRect } from "../src/shared/collision";
 import { circleHitsRect } from "../src/shared/math";
 import type { Rect } from "../src/shared/protocol";
 
@@ -80,5 +80,18 @@ describe("continuous collision primitives", () => {
     expect(result.y).toBeGreaterThanOrEqual(10);
     expect(result.y).toBeLessThanOrEqual(190);
     expect(circleHitsRect(result, 10, wall)).toBe(false);
+  });
+
+  it("detects a collision during an extremely short circle sweep", () => {
+    const hit = sweepCircleCircle(
+      { x: 0, y: 0 },
+      { x: 0.0009, y: 0 },
+      0.5,
+      { x: 1.0005, y: 0 },
+      0.5,
+    );
+
+    expect(hit?.time).toBeGreaterThan(0);
+    expect(hit?.time).toBeLessThan(1);
   });
 });
