@@ -14,6 +14,7 @@ export class MobileApp {
   private selectedColor: string = PLAYER_COLORS[0];
   private inputSequence = 0;
   private lastInputSentAt = 0;
+  private acceptingInput = false;
   private toastTimer = 0;
 
   constructor(private readonly root: HTMLElement) {
@@ -67,6 +68,7 @@ export class MobileApp {
     if (inGame && this.network.game) {
       this.ensureRenderer();
       this.renderer?.setLocalPlayerId(this.network.playerId);
+      this.renderer?.setSnapshotMode(this.network.snapshotMode);
       this.renderer?.setSnapshot(this.network.game);
       this.renderHud(this.network.game);
       this.renderResults(this.network.game);
@@ -172,25 +174,33 @@ export class MobileApp {
   }
 
   private readonly inputLoop = (time: number): void => {
-    const acceptingInput = this.network.game?.phase === "playing" || this.network.game?.phase === "overtime";
+    const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
+    const activePhase = this.network.game?.phase === "playing" || this.network.game?.phase === "overtime";
+    const acceptingInput = this.network.connected && this.network.playerSessionReady && ownSeat?.connected === true && ownSeat.isBot === false && activePhase;
     if (acceptingInput) {
       const move = this.moveStick.getValue();
       const aim = this.aimStick.getValue();
       this.renderer?.setLocalInput(move);
       if (time - this.lastInputSentAt >= 33) {
-        this.network.sendInput({
+        const input = {
           seq: ++this.inputSequence,
           moveX: move.x,
           moveY: move.y,
           aimX: aim.x,
           aimY: aim.y,
           firing: aim.magnitude > 0.15,
-        });
+        };
+        const deltaMs = this.lastInputSentAt > 0 ? Math.min(100, time - this.lastInputSentAt) : 33;
+        this.renderer?.addLocalInput(input, deltaMs);
+        this.network.sendInput(input);
         this.lastInputSentAt = time;
       }
     } else {
+      if (this.acceptingInput) this.renderer?.resetLocalInputs();
+      this.lastInputSentAt = 0;
       this.renderer?.setLocalInput({ x: 0, y: 0 });
     }
+    this.acceptingInput = acceptingInput;
     requestAnimationFrame(this.inputLoop);
   };
 

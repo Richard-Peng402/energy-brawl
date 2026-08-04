@@ -21,6 +21,8 @@ export type NetworkListener = () => void;
 export class GameNetworkClient {
   readonly socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   connected = false;
+  playerSessionReady = false;
+  snapshotMode: PerformanceHint["snapshotMode"] = "full";
   room: RoomSnapshot | null = null;
   game: GameSnapshot | null = null;
   playerId: string | null = localStorage.getItem(PLAYER_KEY);
@@ -31,12 +33,15 @@ export class GameNetworkClient {
     this.socket = io({ transports: ["websocket", "polling"] });
     this.socket.on("connect", () => {
       this.connected = true;
+      this.playerSessionReady = false;
+      this.snapshotMode = "full";
       this.notice = "";
       this.notify();
       if (autoReconnectPlayer) void this.tryReconnect();
     });
     this.socket.on("disconnect", () => {
       this.connected = false;
+      this.playerSessionReady = false;
       this.notify();
     });
     this.socket.on("roomState", (room) => {
@@ -75,11 +80,14 @@ export class GameNetworkClient {
   }
 
   sendInput(input: PlayerInput): void {
-    if (this.connected) this.socket.emit("playerInput", input);
+    if (this.connected && this.playerSessionReady) this.socket.emit("playerInput", input);
   }
 
   sendPerformanceHint(hint: PerformanceHint): void {
-    if (this.connected) this.socket.emit("performanceHint", hint);
+    if (!this.connected) return;
+    this.snapshotMode = hint.snapshotMode;
+    this.socket.emit("performanceHint", hint);
+    this.notify();
   }
 
   async hostCommand(token: string, command: HostCommand): Promise<Ack> {
@@ -103,12 +111,14 @@ export class GameNetworkClient {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(PLAYER_KEY);
       this.playerId = null;
+      this.playerSessionReady = false;
     }
     this.notify();
   }
 
   private storeIdentity(result: JoinResult): void {
     this.playerId = result.playerId;
+    this.playerSessionReady = true;
     localStorage.setItem(TOKEN_KEY, result.reconnectToken);
     localStorage.setItem(PLAYER_KEY, result.playerId);
     this.notify();

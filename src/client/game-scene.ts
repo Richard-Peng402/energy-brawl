@@ -1,8 +1,10 @@
 import Phaser from "phaser";
 
 import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, WALLS } from "../shared/constants";
-import type { GameSnapshot, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import type { GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import { consumePositionCorrection, InputReconciler } from "./input-reconciliation";
 import { predictLocalPosition } from "./prediction";
+import { shouldAdvanceSnapshotAnchor, SnapshotBuffer } from "./snapshot-buffer";
 
 interface PlayerView {
   container: Phaser.GameObjects.Container;
@@ -18,8 +20,6 @@ interface PlayerView {
 
 interface MovingView {
   object: Phaser.GameObjects.Arc;
-  targetX: number;
-  targetY: number;
 }
 
 export class GameRenderer {
@@ -60,6 +60,18 @@ export class GameRenderer {
     this.scene.setLocalInput(input);
   }
 
+  addLocalInput(input: PlayerInput, deltaMs: number): void {
+    this.scene.addLocalInput(input, deltaMs);
+  }
+
+  setSnapshotMode(mode: "full" | "reduced"): void {
+    this.scene.setSnapshotMode(mode);
+  }
+
+  resetLocalInputs(): void {
+    this.scene.resetLocalInputs();
+  }
+
   destroy(): void {
     this.game.destroy(true);
   }
@@ -69,8 +81,13 @@ class ArenaScene extends Phaser.Scene {
   private readonly playerViews = new Map<string, PlayerView>();
   private readonly projectileViews = new Map<string, MovingView>();
   private readonly energyViews = new Map<string, Phaser.GameObjects.Sprite>();
+  private readonly snapshotBuffer = new SnapshotBuffer<GameSnapshot>();
+  private readonly inputReconciler = new InputReconciler();
   private snapshot: GameSnapshot | null = null;
   private localInput: Vec2 = { x: 0, y: 0 };
+  private latestSnapshotReceivedAt = 0;
+  private renderDelayMs = 100;
+  private correctionRemaining: Vec2 = { x: 0, y: 0 };
   private ready = false;
 
   constructor(private localPlayerId: string | null) {
@@ -89,34 +106,34 @@ class ArenaScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    const now = performance.now();
+    const latest = this.snapshot;
+    const sample = latest
+      ? this.snapshotBuffer.sample(latest.serverTime + (now - this.latestSnapshotReceivedAt) - this.renderDelayMs)
+      : null;
+    if (sample) {
+      this.applyInterpolatedPositions(sample.older, sample.newer, sample.alpha);
+      this.syncBufferedProjectiles(sample.older, sample.newer, sample.alpha);
+    }
+
     for (const [id, view] of this.playerViews) {
       if (id === this.localPlayerId && this.localPlayerCanMove()) {
         const predicted = predictLocalPosition(view.container, this.localInput, delta);
         view.container.setPosition(predicted.x, predicted.y);
-        const correctionDistance = Phaser.Math.Distance.Between(
-          view.container.x,
-          view.container.y,
-          view.targetX,
-          view.targetY,
-        );
-        const correction = Math.hypot(this.localInput.x, this.localInput.y) < 0.05 ? 0.16 : correctionDistance > 75 ? 0.06 : 0;
-        if (correction > 0) {
-          view.container.x = Phaser.Math.Linear(view.container.x, view.targetX, correction);
-          view.container.y = Phaser.Math.Linear(view.container.y, view.targetY, correction);
-        }
+        this.consumeCorrection(view.container, delta);
         continue;
       }
-      view.container.x = Phaser.Math.Linear(view.container.x, view.targetX, 0.34);
-      view.container.y = Phaser.Math.Linear(view.container.y, view.targetY, 0.34);
-    }
-    for (const view of this.projectileViews.values()) {
-      view.object.x = Phaser.Math.Linear(view.object.x, view.targetX, 0.58);
-      view.object.y = Phaser.Math.Linear(view.object.y, view.targetY, 0.58);
+      if (id === this.localPlayerId) this.consumeCorrection(view.container, delta);
     }
   }
 
   applySnapshot(snapshot: GameSnapshot): void {
+    if (this.snapshot && snapshot.serverTime < this.snapshot.serverTime) return;
+    if (this.snapshot === snapshot) return;
+    const advancesAnchor = shouldAdvanceSnapshotAnchor(this.snapshot?.serverTime ?? null, snapshot.serverTime);
     this.snapshot = snapshot;
+    this.snapshotBuffer.push(snapshot);
+    if (advancesAnchor) this.latestSnapshotReceivedAt = performance.now();
     if (this.ready) this.syncSnapshot(snapshot);
   }
 
@@ -127,6 +144,20 @@ class ArenaScene extends Phaser.Scene {
 
   setLocalInput(input: Vec2): void {
     this.localInput = input;
+  }
+
+  addLocalInput(input: PlayerInput, deltaMs: number): void {
+    this.inputReconciler.add(input, deltaMs);
+  }
+
+  setSnapshotMode(mode: "full" | "reduced"): void {
+    this.renderDelayMs = mode === "reduced" ? 150 : 100;
+  }
+
+  resetLocalInputs(): void {
+    this.inputReconciler.reset();
+    this.localInput = { x: 0, y: 0 };
+    this.correctionRemaining = { x: 0, y: 0 };
   }
 
   private localPlayerCanMove(): boolean {
@@ -171,6 +202,19 @@ class ArenaScene extends Phaser.Scene {
 
     for (const player of snapshot.players) {
       const view = this.playerViews.get(player.id) ?? this.createPlayerView(player);
+      if (player.id === this.localPlayerId) {
+        const current = { x: view.container.x, y: view.container.y };
+        const reconciliation = this.inputReconciler.reconcile(player, current);
+        if (reconciliation.correctionDistance > 80) {
+          view.container.setPosition(reconciliation.position.x, reconciliation.position.y);
+          this.correctionRemaining = { x: 0, y: 0 };
+        } else {
+          this.correctionRemaining = {
+            x: reconciliation.position.x - current.x,
+            y: reconciliation.position.y - current.y,
+          };
+        }
+      }
       view.targetX = player.x;
       view.targetY = player.y;
       view.aim.rotation = player.angle;
@@ -185,7 +229,6 @@ class ArenaScene extends Phaser.Scene {
     }
 
     this.syncEnergy(snapshot);
-    this.syncProjectiles(snapshot);
   }
 
   private createPlayerView(player: PlayerSnapshot): PlayerView {
@@ -252,25 +295,55 @@ class ArenaScene extends Phaser.Scene {
     }
   }
 
-  private syncProjectiles(snapshot: GameSnapshot): void {
-    const active = new Set(snapshot.projectiles.map((projectile) => projectile.id));
+  private syncBufferedProjectiles(older: GameSnapshot, newer: GameSnapshot, alpha: number): void {
+    const lifecycleSnapshot = alpha < 1 ? older : newer;
+    const active = new Set(lifecycleSnapshot.projectiles.map((projectile) => projectile.id));
     for (const [id, view] of this.projectileViews) {
       if (!active.has(id)) {
         view.object.destroy();
         this.projectileViews.delete(id);
       }
     }
-    for (const projectile of snapshot.projectiles) {
+    for (const projectile of lifecycleSnapshot.projectiles) {
       let view = this.projectileViews.get(projectile.id);
       if (!view) {
-        const owner = snapshot.players.find((player) => player.id === projectile.ownerId);
+        const owner = lifecycleSnapshot.players.find((player) => player.id === projectile.ownerId);
         const color = Phaser.Display.Color.HexStringToColor(owner?.color ?? "#ffffff").color;
         const object = this.add.circle(projectile.x, projectile.y, 9, color, 1).setStrokeStyle(3, 0xffffff, 0.75);
-        view = { object, targetX: projectile.x, targetY: projectile.y };
+        view = { object };
         this.projectileViews.set(projectile.id, view);
       }
-      view.targetX = projectile.x;
-      view.targetY = projectile.y;
+      const start = older.projectiles.find((candidate) => candidate.id === projectile.id) ?? projectile;
+      const end = newer.projectiles.find((candidate) => candidate.id === projectile.id) ?? start;
+      view.object.setPosition(
+        Phaser.Math.Linear(start.x, end.x, alpha),
+        Phaser.Math.Linear(start.y, end.y, alpha),
+      );
     }
+  }
+
+  private applyInterpolatedPositions(older: GameSnapshot, newer: GameSnapshot, alpha: number): void {
+    for (const [id, view] of this.playerViews) {
+      if (id === this.localPlayerId) continue;
+      const olderPlayer = older.players.find((player) => player.id === id);
+      const newerPlayer = newer.players.find((player) => player.id === id);
+      if (!olderPlayer && !newerPlayer) continue;
+      const start = olderPlayer ?? newerPlayer!;
+      const end = newerPlayer ?? olderPlayer!;
+      view.container.setPosition(
+        Phaser.Math.Linear(start.x, end.x, alpha),
+        Phaser.Math.Linear(start.y, end.y, alpha),
+      );
+    }
+  }
+
+  private consumeCorrection(object: Phaser.GameObjects.Container, deltaMs: number): void {
+    const result = consumePositionCorrection(
+      { x: object.x, y: object.y },
+      this.correctionRemaining,
+      deltaMs,
+    );
+    object.setPosition(result.position.x, result.position.y);
+    this.correctionRemaining = result.remaining;
   }
 }
