@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { firstWallHit, moveCircleSafely, sweepCircleRect } from "../src/shared/collision";
+import { circleHitsRect } from "../src/shared/math";
 import type { Rect } from "../src/shared/protocol";
 
 describe("continuous collision primitives", () => {
@@ -68,5 +69,16 @@ describe("continuous collision primitives", () => {
 
   it("clamps movement to arena bounds", () => {
     expect(moveCircleSafely({ x: 5, y: 195 }, { x: -30, y: 30 }, 10, [], { width: 300, height: 200 })).toEqual({ x: 10, y: 190 });
+  });
+
+  it("keeps depenetration clear of a wall at the arena boundary", () => {
+    const wall = { x: 0, y: 0, width: 100, height: 100 };
+    const result = moveCircleSafely({ x: 5, y: 50 }, { x: 0, y: 0 }, 10, [wall], { width: 300, height: 200 });
+
+    expect(result.x).toBeGreaterThanOrEqual(10);
+    expect(result.x).toBeLessThanOrEqual(290);
+    expect(result.y).toBeGreaterThanOrEqual(10);
+    expect(result.y).toBeLessThanOrEqual(190);
+    expect(circleHitsRect(result, 10, wall)).toBe(false);
   });
 });

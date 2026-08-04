@@ -99,16 +99,50 @@ export function firstWallHit(
   return nearest;
 }
 
-function depenetrate(position: Vec2, radius: number, walls: readonly Rect[]): Vec2 {
-  let result = { ...position };
+function clampToBounds(position: Vec2, radius: number, bounds: { width: number; height: number }): Vec2 {
+  const minX = radius;
+  const maxX = Math.max(radius, bounds.width - radius);
+  const minY = radius;
+  const maxY = Math.max(radius, bounds.height - radius);
+  return {
+    x: Math.min(maxX, Math.max(minX, position.x)),
+    y: Math.min(maxY, Math.max(minY, position.y)),
+  };
+}
+
+function depenetrate(
+  position: Vec2,
+  radius: number,
+  walls: readonly Rect[],
+  bounds: { width: number; height: number },
+): Vec2 {
+  let result = clampToBounds(position, radius, bounds);
+  const bounded = (candidate: Vec2): boolean => {
+    const clamped = clampToBounds(candidate, radius, bounds);
+    return clamped.x === candidate.x && clamped.y === candidate.y;
+  };
   for (let pass = 0; pass < walls.length + 1; pass += 1) {
     let moved = false;
     for (const wall of walls) {
       const box = expanded(wall, radius);
       if (result.x < box.x || result.x > box.x + box.width || result.y < box.y || result.y > box.y + box.height) continue;
-      const normal = interiorNormal(result, box);
-      if (normal.x !== 0) result = { x: result.x + normal.x * (Math.abs(normal.x === -1 ? result.x - box.x : box.x + box.width - result.x) + SKIN), y: result.y };
-      else result = { x: result.x, y: result.y + normal.y * (Math.abs(normal.y === -1 ? result.y - box.y : box.y + box.height - result.y) + SKIN) };
+      const candidates = [
+        { x: box.x - SKIN, y: result.y },
+        { x: box.x + box.width + SKIN, y: result.y },
+        { x: result.x, y: box.y - SKIN },
+        { x: result.x, y: box.y + box.height + SKIN },
+      ].filter(bounded);
+      if (candidates.length === 0) continue;
+      let nearest = candidates[0]!;
+      let nearestDistance = (nearest.x - result.x) ** 2 + (nearest.y - result.y) ** 2;
+      for (const candidate of candidates.slice(1)) {
+        const distance = (candidate.x - result.x) ** 2 + (candidate.y - result.y) ** 2;
+        if (distance < nearestDistance) {
+          nearest = candidate;
+          nearestDistance = distance;
+        }
+      }
+      result = nearest;
       moved = true;
     }
     if (!moved) break;
@@ -123,7 +157,7 @@ export function moveCircleSafely(
   walls: readonly Rect[],
   bounds: { width: number; height: number },
 ): Vec2 {
-  let position = depenetrate(start, radius, walls);
+  let position = depenetrate(start, radius, walls, bounds);
   const horizontal = { x: delta.x, y: 0 };
   if (horizontal.x !== 0) {
     const hit = firstWallHit(position, horizontal, radius, walls);
@@ -137,12 +171,6 @@ export function moveCircleSafely(
     else position = { x: position.x, y: position.y + vertical.y };
   }
 
-  const minX = radius;
-  const maxX = Math.max(radius, bounds.width - radius);
-  const minY = radius;
-  const maxY = Math.max(radius, bounds.height - radius);
-  return {
-    x: Math.min(maxX, Math.max(minX, position.x)),
-    y: Math.min(maxY, Math.max(minY, position.y)),
-  };
+  position = clampToBounds(position, radius, bounds);
+  return depenetrate(position, radius, walls, bounds);
 }
