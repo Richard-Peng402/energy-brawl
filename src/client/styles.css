@@ -400,6 +400,16 @@ button:disabled {
   inset: 0;
 }
 
+.arena-screen,
+.game-root,
+.control-layer,
+.touch-zone {
+  touch-action: none;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .game-root {
   background: #101419;
 }
@@ -552,27 +562,45 @@ button:disabled {
   z-index: 20;
 }
 
+.touch-zone {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  pointer-events: auto;
+}
+
+.move-zone {
+  left: 0;
+}
+
+.aim-zone {
+  right: 0;
+}
+
 .virtual-stick {
   position: absolute;
-  bottom: max(20px, env(safe-area-inset-bottom));
-  width: min(18vw, 154px);
-  height: min(18vw, 154px);
-  min-width: 112px;
-  min-height: 112px;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  width: 128px;
+  height: 128px;
+  margin: -64px 0 0 -64px;
+  opacity: 0;
   border: 2px solid rgb(255 255 255 / 35%);
   border-radius: 50%;
   background: rgb(13 17 21 / 48%);
-  pointer-events: auto;
-  touch-action: none;
+  pointer-events: none;
   user-select: none;
+  transition: opacity 80ms linear;
 }
 
-.move-stick {
-  left: max(24px, env(safe-area-inset-left));
+.virtual-stick.is-active {
+  opacity: 1;
 }
 
 .aim-stick {
-  right: max(24px, env(safe-area-inset-right));
   border-color: rgb(255 90 95 / 55%);
 }
 
@@ -917,14 +945,6 @@ button:disabled {
 
   .roster-slot {
     height: 45px;
-  }
-
-  .virtual-stick {
-    width: 116px;
-    height: 116px;
-    min-width: 116px;
-    min-height: 116px;
-    bottom: max(12px, env(safe-area-inset-bottom));
   }
 
   .self-status,

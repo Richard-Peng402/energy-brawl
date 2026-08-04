@@ -13,8 +13,6 @@ interface PlayerView {
   name: Phaser.GameObjects.Text;
   healthFill: Phaser.GameObjects.Rectangle;
   shield: Phaser.GameObjects.Arc;
-  targetX: number;
-  targetY: number;
   lastHealth: number;
 }
 
@@ -130,6 +128,14 @@ class ArenaScene extends Phaser.Scene {
   applySnapshot(snapshot: GameSnapshot): void {
     if (this.snapshot && snapshot.serverTime < this.snapshot.serverTime) return;
     if (this.snapshot === snapshot) return;
+    if (
+      this.snapshot &&
+      snapshot.serverTime === this.snapshot.serverTime &&
+      snapshot.phase === this.snapshot.phase &&
+      snapshot.holderId === this.snapshot.holderId &&
+      snapshot.finishedAt === this.snapshot.finishedAt &&
+      snapshot.winnerIds.join(",") === this.snapshot.winnerIds.join(",")
+    ) return;
     const advancesAnchor = shouldAdvanceSnapshotAnchor(this.snapshot?.serverTime ?? null, snapshot.serverTime);
     this.snapshot = snapshot;
     this.snapshotBuffer.push(snapshot);
@@ -215,8 +221,6 @@ class ArenaScene extends Phaser.Scene {
           };
         }
       }
-      view.targetX = player.x;
-      view.targetY = player.y;
       view.aim.rotation = player.angle;
       view.container.setAlpha(player.alive ? 1 : 0.18);
       view.name.setText(player.isBot ? `${player.nickname} · AI` : player.nickname);
@@ -257,8 +261,6 @@ class ArenaScene extends Phaser.Scene {
       name,
       healthFill,
       shield,
-      targetX: player.x,
-      targetY: player.y,
       lastHealth: player.health,
     };
     this.playerViews.set(player.id, view);

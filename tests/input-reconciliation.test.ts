@@ -58,6 +58,13 @@ describe("input reconciler", () => {
     expect(result.position).toEqual({ x: 300, y: 300 });
     expect(result.correctionDistance).toBe(0);
   });
+
+  it("bounds pending input history when acknowledgements stop arriving", () => {
+    const reconciler = new InputReconciler();
+    for (let seq = 1; seq <= 241; seq += 1) reconciler.add(input(seq, 1, 0), 33);
+
+    expect(reconciler.pendingCount).toBe(0);
+  });
 });
 
 function input(seq: number, moveX: number, moveY: number) {

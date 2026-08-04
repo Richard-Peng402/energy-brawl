@@ -7,6 +7,7 @@ export interface TimedInput {
 }
 
 const HARD_CORRECTION_DISTANCE = 80;
+export const MAX_PENDING_INPUTS = 240;
 
 export function consumePositionCorrection(
   position: Vec2,
@@ -31,8 +32,16 @@ export class InputReconciler {
   private predictedPosition: Vec2 | null = null;
   hardCorrectionCount = 0;
 
+  get pendingCount(): number {
+    return this.pending.length;
+  }
+
   add(input: PlayerInput, deltaMs: number): void {
     if (!Number.isSafeInteger(input.seq) || input.seq < 0 || !Number.isFinite(deltaMs) || deltaMs < 0) return;
+    if (this.pending.length >= MAX_PENDING_INPUTS) {
+      this.reset();
+      return;
+    }
     const duplicateIndex = this.pending.findIndex((entry) => entry.input.seq === input.seq);
     const entry = { input: { ...input }, deltaMs };
     if (duplicateIndex >= 0) this.pending[duplicateIndex] = entry;

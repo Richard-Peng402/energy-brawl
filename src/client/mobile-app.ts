@@ -19,9 +19,10 @@ export class MobileApp {
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = mobileTemplate();
-    this.moveStick = new VirtualStick(this.find("#move-stick"));
-    this.aimStick = new VirtualStick(this.find("#aim-stick"));
+    this.moveStick = new VirtualStick(this.find("#move-zone"), this.find("#move-stick"));
+    this.aimStick = new VirtualStick(this.find("#aim-zone"), this.find("#aim-stick"));
     this.bindActions();
+    this.bindArenaGestures();
     this.network.subscribe(() => this.render());
     requestAnimationFrame(this.inputLoop);
   }
@@ -55,10 +56,28 @@ export class MobileApp {
     });
   }
 
+  private bindArenaGestures(): void {
+    const arena = this.find("#arena-screen");
+    arena.addEventListener("gesturestart", (event) => event.preventDefault());
+    arena.addEventListener("dblclick", (event) => event.preventDefault());
+    let lastTouchEndAt = 0;
+    arena.addEventListener("touchend", (event) => {
+      const now = performance.now();
+      if (now - lastTouchEndAt < 300) event.preventDefault();
+      lastTouchEndAt = now;
+    }, { passive: false });
+  }
+
   private render(): void {
     this.renderConnection();
     this.renderColors();
     this.renderRoster();
+
+    if (!this.network.playerSessionReady) {
+      this.renderer?.resetLocalInputs();
+      this.acceptingInput = false;
+      this.lastInputSentAt = 0;
+    }
 
     const phase = this.network.room?.phase ?? "lobby";
     const inGame = phase === "playing" || phase === "overtime" || phase === "finished";
@@ -262,8 +281,10 @@ function mobileTemplate(): string {
           <div id="respawn-state" class="respawn-state is-hidden"></div>
         </div>
         <div class="control-layer">
-          <div id="move-stick" class="virtual-stick move-stick" aria-label="移动摇杆"><div class="stick-mark">MOVE</div><div class="stick-knob"></div></div>
-          <div id="aim-stick" class="virtual-stick aim-stick" aria-label="瞄准摇杆"><div class="stick-mark">FIRE</div><div class="stick-knob"></div></div>
+          <div id="move-zone" class="touch-zone move-zone" aria-label="移动摇杆"></div>
+          <div id="aim-zone" class="touch-zone aim-zone" aria-label="瞄准摇杆"></div>
+          <div id="move-stick" class="virtual-stick move-stick"><div class="stick-mark">MOVE</div><div class="stick-knob"></div></div>
+          <div id="aim-stick" class="virtual-stick aim-stick"><div class="stick-mark">FIRE</div><div class="stick-knob"></div></div>
         </div>
         <div id="results-overlay" class="results-overlay is-hidden">
           <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-list" class="result-list"></div><p>等待主机开启下一局</p></div>
