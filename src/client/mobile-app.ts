@@ -200,6 +200,7 @@ export class MobileApp {
       const move = this.moveStick.getValue();
       const aim = this.aimStick.getValue();
       this.renderer?.setLocalInput(move);
+      this.renderer?.setLocalAim(aim);
       if (time - this.lastInputSentAt >= 33) {
         const input = {
           seq: ++this.inputSequence,
@@ -218,6 +219,7 @@ export class MobileApp {
       if (this.acceptingInput) this.renderer?.resetLocalInputs();
       this.lastInputSentAt = 0;
       this.renderer?.setLocalInput({ x: 0, y: 0 });
+      this.renderer?.setLocalAim({ x: 0, y: 0 });
     }
     this.acceptingInput = acceptingInput;
     requestAnimationFrame(this.inputLoop);

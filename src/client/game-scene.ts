@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 
-import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, WALLS } from "../shared/constants";
+import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_LIFETIME_MS, PROJECTILE_SPEED, VIEW_HEIGHT, VIEW_WIDTH, WALLS } from "../shared/constants";
 import type { GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import { calculateAimGuide } from "./aim-guide";
 import { consumePositionCorrection, InputReconciler } from "./input-reconciliation";
 import { predictLocalPosition } from "./prediction";
 import { shouldAdvanceSnapshotAnchor, SnapshotBuffer } from "./snapshot-buffer";
@@ -29,8 +30,8 @@ export class GameRenderer {
     this.game = new Phaser.Game({
       type: Phaser.AUTO,
       parent: container,
-      width: ARENA_WIDTH,
-      height: ARENA_HEIGHT,
+      width: VIEW_WIDTH,
+      height: VIEW_HEIGHT,
       backgroundColor: "#101419",
       scene: this.scene,
       transparent: false,
@@ -58,6 +59,10 @@ export class GameRenderer {
     this.scene.setLocalInput(input);
   }
 
+  setLocalAim(input: Vec2): void {
+    this.scene.setLocalAim(input);
+  }
+
   addLocalInput(input: PlayerInput, deltaMs: number): void {
     this.scene.addLocalInput(input, deltaMs);
   }
@@ -83,6 +88,9 @@ class ArenaScene extends Phaser.Scene {
   private readonly inputReconciler = new InputReconciler();
   private snapshot: GameSnapshot | null = null;
   private localInput: Vec2 = { x: 0, y: 0 };
+  private localAim: Vec2 = { x: 0, y: 0 };
+  private aimCorridor: Phaser.GameObjects.Rectangle | null = null;
+  private aimEnd: Phaser.GameObjects.Arc | null = null;
   private latestSnapshotReceivedAt = 0;
   private renderDelayMs = 100;
   private correctionRemaining: Vec2 = { x: 0, y: 0 };
@@ -99,6 +107,9 @@ class ArenaScene extends Phaser.Scene {
 
   create(): void {
     this.drawArena();
+    this.cameras.main.setBounds(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
+    this.aimCorridor = this.add.rectangle(0, 0, 1, 64, 0xff5a5f, 0.2).setOrigin(0, 0.5).setDepth(8).setVisible(false);
+    this.aimEnd = this.add.circle(0, 0, 18, 0xff5a5f, 0.12).setStrokeStyle(4, 0xffd4d5, 0.8).setDepth(9).setVisible(false);
     this.ready = true;
     if (this.snapshot) this.syncSnapshot(this.snapshot);
   }
@@ -123,6 +134,7 @@ class ArenaScene extends Phaser.Scene {
       }
       if (id === this.localPlayerId) this.consumeCorrection(view.container, delta);
     }
+    this.updateAimGuide();
   }
 
   applySnapshot(snapshot: GameSnapshot): void {
@@ -152,6 +164,10 @@ class ArenaScene extends Phaser.Scene {
     this.localInput = input;
   }
 
+  setLocalAim(input: Vec2): void {
+    this.localAim = input;
+  }
+
   addLocalInput(input: PlayerInput, deltaMs: number): void {
     this.inputReconciler.add(input, deltaMs);
   }
@@ -163,6 +179,7 @@ class ArenaScene extends Phaser.Scene {
   resetLocalInputs(): void {
     this.inputReconciler.reset();
     this.localInput = { x: 0, y: 0 };
+    this.localAim = { x: 0, y: 0 };
     this.correctionRemaining = { x: 0, y: 0 };
   }
 
@@ -183,6 +200,11 @@ class ArenaScene extends Phaser.Scene {
     lanes.strokeCircle(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, 178);
     lanes.lineStyle(3, 0x31d0aa, 0.14);
     lanes.strokeRoundedRect(110, 90, ARENA_WIDTH - 220, ARENA_HEIGHT - 180, 70);
+    lanes.lineStyle(18, 0x4da3ff, 0.08);
+    lanes.lineBetween(180, ARENA_HEIGHT / 2, 720, ARENA_HEIGHT / 2);
+    lanes.lineBetween(ARENA_WIDTH - 720, ARENA_HEIGHT / 2, ARENA_WIDTH - 180, ARENA_HEIGHT / 2);
+    lanes.lineStyle(10, 0xff5a5f, 0.07);
+    lanes.strokeRoundedRect(820, 405, 520, 405, 48);
 
     this.add.image(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "arena-sigil").setAlpha(0.15).setScale(1.35);
     for (const wall of WALLS) {
@@ -220,6 +242,8 @@ class ArenaScene extends Phaser.Scene {
             y: reconciliation.position.y - current.y,
           };
         }
+        if (snapshot.phase === "finished") this.cameras.main.stopFollow();
+        else this.cameras.main.startFollow(view.container, true, 0.12, 0.12);
       }
       view.aim.rotation = player.angle;
       view.container.setAlpha(player.alive ? 1 : 0.18);
@@ -347,5 +371,16 @@ class ArenaScene extends Phaser.Scene {
     );
     object.setPosition(result.position.x, result.position.y);
     this.correctionRemaining = result.remaining;
+  }
+
+  private updateAimGuide(): void {
+    if (!this.aimCorridor || !this.aimEnd || !this.snapshot) return;
+    const view = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : null;
+    const player = this.snapshot.players.find((candidate) => candidate.id === this.localPlayerId);
+    const guide = view && player?.alive && this.snapshot.phase !== "finished"
+      ? calculateAimGuide(view.container, this.localAim, PROJECTILE_SPEED * PROJECTILE_LIFETIME_MS / 1_000, WALLS)
+      : { start: { x: 0, y: 0 }, end: { x: 0, y: 0 }, angle: 0, length: 0, visible: false };
+    this.aimCorridor.setVisible(guide.visible).setPosition(guide.start.x, guide.start.y).setRotation(guide.angle).setSize(guide.length, 64).setDisplaySize(guide.length, 64);
+    this.aimEnd.setVisible(guide.visible).setPosition(guide.end.x, guide.end.y);
   }
 }
