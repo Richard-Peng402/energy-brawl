@@ -1,4 +1,4 @@
-import { PLAYER_COLORS, TARGET_SCORE } from "../shared/constants";
+import { LOBBY_RETURN_DELAY_MS, PLAYER_COLORS, TARGET_SCORE } from "../shared/constants";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { GameRenderer } from "./game-scene";
 import { GameNetworkClient } from "./network";
@@ -16,6 +16,10 @@ export class MobileApp {
   private lastInputSentAt = 0;
   private acceptingInput = false;
   private toastTimer = 0;
+  private lastFrameAt = 0;
+  private hintWindowAt = 0;
+  private frameIntervals: number[] = [];
+  private slowFrameWindows = 0;
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = mobileTemplate();
@@ -53,6 +57,10 @@ export class MobileApp {
       const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
       const result = await this.network.setReady(!ownSeat?.ready);
       if (!result.ok) this.showToast(result.error ?? "无法修改准备状态");
+    });
+    this.find<HTMLButtonElement>("#return-lobby").addEventListener("click", async () => {
+      const result = await this.network.returnToLobby();
+      if (!result.ok) this.showToast(result.error ?? "无法返回大厅");
     });
   }
 
@@ -155,7 +163,10 @@ export class MobileApp {
     this.find<HTMLElement>("#health-fill").style.width = `${own ? (own.health / own.maxHealth) * 100 : 0}%`;
     this.find("#health-value").textContent = own?.alive ? `${own.health}` : "0";
     this.find("#target-score").textContent = `${TARGET_SCORE}`;
-    this.find("#match-clock").textContent = snapshot.phase === "overtime" ? "加时" : formatTime(snapshot.remainingMs);
+    const holder = snapshot.holderId ? snapshot.players.find((player) => player.id === snapshot.holderId) : null;
+    this.find("#match-clock").textContent = holder && snapshot.holdRemainingMs !== null
+      ? `${holder.nickname} ${Math.ceil(snapshot.holdRemainingMs / 1_000)}s`
+      : snapshot.phase === "overtime" ? "加时" : formatTime(snapshot.remainingMs);
     this.find("#leaderboard").innerHTML = leaders
       .slice(0, 4)
       .map(
@@ -186,6 +197,8 @@ export class MobileApp {
         </div>`,
       )
       .join("");
+    const countdown = Math.max(0, (snapshot.finishedAt ?? snapshot.serverTime) + LOBBY_RETURN_DELAY_MS - snapshot.serverTime);
+    this.find("#return-countdown").textContent = `${Math.ceil(countdown / 1_000)}s 后自动回大厅`;
   }
 
   private ensureRenderer(): void {
@@ -193,6 +206,20 @@ export class MobileApp {
   }
 
   private readonly inputLoop = (time: number): void => {
+    if (this.lastFrameAt > 0) {
+      this.frameIntervals.push(time - this.lastFrameAt);
+      if (this.frameIntervals.length > 120) this.frameIntervals.shift();
+    }
+    this.lastFrameAt = time;
+    if (time - this.hintWindowAt >= 2_000 && this.frameIntervals.length >= 20) {
+      const sorted = [...this.frameIntervals].sort((a, b) => a - b);
+      const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? 0;
+      if (p95 > 24) this.slowFrameWindows += 1;
+      else this.slowFrameWindows = 0;
+      this.network.sendPerformanceHint({ snapshotMode: this.slowFrameWindows >= 2 ? "reduced" : "full", frameP95Ms: p95 });
+      this.hintWindowAt = time;
+      this.frameIntervals = [];
+    }
     const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
     const activePhase = this.network.game?.phase === "playing" || this.network.game?.phase === "overtime";
     const acceptingInput = this.network.connected && this.network.playerSessionReady && ownSeat?.connected === true && ownSeat.isBot === false && activePhase;
@@ -289,7 +316,7 @@ function mobileTemplate(): string {
           <div id="aim-stick" class="virtual-stick aim-stick"><div class="stick-mark">FIRE</div><div class="stick-knob"></div></div>
         </div>
         <div id="results-overlay" class="results-overlay is-hidden">
-          <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-list" class="result-list"></div><p>等待主机开启下一局</p></div>
+          <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-list" class="result-list"></div><p id="return-countdown"></p><button id="return-lobby" class="primary-button" type="button">返回大厅</button></div>
         </div>
       </section>
       <div id="toast" class="toast" role="status"></div>

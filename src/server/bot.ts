@@ -4,7 +4,7 @@ import type { GameWorld, WorldPlayer } from "./simulation";
 
 const RETREAT_HEALTH = 35;
 const RETREAT_DISTANCE_SQUARED = 500 * 500;
-const FIRE_DISTANCE_SQUARED = 680 * 680;
+const FIRE_DISTANCE_SQUARED = 520 * 520;
 
 export function chooseBotInput(
   world: GameWorld,
@@ -66,6 +66,6 @@ function nearestPoint<T extends Vec2>(origin: Vec2, points: T[]): T | undefined 
 
 function imperfectAim(origin: Vec2, target: Vec2, random: () => number): Vec2 {
   const perfectAngle = Math.atan2(target.y - origin.y, target.x - origin.x);
-  const error = (random() - 0.5) * 0.2;
+  const error = (random() - 0.5) * 0.44;
   return { x: Math.cos(perfectAngle + error), y: Math.sin(perfectAngle + error) };
 }
