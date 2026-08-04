@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   ENERGY_SCORE,
+  HOLD_DURATION_MS,
+  HOLDER_KILL_BONUS,
+  KILL_SCORE,
   MATCH_DURATION_MS,
   MAX_HEALTH,
   PLAYER_RADIUS,
@@ -44,7 +47,7 @@ describe("authoritative simulation", () => {
     expect(world.players.get("blue")?.health).toBe(MAX_HEALTH);
   });
 
-  it("collects energy and ends immediately at fifteen points", () => {
+  it("starts a thirty-second hold for the unique leader at fifteen points", () => {
     const world = createWorld();
     const player = world.players.get("red")!;
     player.score = TARGET_SCORE - ENERGY_SCORE;
@@ -54,8 +57,102 @@ describe("authoritative simulation", () => {
 
     expect(player.energyCollected).toBe(1);
     expect(player.score).toBe(TARGET_SCORE);
+    expect(world.phase).toBe("playing");
+    expect(world.holderId).toBe("red");
+    expect(world.holdRemainingMs).toBe(HOLD_DURATION_MS);
+  });
+
+  it("continues and completes a hold while the holder stays uniquely ahead", () => {
+    const world = createWorld();
+    const player = world.players.get("red")!;
+    player.score = TARGET_SCORE - ENERGY_SCORE;
+    collectEnergy(world, "red", [...world.energy.keys()][0]!);
+
+    stepWorld(world, 10_000);
+
+    expect(world.phase).toBe("playing");
+    expect(world.holderId).toBe("red");
+    expect(world.holdRemainingMs).toBe(HOLD_DURATION_MS - 10_000);
+
+    stepWorld(world, HOLD_DURATION_MS - 10_000);
+
     expect(world.phase).toBe("finished");
     expect(world.winnerIds).toEqual(["red"]);
+    expect(world.finishedAt).toBe(world.now);
+  });
+
+  it("does not consume hold time in the frame that creates a new holder", () => {
+    const world = createWorld();
+    const player = world.players.get("red")!;
+    const energy = [...world.energy.values()][0]!;
+    player.score = TARGET_SCORE - ENERGY_SCORE;
+    player.x = energy.x;
+    player.y = energy.y;
+
+    stepWorld(world, 1_000);
+
+    expect(world.holderId).toBe("red");
+    expect(world.holdRemainingMs).toBe(HOLD_DURATION_MS);
+  });
+
+  it("finishes an expiring hold before a later score in the same frame", () => {
+    const world = createWorld();
+    const holder = world.players.get("red")!;
+    const challenger = world.players.get("blue")!;
+    holder.score = TARGET_SCORE - ENERGY_SCORE;
+    challenger.score = TARGET_SCORE - ENERGY_SCORE;
+    collectEnergy(world, "red", [...world.energy.keys()][0]!);
+    world.holdRemainingMs = 1;
+    const energy = [...world.energy.values()][0]!;
+    challenger.x = energy.x;
+    challenger.y = energy.y;
+
+    stepWorld(world, 16);
+
+    expect(world.phase).toBe("finished");
+    expect(world.winnerIds).toEqual(["red"]);
+    expect(challenger.score).toBe(TARGET_SCORE - ENERGY_SCORE);
+  });
+
+  it("cancels the hold when another player ties the holder", () => {
+    const world = createWorld();
+    world.players.get("red")!.score = TARGET_SCORE - ENERGY_SCORE;
+    world.players.get("blue")!.score = TARGET_SCORE - ENERGY_SCORE;
+    const [firstEnergy, secondEnergy] = [...world.energy.keys()];
+    collectEnergy(world, "red", firstEnergy!);
+
+    collectEnergy(world, "blue", secondEnergy!);
+
+    expect(world.holderId).toBeNull();
+    expect(world.holdRemainingMs).toBeNull();
+    expect(world.phase).toBe("playing");
+  });
+
+  it("starts a fresh hold when a different player becomes the unique leader", () => {
+    const world = createWorld();
+    world.players.get("red")!.score = TARGET_SCORE - ENERGY_SCORE;
+    world.players.get("blue")!.score = TARGET_SCORE - ENERGY_SCORE;
+    const [firstEnergy, secondEnergy] = [...world.energy.keys()];
+    collectEnergy(world, "red", firstEnergy!);
+    stepWorld(world, 5_000);
+    world.players.get("blue")!.score = TARGET_SCORE;
+
+    collectEnergy(world, "blue", secondEnergy!);
+
+    expect(world.holderId).toBe("blue");
+    expect(world.holdRemainingMs).toBe(HOLD_DURATION_MS);
+  });
+
+  it("awards an extra point for defeating the active holder", () => {
+    const world = createWorld();
+    const holder = world.players.get("red")!;
+    holder.score = TARGET_SCORE - ENERGY_SCORE;
+    collectEnergy(world, "red", [...world.energy.keys()][0]!);
+    holder.shieldUntil = 0;
+
+    damagePlayer(world, "red", "blue", MAX_HEALTH);
+
+    expect(world.players.get("blue")!.score).toBe(KILL_SCORE + HOLDER_KILL_BONUS);
   });
 
   it("enters overtime for tied leaders and ends on their next score", () => {
@@ -73,6 +170,103 @@ describe("authoritative simulation", () => {
 
     expect(world.phase).toBe("finished");
     expect(world.winnerIds).toEqual(["red"]);
+  });
+
+  it("does not allow scoring or damage after sudden death finishes", () => {
+    const world = createWorld();
+    world.players.get("red")!.score = 8;
+    world.players.get("blue")!.score = 8;
+    stepWorld(world, MATCH_DURATION_MS);
+    const [winningEnergy, lateEnergy] = [...world.energy.keys()];
+    collectEnergy(world, "red", winningEnergy!);
+    const lateScorer = world.players.get("blue")!;
+    const winner = world.players.get("red")!;
+    winner.shieldUntil = 0;
+
+    expect(collectEnergy(world, "blue", lateEnergy!)).toBe(false);
+    expect(damagePlayer(world, "red", "blue", MAX_HEALTH)).toBe(false);
+    expect(lateScorer.score).toBe(8);
+    expect(winner.health).toBe(MAX_HEALTH);
+    expect(world.winnerIds).toEqual(["red"]);
+  });
+
+  it("rejects player input after the match is finished", () => {
+    const world = createWorld();
+    world.players.get("red")!.score = 8;
+    world.players.get("blue")!.score = 8;
+    stepWorld(world, MATCH_DURATION_MS);
+    collectEnergy(world, "red", [...world.energy.keys()][0]!);
+
+    expect(applyPlayerInput(world, "blue", {
+      seq: 1,
+      moveX: 1,
+      moveY: 0,
+      aimX: 1,
+      aimY: 0,
+      firing: false,
+    })).toBe(false);
+    expect(world.players.get("blue")!.lastProcessedInput).toBe(0);
+  });
+
+  it("ignores a non-leader score during sudden death", () => {
+    const world = createGameWorld([
+      { id: "red", nickname: "Red", color: "#ff0000", isBot: false },
+      { id: "blue", nickname: "Blue", color: "#0000ff", isBot: false },
+      { id: "green", nickname: "Green", color: "#00ff00", isBot: false },
+    ]);
+    world.players.get("red")!.score = 8;
+    world.players.get("blue")!.score = 8;
+    world.players.get("green")!.score = 7;
+    stepWorld(world, MATCH_DURATION_MS);
+    const [firstEnergy, secondEnergy] = [...world.energy.keys()];
+
+    collectEnergy(world, "green", firstEnergy!);
+
+    expect(world.phase).toBe("overtime");
+    collectEnergy(world, "blue", secondEnergy!);
+    expect(world.phase).toBe("finished");
+    expect(world.winnerIds).toEqual(["blue"]);
+  });
+
+  it("ends at eight minutes for the unique highest scorer without a completed hold", () => {
+    const world = createWorld();
+    world.players.get("red")!.score = 12;
+    world.players.get("blue")!.score = 10;
+
+    stepWorld(world, MATCH_DURATION_MS);
+
+    expect(world.phase).toBe("finished");
+    expect(world.winnerIds).toEqual(["red"]);
+    expect(world.finishedAt).toBe(world.now);
+  });
+
+  it("does not resolve projectile hits after the eight-minute cutoff", () => {
+    const world = createWorld();
+    const leader = world.players.get("red")!;
+    const attacker = world.players.get("blue")!;
+    leader.score = 9;
+    leader.x = 500;
+    leader.y = 200;
+    leader.health = PROJECTILE_DAMAGE;
+    leader.shieldUntil = 0;
+    attacker.score = 8;
+    world.remainingMs = 1;
+    world.projectiles.set("after-cutoff", {
+      id: "after-cutoff",
+      ownerId: "blue",
+      x: 450,
+      y: 200,
+      vx: 1000,
+      vy: 0,
+      expiresAt: world.now + 1000,
+    });
+
+    stepWorld(world, 16);
+
+    expect(world.phase).toBe("finished");
+    expect(world.winnerIds).toEqual(["red"]);
+    expect(leader.alive).toBe(true);
+    expect(attacker.score).toBe(8);
   });
 
   it("normalizes movement input before applying speed", () => {

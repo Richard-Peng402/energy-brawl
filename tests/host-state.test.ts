@@ -18,6 +18,9 @@ describe("host presentation state", () => {
       remainingMs: 200_000,
       overtimePlayerIds: [],
       winnerIds: ["player-1"],
+      holderId: null,
+      holdRemainingMs: null,
+      finishedAt: 1_000,
       players: [
         {
           ...room.players[0]!,

@@ -90,4 +90,46 @@ describe("game room", () => {
 
     expect(room.snapshot()).toMatchObject({ phase: "lobby", players: [] });
   });
+
+  it("records the finish time when the host ends a match", () => {
+    const room = new GameRoom();
+    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.tick(1_000);
+
+    room.endMatch();
+
+    expect(room.gameSnapshot()).toMatchObject({ phase: "finished", finishedAt: 1_000 });
+  });
+
+  it("keeps a finished result immutable when the host ends twice", () => {
+    const room = new GameRoom();
+    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.tick(1_000);
+    room.endMatch();
+    const firstFinish = room.gameSnapshot();
+    room.tick(1_000);
+
+    expect(room.endMatch().ok).toBe(false);
+    expect(room.gameSnapshot()).toMatchObject({
+      winnerIds: firstFinish!.winnerIds,
+      finishedAt: firstFinish!.finishedAt,
+    });
+  });
+
+  it("uses the snapshot server time for a manual finish after clock drift", () => {
+    const room = new GameRoom();
+    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    room.setReady("socket-1", true);
+    room.startMatch();
+    room.tick(960_000);
+
+    expect(room.endMatch().ok).toBe(true);
+
+    const snapshot = room.gameSnapshot()!;
+    expect(snapshot.finishedAt).toBe(snapshot.serverTime);
+  });
 });

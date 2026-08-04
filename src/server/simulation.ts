@@ -6,6 +6,8 @@ import {
   ENERGY_SCORE,
   ENERGY_SPAWN_POINTS,
   FIRE_COOLDOWN_MS,
+  HOLD_DURATION_MS,
+  HOLDER_KILL_BONUS,
   KILL_SCORE,
   MATCH_DURATION_MS,
   MAX_ENERGY,
@@ -57,6 +59,9 @@ export interface GameWorld {
   remainingMs: number;
   overtimePlayerIds: string[];
   winnerIds: string[];
+  holderId: string | null;
+  holdRemainingMs: number | null;
+  finishedAt: number | null;
   players: Map<string, WorldPlayer>;
   projectiles: Map<string, WorldProjectile>;
   energy: Map<string, EnergySnapshot>;
@@ -110,6 +115,9 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
     remainingMs: MATCH_DURATION_MS,
     overtimePlayerIds: [],
     winnerIds: [],
+    holderId: null,
+    holdRemainingMs: null,
+    finishedAt: null,
     players,
     projectiles: new Map(),
     energy: new Map(),
@@ -124,6 +132,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
 }
 
 export function applyPlayerInput(world: GameWorld, playerId: string, input: PlayerInput): boolean {
+  if (world.phase === "finished") return false;
   const player = world.players.get(playerId);
   if (!player || input.seq <= player.lastProcessedInput) return false;
 
@@ -141,27 +150,39 @@ export function applyPlayerInput(world: GameWorld, playerId: string, input: Play
 
 export function stepWorld(world: GameWorld, deltaMs: number): void {
   if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
-  const safeDelta = Math.min(deltaMs, MATCH_DURATION_MS);
-  world.now += safeDelta;
-
   if (world.phase === "finished") return;
 
-  if (world.phase === "playing") {
-    world.remainingMs = Math.max(0, world.remainingMs - safeDelta);
+  const requestedDelta = Math.min(deltaMs, MATCH_DURATION_MS);
+  const simulationDelta = world.phase === "playing"
+    ? Math.min(requestedDelta, world.remainingMs)
+    : requestedDelta;
+  if (simulationDelta <= 0) {
+    if (world.phase === "playing" && world.remainingMs === 0) finishNormalTime(world);
+    return;
   }
+  world.now += simulationDelta;
+
+  if (world.phase === "playing") {
+    world.remainingMs = Math.max(0, world.remainingMs - simulationDelta);
+  }
+
+  advanceHold(world, simulationDelta);
+  if (isFinished(world)) return;
 
   for (const player of world.players.values()) {
     if (!player.alive) {
       if (player.respawnAt !== null && world.now >= player.respawnAt) respawnPlayer(world, player);
       continue;
     }
-    movePlayer(world, player, safeDelta);
+    movePlayer(world, player, simulationDelta);
     updateAimAndFire(world, player);
   }
 
   resolvePlayerSeparation(world);
-  advanceProjectiles(world, safeDelta);
+  advanceProjectiles(world, simulationDelta);
+  if (isFinished(world)) return;
   collectTouchedEnergy(world);
+  if (isFinished(world)) return;
   replenishEnergy(world);
 
   if (world.phase === "playing" && world.remainingMs === 0) finishNormalTime(world);
@@ -173,6 +194,7 @@ export function damagePlayer(
   attackerId: string,
   amount: number,
 ): boolean {
+  if (world.phase === "finished") return false;
   const victim = world.players.get(victimId);
   if (!victim?.alive || victim.shieldUntil > world.now || amount <= 0 || !Number.isFinite(amount)) return false;
 
@@ -187,21 +209,22 @@ export function damagePlayer(
 
   const attacker = world.players.get(attackerId);
   if (attacker && attacker.id !== victim.id) {
-    attacker.score += KILL_SCORE;
+    attacker.score += KILL_SCORE + (world.holderId === victim.id ? HOLDER_KILL_BONUS : 0);
     attacker.kills += 1;
-    checkScoreWin(world, attacker.id);
+    handleScoreChange(world, attacker.id);
   }
   return true;
 }
 
 export function collectEnergy(world: GameWorld, playerId: string, energyId: string): boolean {
+  if (world.phase === "finished") return false;
   const player = world.players.get(playerId);
   if (!player?.alive || !world.energy.delete(energyId)) return false;
 
   player.score += ENERGY_SCORE;
   player.energyCollected += 1;
   world.nextEnergySpawnAt = Math.max(world.nextEnergySpawnAt, world.now + ENERGY_RESPAWN_MS);
-  checkScoreWin(world, player.id);
+  handleScoreChange(world, player.id);
   return true;
 }
 
@@ -212,6 +235,9 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     remainingMs: world.remainingMs,
     overtimePlayerIds: [...world.overtimePlayerIds],
     winnerIds: [...world.winnerIds],
+    holderId: world.holderId,
+    holdRemainingMs: world.holdRemainingMs,
+    finishedAt: world.finishedAt,
     players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, ...player }) => player),
     projectiles: [...world.projectiles.values()].map(({ expiresAt: _expiresAt, ...projectile }) => projectile),
     energy: [...world.energy.values()],
@@ -264,6 +290,7 @@ function updateAimAndFire(world: GameWorld, player: WorldPlayer): void {
 function advanceProjectiles(world: GameWorld, deltaMs: number): void {
   const frameStart = world.now - deltaMs;
   for (const projectile of [...world.projectiles.values()]) {
+    if (world.phase === "finished") break;
     const activeMs = Math.min(deltaMs, projectile.expiresAt - frameStart);
     if (activeMs <= 0) {
       world.projectiles.delete(projectile.id);
@@ -458,19 +485,55 @@ function finishNormalTime(world: GameWorld): void {
   }
   world.phase = "overtime";
   world.overtimePlayerIds = leaders;
+  world.holderId = null;
+  world.holdRemainingMs = null;
 }
 
-function checkScoreWin(world: GameWorld, scorerId: string): void {
-  const scorer = world.players.get(scorerId);
-  if (!scorer || world.phase === "finished") return;
-  if (scorer.score >= TARGET_SCORE || (world.phase === "overtime" && world.overtimePlayerIds.includes(scorerId))) {
+function handleScoreChange(world: GameWorld, scorerId: string): void {
+  if (world.phase === "finished") return;
+  if (world.phase === "overtime" && world.overtimePlayerIds.includes(scorerId)) {
     finishMatch(world, [scorerId]);
+    return;
   }
+  if (world.phase === "playing") refreshHolder(world);
+}
+
+function refreshHolder(world: GameWorld): void {
+  const players = [...world.players.values()];
+  const highestScore = Math.max(...players.map((player) => player.score));
+  const leaders = players.filter((player) => player.score === highestScore);
+  const leader = leaders.length === 1 ? leaders[0] : null;
+  if (!leader || leader.score < TARGET_SCORE) {
+    world.holderId = null;
+    world.holdRemainingMs = null;
+    return;
+  }
+
+  if (world.holderId !== leader.id || world.holdRemainingMs === null) {
+    world.holderId = leader.id;
+    world.holdRemainingMs = HOLD_DURATION_MS;
+  }
+}
+
+function advanceHold(world: GameWorld, deltaMs: number): void {
+  if (world.phase !== "playing") return;
+  if (world.holderId === null || world.holdRemainingMs === null) return;
+  const previousHolderId = world.holderId;
+  refreshHolder(world);
+  if (world.holderId !== previousHolderId || world.holdRemainingMs === null) return;
+
+  world.holdRemainingMs = Math.max(0, world.holdRemainingMs - deltaMs);
+  if (world.holdRemainingMs === 0) finishMatch(world, [world.holderId]);
+}
+
+function isFinished(world: GameWorld): boolean {
+  return world.phase === "finished";
 }
 
 function finishMatch(world: GameWorld, winnerIds: string[]): void {
   world.phase = "finished";
   world.winnerIds = winnerIds;
+  world.finishedAt = world.now;
   world.projectiles.clear();
   for (const player of world.players.values()) {
     player.input = { ...EMPTY_INPUT, seq: player.lastProcessedInput };

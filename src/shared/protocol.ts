@@ -63,6 +63,9 @@ export interface GameSnapshot {
   remainingMs: number;
   overtimePlayerIds: string[];
   winnerIds: string[];
+  holderId: string | null;
+  holdRemainingMs: number | null;
+  finishedAt: number | null;
   players: PlayerSnapshot[];
   projectiles: ProjectileSnapshot[];
   energy: EnergySnapshot[];

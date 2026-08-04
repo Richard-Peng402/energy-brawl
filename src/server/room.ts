@@ -134,8 +134,10 @@ export class GameRoom {
 
   endMatch(): Ack {
     if (!this.world) return { ok: false, error: "当前没有进行中的对局" };
+    if (this.world.phase === "finished") return { ok: false, error: "Match already finished" };
     this.world.phase = "finished";
     this.world.winnerIds = [];
+    this.world.finishedAt = this.world.now;
     this.world.projectiles.clear();
     return { ok: true };
   }
