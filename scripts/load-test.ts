@@ -12,7 +12,7 @@ await Promise.all(clients.map((client) => new Promise<void>((resolve, reject) =>
   client.once("connect_error", reject);
 })));
 await Promise.all(clients.map((client, index) => new Promise<void>((resolve) => client.emit("join", { nickname: `Load${index}`, color: PLAYER_COLORS[index] }, () => { client.emit("setReady", true, () => resolve()); }))));
-await new Promise<void>((resolve) => clients[0]!.emit("hostCommand", { token, command: "start" }, () => resolve()));
+await new Promise<void>((resolve, reject) => clients[0]!.emit("hostCommand", { token, command: "start" }, (result) => result.ok ? resolve() : reject(new Error(result.error))));
 clients.forEach((client, index) => client.on("gameState", () => { snapshots[index] += 1; }));
 const started = Date.now();
 while (Date.now() - started < seconds * 1_000) {
@@ -20,4 +20,6 @@ while (Date.now() - started < seconds * 1_000) {
   await new Promise((resolve) => setTimeout(resolve, 33));
 }
 clients.forEach((client) => client.disconnect());
-console.log(JSON.stringify({ url, seconds, clients: clients.length, snapshots }, null, 2));
+const summary = { url, seconds, clients: clients.length, snapshots, minimumSnapshots: Math.min(...snapshots) };
+process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+if (summary.minimumSnapshots < Math.max(1, seconds * 10)) process.exitCode = 1;
