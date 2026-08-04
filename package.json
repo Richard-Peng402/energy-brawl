@@ -9,6 +9,7 @@
     "dev:client": "vite",
     "build": "vite build",
     "server": "tsx src/server/index.ts",
+    "load-test": "tsx scripts/load-test.ts",
     "test": "vitest",
     "typecheck": "tsc --noEmit"
   },

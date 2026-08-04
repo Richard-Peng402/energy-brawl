@@ -15,7 +15,7 @@ const PORT = Number.parseInt(process.env.PORT ?? "3000", 10);
 const app = express();
 const httpServer = createServer(app);
 const room = new GameRoom();
-const hostToken = randomBytes(18).toString("hex");
+const hostToken = process.env.NODE_ENV === "test" ? process.env.HOST_TOKEN?.trim() || randomBytes(18).toString("hex") : randomBytes(18).toString("hex");
 const network = attachGameNetwork(httpServer, room, hostToken);
 const clientDirectory = path.resolve(process.cwd(), "dist");
 
