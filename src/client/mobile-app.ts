@@ -1,4 +1,5 @@
-import { LOBBY_RETURN_DELAY_MS, PLAYER_COLORS, TARGET_SCORE } from "../shared/constants";
+import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
+import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { GameRenderer } from "./game-scene";
 import { GameNetworkClient } from "./network";
@@ -15,7 +16,7 @@ export class MobileApp {
   private readonly touchRouter: TouchRouter;
   private readonly viewport: MobileViewport;
   private renderer: GameRenderer | null = null;
-  private selectedColor: string = PLAYER_COLORS[0];
+  private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
   private inputSequence = 0;
   private lastInputSentAt = 0;
   private acceptingInput = false;
@@ -51,7 +52,7 @@ export class MobileApp {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const value = nickname.value.trim();
-      const result = await this.network.join({ nickname: value, color: this.selectedColor });
+      const result = await this.network.join({ nickname: value, characterId: this.selectedCharacterId });
       if (result.ok) {
         localStorage.setItem(NAME_KEY, value);
       } else {
@@ -60,9 +61,9 @@ export class MobileApp {
     });
 
     this.find("#color-list").addEventListener("click", (event) => {
-      const target = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-color]");
+      const target = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-character-id]");
       if (!target || target.disabled) return;
-      this.selectedColor = target.dataset.color ?? PLAYER_COLORS[0];
+      this.selectedCharacterId = (target.dataset.characterId as CharacterId | undefined) ?? CHARACTER_CATALOG[0]!.id;
       this.renderColors();
     });
 
@@ -149,12 +150,12 @@ export class MobileApp {
   }
 
   private renderColors(): void {
-    const used = new Set(this.network.room?.players.map((player) => player.color) ?? []);
-    const ownColor = this.network.room?.players.find((player) => player.id === this.network.playerId)?.color;
-    this.find("#color-list").innerHTML = PLAYER_COLORS.map((color) => {
-      const unavailable = used.has(color) && ownColor !== color;
-      const selected = this.selectedColor === color;
-      return `<button class="color-swatch${selected ? " is-selected" : ""}" type="button" data-color="${color}" style="--swatch:${color}" aria-label="选择颜色" ${unavailable ? "disabled" : ""}></button>`;
+    const used = new Set(this.network.room?.players.map((player) => player.characterId) ?? []);
+    const ownCharacterId = this.network.room?.players.find((player) => player.id === this.network.playerId)?.characterId;
+    this.find("#color-list").innerHTML = CHARACTER_CATALOG.map((character) => {
+      const unavailable = used.has(character.id) && ownCharacterId !== character.id;
+      const selected = this.selectedCharacterId === character.id;
+      return `<button class="color-swatch${selected ? " is-selected" : ""}" type="button" data-character-id="${character.id}" style="--swatch:${character.color}" aria-label="选择${character.name}" title="${character.name}" ${unavailable ? "disabled" : ""}></button>`;
     }).join("");
   }
 

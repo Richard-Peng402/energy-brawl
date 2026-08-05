@@ -6,8 +6,8 @@ import { createGameWorld } from "../src/server/simulation";
 describe("bot decisions", () => {
   it("moves toward nearby energy when no enemy is urgent", () => {
     const world = createGameWorld([
-      { id: "bot-1", nickname: "脉冲", color: "#31d0aa", isBot: true },
-      { id: "human", nickname: "玩家", color: "#ff5a5f", isBot: false },
+      { id: "bot-1", nickname: "脉冲", characterId: "medic", isBot: true },
+      { id: "human", nickname: "玩家", characterId: "blaze", isBot: false },
     ]);
     const bot = world.players.get("bot-1")!;
     world.players.get("human")!.x = 1_400;
@@ -23,8 +23,8 @@ describe("bot decisions", () => {
 
   it("retreats from a nearby enemy at low health", () => {
     const world = createGameWorld([
-      { id: "bot-1", nickname: "脉冲", color: "#31d0aa", isBot: true },
-      { id: "human", nickname: "玩家", color: "#ff5a5f", isBot: false },
+      { id: "bot-1", nickname: "脉冲", characterId: "medic", isBot: true },
+      { id: "human", nickname: "玩家", characterId: "blaze", isBot: false },
     ]);
     const bot = world.players.get("bot-1")!;
     const enemy = world.players.get("human")!;

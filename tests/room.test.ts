@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { LOBBY_RETURN_DELAY_MS, PLAYER_COLORS, RECONNECT_WINDOW_MS } from "../src/shared/constants";
+import { CHARACTER_CATALOG, type CharacterId } from "../src/shared/character-catalog";
+import { LOBBY_RETURN_DELAY_MS, RECONNECT_WINDOW_MS } from "../src/shared/constants";
 import { GameRoom } from "../src/server/room";
+
+const join = (room: GameRoom, socketId: string, nickname: string, characterId: CharacterId = "blaze") =>
+  room.joinHuman(socketId, { nickname, characterId });
 
 describe("game room", () => {
   it("fills all empty seats with bots on start", () => {
     const room = new GameRoom();
-    const joined = room.joinHuman("socket-1", { nickname: "玩家一", color: PLAYER_COLORS[0] });
+    const joined = join(room, "socket-1", "玩家一");
     expect(joined.ok).toBe(true);
     expect(room.setReady("socket-1", true).ok).toBe(true);
 
@@ -19,7 +23,7 @@ describe("game room", () => {
 
   it("lets a disconnected human reclaim the same seat", () => {
     const room = new GameRoom();
-    const joined = room.joinHuman("socket-1", { nickname: "玩家一", color: PLAYER_COLORS[0] });
+    const joined = join(room, "socket-1", "玩家一", "medic");
     const token = joined.data!.reconnectToken;
     const playerId = joined.data!.playerId;
     room.setReady("socket-1", true);
@@ -36,12 +40,13 @@ describe("game room", () => {
     expect(room.gameSnapshot()?.players.find((player) => player.id === playerId)).toMatchObject({
       connected: true,
       isBot: false,
+      characterId: "medic",
     });
   });
 
   it("expires reconnect ownership after thirty seconds", () => {
     const room = new GameRoom();
-    const joined = room.joinHuman("socket-1", { nickname: "玩家一", color: PLAYER_COLORS[0] });
+    const joined = join(room, "socket-1", "玩家一");
     const token = joined.data!.reconnectToken;
     room.setReady("socket-1", true);
     room.startMatch();
@@ -54,7 +59,7 @@ describe("game room", () => {
 
   it("resets the accepted input sequence when a human reconnects", () => {
     const room = new GameRoom();
-    const joined = room.joinHuman("socket-1", { nickname: "玩家一", color: PLAYER_COLORS[0] });
+    const joined = join(room, "socket-1", "玩家一");
     room.setReady("socket-1", true);
     room.startMatch();
     room.handleInput("socket-1", { seq: 900, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false });
@@ -68,7 +73,7 @@ describe("game room", () => {
 
   it("applies only the highest-sequence input once at the next simulation tick", () => {
     const room = new GameRoom();
-    const joined = room.joinHuman("socket-1", { nickname: "Player", color: PLAYER_COLORS[0] });
+    const joined = join(room, "socket-1", "Player");
     room.setReady("socket-1", true);
     room.startMatch();
 
@@ -87,7 +92,7 @@ describe("game room", () => {
 
   it("drops queued input when a player disconnects and reconnects", () => {
     const room = new GameRoom();
-    const joined = room.joinHuman("socket-1", { nickname: "Player", color: PLAYER_COLORS[0] });
+    const joined = join(room, "socket-1", "Player");
     room.setReady("socket-1", true);
     room.startMatch();
     room.handleInput("socket-1", { seq: 99, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false });
@@ -103,7 +108,7 @@ describe("game room", () => {
 
   it("does not carry queued input into a new match after reset", () => {
     const room = new GameRoom();
-    const joined = room.joinHuman("socket-1", { nickname: "Player", color: PLAYER_COLORS[0] });
+    const joined = join(room, "socket-1", "Player");
     room.setReady("socket-1", true);
     room.startMatch();
     room.handleInput("socket-1", { seq: 99, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false });
@@ -121,20 +126,20 @@ describe("game room", () => {
 
   it("removes expired disconnected seats from the lobby", () => {
     const room = new GameRoom();
-    PLAYER_COLORS.forEach((color, index) => {
-      room.joinHuman(`socket-${index}`, { nickname: `玩家${index}`, color });
+    CHARACTER_CATALOG.forEach((character, index) => {
+      room.joinHuman(`socket-${index}`, { nickname: `玩家${index}`, characterId: character.id });
       room.disconnect(`socket-${index}`);
     });
 
     room.tick(RECONNECT_WINDOW_MS + 1);
 
     expect(room.snapshot().players).toHaveLength(0);
-    expect(room.joinHuman("new-socket", { nickname: "新玩家", color: PLAYER_COLORS[0] }).ok).toBe(true);
+    expect(join(room, "new-socket", "新玩家").ok).toBe(true);
   });
 
   it("returns to an empty lobby when every human misses the reconnect window", () => {
     const room = new GameRoom();
-    room.joinHuman("socket-1", { nickname: "玩家一", color: PLAYER_COLORS[0] });
+    join(room, "socket-1", "玩家一");
     room.setReady("socket-1", true);
     room.startMatch();
     room.disconnect("socket-1");
@@ -146,7 +151,7 @@ describe("game room", () => {
 
   it("records the finish time when the host ends a match", () => {
     const room = new GameRoom();
-    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    join(room, "socket-1", "Host");
     room.setReady("socket-1", true);
     room.startMatch();
     room.tick(1_000);
@@ -158,7 +163,7 @@ describe("game room", () => {
 
   it("keeps a finished result immutable when the host ends twice", () => {
     const room = new GameRoom();
-    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    join(room, "socket-1", "Host");
     room.setReady("socket-1", true);
     room.startMatch();
     room.tick(1_000);
@@ -175,7 +180,7 @@ describe("game room", () => {
 
   it("uses the snapshot server time for a manual finish after clock drift", () => {
     const room = new GameRoom();
-    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    join(room, "socket-1", "Host");
     room.setReady("socket-1", true);
     room.startMatch();
     room.tick(960_000);
@@ -188,7 +193,7 @@ describe("game room", () => {
 
   it("automatically returns a finished match to the lobby after eight seconds", () => {
     const room = new GameRoom();
-    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    join(room, "socket-1", "Host");
     room.setReady("socket-1", true);
     room.startMatch();
     room.endMatch();
@@ -204,7 +209,7 @@ describe("game room", () => {
 
   it("allows only a connected seated human to return a finished match early", () => {
     const room = new GameRoom();
-    room.joinHuman("socket-1", { nickname: "Host", color: PLAYER_COLORS[0] });
+    join(room, "socket-1", "Host");
     room.setReady("socket-1", true);
     room.startMatch();
 
@@ -213,5 +218,27 @@ describe("game room", () => {
     expect(room.returnToLobby("spectator").ok).toBe(false);
     expect(room.returnToLobby("socket-1").ok).toBe(true);
     expect(room.snapshot()).toMatchObject({ phase: "lobby", players: [{ nickname: "Host", ready: false }] });
+  });
+
+  it("derives colors from character ids and rejects duplicate human characters", () => {
+    const room = new GameRoom();
+
+    expect(join(room, "socket-1", "先锋", "blaze").ok).toBe(true);
+    expect(join(room, "socket-2", "复制者", "blaze")).toMatchObject({ ok: false });
+    expect(room.snapshot().players[0]).toMatchObject({
+      characterId: "blaze",
+      color: CHARACTER_CATALOG[0]!.color,
+    });
+  });
+
+  it("fills bots only with characters not selected by humans", () => {
+    const room = new GameRoom();
+    join(room, "socket-1", "玩家一", "phase");
+    room.setReady("socket-1", true);
+    room.startMatch();
+
+    const players = room.gameSnapshot()!.players;
+    expect(new Set(players.map((player) => player.characterId)).size).toBe(6);
+    expect(players.find((player) => !player.isBot)?.characterId).toBe("phase");
   });
 });

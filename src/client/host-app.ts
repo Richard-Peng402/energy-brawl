@@ -84,9 +84,10 @@ export function resolveHostPresentation(
   if (game) {
     return {
       phase: game.phase,
-      players: game.players.map(({ id, nickname, color, isBot, connected, ready, score }) => ({
+      players: game.players.map(({ id, nickname, characterId, color, isBot, connected, ready, score }) => ({
         id,
         nickname,
+        characterId,
         color,
         isBot,
         connected,

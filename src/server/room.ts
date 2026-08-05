@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import {
   LOBBY_RETURN_DELAY_MS,
   MAX_PLAYERS,
-  PLAYER_COLORS,
   RECONNECT_WINDOW_MS,
 } from "../shared/constants";
+import { CHARACTER_CATALOG, getCharacter, isCharacterId } from "../shared/character-catalog";
 import type {
   Ack,
   GameSnapshot,
@@ -54,11 +54,11 @@ export class GameRoom {
     if ([...this.seats.values()].some((seat) => seat.nickname === nickname)) {
       return { ok: false, error: "昵称已被使用" };
     }
-    if (!PLAYER_COLORS.includes(payload.color as (typeof PLAYER_COLORS)[number])) {
-      return { ok: false, error: "请选择有效颜色" };
+    if (!isCharacterId(payload.characterId)) {
+      return { ok: false, error: "请选择有效角色" };
     }
-    if ([...this.seats.values()].some((seat) => seat.color === payload.color)) {
-      return { ok: false, error: "这个颜色已被使用" };
+    if ([...this.seats.values()].some((seat) => seat.characterId === payload.characterId)) {
+      return { ok: false, error: "这个角色已被使用" };
     }
 
     const id = `player-${this.nextPlayerNumber++}`;
@@ -66,7 +66,7 @@ export class GameRoom {
     this.seats.set(id, {
       id,
       nickname,
-      color: payload.color,
+      characterId: payload.characterId,
       isBot: false,
       socketId,
       reconnectToken,
@@ -237,7 +237,8 @@ export class GameRoom {
       : [...this.seats.values()].map((seat) => ({
           id: seat.id,
           nickname: seat.nickname,
-          color: seat.color,
+          characterId: seat.characterId,
+          color: getCharacter(seat.characterId).color,
           isBot: seat.isBot,
           connected: seat.connected,
           ready: seat.ready,
@@ -246,9 +247,10 @@ export class GameRoom {
     return {
       phase: this.world?.phase ?? "lobby",
       canStart: this.canStart(),
-      players: players.map(({ id, nickname, color, isBot, connected, ready, score }) => ({
+      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, score }) => ({
         id,
         nickname,
+        characterId,
         color,
         isBot,
         connected,
@@ -284,11 +286,15 @@ export class GameRoom {
   private fillBotSeats(): void {
     while (this.seats.size < MAX_PLAYERS) {
       const index = this.seats.size;
+      const character = CHARACTER_CATALOG.find(
+        (candidate) => ![...this.seats.values()].some((seat) => seat.characterId === candidate.id),
+      );
+      if (!character) break;
       const id = `bot-${this.nextPlayerNumber++}`;
       this.seats.set(id, {
         id,
         nickname: BOT_NAMES[index % BOT_NAMES.length] ?? `机器人 ${index + 1}`,
-        color: PLAYER_COLORS.find((color) => ![...this.seats.values()].some((seat) => seat.color === color)) ?? "#ffffff",
+        characterId: character.id,
         isBot: true,
         socketId: null,
         reconnectToken: null,

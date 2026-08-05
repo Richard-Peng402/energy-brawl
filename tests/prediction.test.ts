@@ -27,4 +27,10 @@ describe("local movement prediction", () => {
 
     expect(next.x - 200).toBeCloseTo(PLAYER_SPEED * 0.2);
   });
+
+  it("uses the selected character's dynamic movement speed", () => {
+    const next = predictLocalPosition({ x: 200, y: 200 }, { x: 1, y: 0 }, 100, 282);
+
+    expect(next.x - 200).toBeCloseTo(28.2);
+  });
 });

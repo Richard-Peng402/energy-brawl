@@ -15,6 +15,7 @@ import type {
   PlayerInput,
   ServerToClientEvents,
 } from "../shared/protocol";
+import { isCharacterId } from "../shared/character-catalog";
 import { GameRoom } from "./room";
 import { FixedStepAccumulator } from "./fixed-loop";
 import { RollingMetric } from "./performance";
@@ -204,7 +205,7 @@ function isHostCommand(command: unknown): command is HostCommand {
 function isJoinPayload(payload: unknown): payload is JoinPayload {
   if (!payload || typeof payload !== "object") return false;
   const candidate = payload as Partial<JoinPayload>;
-  return typeof candidate.nickname === "string" && typeof candidate.color === "string";
+  return typeof candidate.nickname === "string" && isCharacterId(candidate.characterId);
 }
 
 function isPlayerInput(input: unknown): input is PlayerInput {

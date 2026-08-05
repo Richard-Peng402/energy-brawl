@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 
-import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_LIFETIME_MS, PROJECTILE_SPEED, VIEW_HEIGHT, VIEW_WIDTH, WALLS } from "../shared/constants";
+import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_LIFETIME_MS, VIEW_HEIGHT, VIEW_WIDTH, WALLS } from "../shared/constants";
 import type { GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import { calculateAimGuide } from "./aim-guide";
 import { consumePositionCorrection, InputReconciler } from "./input-reconciliation";
@@ -127,7 +127,8 @@ class ArenaScene extends Phaser.Scene {
 
     for (const [id, view] of this.playerViews) {
       if (id === this.localPlayerId && this.localPlayerCanMove()) {
-        const predicted = predictLocalPosition(view.container, this.localInput, delta);
+        const moveSpeed = this.snapshot?.players.find((player) => player.id === id)?.moveSpeed;
+        const predicted = predictLocalPosition(view.container, this.localInput, delta, moveSpeed);
         view.container.setPosition(predicted.x, predicted.y);
         this.consumeCorrection(view.container, delta);
         continue;
@@ -378,7 +379,7 @@ class ArenaScene extends Phaser.Scene {
     const view = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : null;
     const player = this.snapshot.players.find((candidate) => candidate.id === this.localPlayerId);
     const guide = view && player?.alive && this.snapshot.phase !== "finished"
-      ? calculateAimGuide(view.container, this.localAim, PROJECTILE_SPEED * PROJECTILE_LIFETIME_MS / 1_000, WALLS)
+      ? calculateAimGuide(view.container, this.localAim, player.projectileSpeed * PROJECTILE_LIFETIME_MS / 1_000, WALLS)
       : { start: { x: 0, y: 0 }, end: { x: 0, y: 0 }, angle: 0, length: 0, visible: false };
     this.aimCorridor.setVisible(guide.visible).setPosition(guide.start.x, guide.start.y).setRotation(guide.angle).setSize(guide.length, 64).setDisplaySize(guide.length, 64);
     this.aimEnd.setVisible(guide.visible).setPosition(guide.end.x, guide.end.y);

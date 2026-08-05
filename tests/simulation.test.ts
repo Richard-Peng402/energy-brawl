@@ -17,6 +17,7 @@ import {
   WALLS,
 } from "../src/shared/constants";
 import { circleHitsCircle, circleHitsRect } from "../src/shared/math";
+import { getCharacter } from "../src/shared/character-catalog";
 import {
   applyPlayerInput,
   collectEnergy,
@@ -27,8 +28,8 @@ import {
 
 function createWorld() {
   return createGameWorld([
-    { id: "red", nickname: "红方", color: "#ff5a5f", isBot: false },
-    { id: "blue", nickname: "蓝方", color: "#4da3ff", isBot: false },
+    { id: "red", nickname: "红方", characterId: "blaze", isBot: false },
+    { id: "blue", nickname: "蓝方", characterId: "fortress", isBot: false },
   ]);
 }
 
@@ -39,7 +40,7 @@ describe("authoritative simulation", () => {
     const world = createWorld();
     stepWorld(world, SPAWN_SHIELD_MS + 1);
 
-    damagePlayer(world, "blue", "red", MAX_HEALTH);
+    damagePlayer(world, "blue", "red", world.players.get("blue")!.maxHealth);
 
     expect(world.players.get("red")?.score).toBe(2);
     expect(world.players.get("red")?.kills).toBe(1);
@@ -48,7 +49,52 @@ describe("authoritative simulation", () => {
     stepWorld(world, RESPAWN_DELAY_MS + 1);
 
     expect(world.players.get("blue")?.alive).toBe(true);
-    expect(world.players.get("blue")?.health).toBe(MAX_HEALTH);
+    expect(world.players.get("blue")?.health).toBe(getCharacter("fortress").maxHealth);
+  });
+
+  it("uses each character's dynamic movement, firing, projectile and respawn stats", () => {
+    const world = createWorld();
+    const attacker = world.players.get("red")!;
+    const victim = world.players.get("blue")!;
+    attacker.moveSpeed = 310;
+    attacker.fireCooldownMs = 777;
+    attacker.projectileSpeed = 888;
+    attacker.damage = 19;
+    attacker.shieldUntil = 0;
+    victim.shieldUntil = 0;
+    victim.x = attacker.x + 500;
+    victim.y = attacker.y;
+
+    applyPlayerInput(world, attacker.id, { seq: 1, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: true });
+    stepWorld(world, 1);
+
+    expect(attacker.vx).toBe(310);
+    expect(attacker.nextFireAt).toBe(world.now + 777);
+    const projectile = [...world.projectiles.values()][0]!;
+    expect(projectile.vx).toBe(888);
+
+    victim.x = projectile.x + 50;
+    victim.y = projectile.y;
+    applyPlayerInput(world, attacker.id, { seq: 2, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: false });
+    stepWorld(world, 100);
+    expect(victim.health).toBe(victim.maxHealth - 19);
+
+    damagePlayer(world, victim.id, attacker.id, victim.health);
+    victim.maxHealth = 137;
+    stepWorld(world, RESPAWN_DELAY_MS + 1);
+    expect(victim.health).toBe(137);
+  });
+
+  it("heals medics by twelve on energy pickup without exceeding max health", () => {
+    const world = createGameWorld([
+      { id: "medic", nickname: "医师", characterId: "medic", isBot: false },
+    ]);
+    const medic = world.players.get("medic")!;
+    medic.health = medic.maxHealth - 5;
+
+    collectEnergy(world, medic.id, [...world.energy.keys()][0]!);
+
+    expect(medic.health).toBe(medic.maxHealth);
   });
 
   it("starts a thirty-second hold for the unique leader at fifteen points", () => {
@@ -190,7 +236,7 @@ describe("authoritative simulation", () => {
     expect(collectEnergy(world, "blue", lateEnergy!)).toBe(false);
     expect(damagePlayer(world, "red", "blue", MAX_HEALTH)).toBe(false);
     expect(lateScorer.score).toBe(8);
-    expect(winner.health).toBe(MAX_HEALTH);
+    expect(winner.health).toBe(winner.maxHealth);
     expect(world.winnerIds).toEqual(["red"]);
   });
 
@@ -214,9 +260,9 @@ describe("authoritative simulation", () => {
 
   it("ignores a non-leader score during sudden death", () => {
     const world = createGameWorld([
-      { id: "red", nickname: "Red", color: "#ff0000", isBot: false },
-      { id: "blue", nickname: "Blue", color: "#0000ff", isBot: false },
-      { id: "green", nickname: "Green", color: "#00ff00", isBot: false },
+      { id: "red", nickname: "Red", characterId: "blaze", isBot: false },
+      { id: "blue", nickname: "Blue", characterId: "fortress", isBot: false },
+      { id: "green", nickname: "Green", characterId: "medic", isBot: false },
     ]);
     world.players.get("red")!.score = 8;
     world.players.get("blue")!.score = 8;
@@ -343,7 +389,7 @@ describe("authoritative simulation", () => {
     const world = createGameWorld(Array.from({ length: 6 }, (_, index) => ({
       id: `player-${index}`,
       nickname: `P${index}`,
-      color: "#ffffff",
+      characterId: "blaze",
       isBot: false,
     })));
     const players = [...world.players.values()];
@@ -383,7 +429,7 @@ describe("authoritative simulation", () => {
 
     stepWorld(world, 100);
 
-    expect(target.health).toBe(MAX_HEALTH);
+    expect(target.health).toBe(target.maxHealth);
     expect(world.projectiles.size).toBe(0);
   });
 
@@ -405,7 +451,7 @@ describe("authoritative simulation", () => {
 
     stepWorld(world, 100);
 
-    expect(target.health).toBe(MAX_HEALTH - PROJECTILE_DAMAGE);
+    expect(target.health).toBe(target.maxHealth - world.players.get("red")!.damage);
     expect(world.projectiles.size).toBe(0);
   });
 });

@@ -69,6 +69,7 @@ export class InputReconciler {
           position,
           { x: entry.input.moveX, y: entry.input.moveY },
           entry.deltaMs,
+          authoritative.moveSpeed,
         );
       }
     }

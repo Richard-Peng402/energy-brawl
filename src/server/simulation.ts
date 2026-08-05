@@ -5,25 +5,21 @@ import {
   ENERGY_RESPAWN_MS,
   ENERGY_SCORE,
   ENERGY_SPAWN_POINTS,
-  FIRE_COOLDOWN_MS,
   HOLD_DURATION_MS,
   HOLDER_KILL_BONUS,
   KILL_SCORE,
   MATCH_DURATION_MS,
   MAX_ENERGY,
-  MAX_HEALTH,
   PLAYER_RADIUS,
-  PLAYER_SPEED,
-  PROJECTILE_DAMAGE,
   PROJECTILE_LIFETIME_MS,
   PROJECTILE_RADIUS,
-  PROJECTILE_SPEED,
   RESPAWN_DELAY_MS,
   SPAWN_POINTS,
   SPAWN_SHIELD_MS,
   TARGET_SCORE,
   WALLS,
 } from "../shared/constants";
+import { getCharacter, MEDIC_ENERGY_HEAL, type CharacterId } from "../shared/character-catalog";
 import { firstWallHit, moveCircleSafely, sweepCircleCircle } from "../shared/collision";
 import { StaticSpatialIndex } from "../shared/spatial-index";
 import { circleHitsCircle, clamp, distanceSquared, normalize } from "../shared/math";
@@ -40,7 +36,7 @@ import type {
 export interface PlayerSeed {
   id: string;
   nickname: string;
-  color: string;
+  characterId: CharacterId;
   isBot: boolean;
 }
 
@@ -85,9 +81,11 @@ const WALL_INDEX = new StaticSpatialIndex(WALLS);
 export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorld {
   const players = new Map<string, WorldPlayer>();
   seeds.forEach((seed, index) => {
+    const character = getCharacter(seed.characterId);
     const spawn = SPAWN_POINTS[index % SPAWN_POINTS.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
     players.set(seed.id, {
       ...seed,
+      color: character.color,
       connected: !seed.isBot,
       ready: true,
       x: spawn.x,
@@ -95,8 +93,12 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
       vx: 0,
       vy: 0,
       angle: 0,
-      health: MAX_HEALTH,
-      maxHealth: MAX_HEALTH,
+      health: character.maxHealth,
+      maxHealth: character.maxHealth,
+      damage: character.damage,
+      moveSpeed: character.moveSpeed,
+      fireCooldownMs: character.fireCooldownMs,
+      projectileSpeed: character.projectileSpeed,
       score: 0,
       kills: 0,
       energyCollected: 0,
@@ -224,6 +226,9 @@ export function collectEnergy(world: GameWorld, playerId: string, energyId: stri
 
   player.score += ENERGY_SCORE;
   player.energyCollected += 1;
+  if (player.characterId === "medic") {
+    player.health = Math.min(player.maxHealth, player.health + MEDIC_ENERGY_HEAL);
+  }
   world.nextEnergySpawnAt = Math.max(world.nextEnergySpawnAt, world.now + ENERGY_RESPAWN_MS);
   handleScoreChange(world, player.id);
   return true;
@@ -251,8 +256,8 @@ function clampFinite(value: number): number {
 
 function movePlayer(world: GameWorld, player: WorldPlayer, deltaMs: number): void {
   const direction = normalize({ x: player.input.moveX, y: player.input.moveY });
-  player.vx = direction.x * PLAYER_SPEED;
-  player.vy = direction.y * PLAYER_SPEED;
+  player.vx = direction.x * player.moveSpeed;
+  player.vy = direction.y * player.moveSpeed;
   const seconds = deltaMs / 1_000;
   const delta = { x: player.vx * seconds, y: player.vy * seconds };
   const nearbyWalls = WALL_INDEX.query(movementBounds(player, delta));
@@ -279,11 +284,11 @@ function updateAimAndFire(world: GameWorld, player: WorldPlayer): void {
         ownerId: player.id,
         x: player.x + aim.x * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
         y: player.y + aim.y * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
-        vx: aim.x * PROJECTILE_SPEED,
-        vy: aim.y * PROJECTILE_SPEED,
+        vx: aim.x * player.projectileSpeed,
+        vy: aim.y * player.projectileSpeed,
         expiresAt: world.now + PROJECTILE_LIFETIME_MS,
       });
-      player.nextFireAt = world.now + FIRE_COOLDOWN_MS;
+      player.nextFireAt = world.now + player.fireCooldownMs;
     }
   }
 }
@@ -317,7 +322,8 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
       continue;
     }
     if (targetHit) {
-      damagePlayer(world, targetHit.player.id, projectile.ownerId, PROJECTILE_DAMAGE);
+      const attacker = world.players.get(projectile.ownerId);
+      damagePlayer(world, targetHit.player.id, projectile.ownerId, attacker?.damage ?? 0);
       world.projectiles.delete(projectile.id);
       continue;
     }
@@ -368,7 +374,7 @@ function respawnPlayer(world: GameWorld, player: WorldPlayer): void {
   player.y = spawn.y;
   player.vx = 0;
   player.vy = 0;
-  player.health = MAX_HEALTH;
+  player.health = player.maxHealth;
   player.alive = true;
   player.respawnAt = null;
   player.shieldUntil = world.now + SPAWN_SHIELD_MS;

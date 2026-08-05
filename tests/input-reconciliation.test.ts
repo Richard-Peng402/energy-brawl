@@ -75,6 +75,7 @@ function player(overrides: Partial<PlayerSnapshot>): PlayerSnapshot {
   return {
     id: "player-1",
     nickname: "Player",
+    characterId: "blaze",
     color: "#ffffff",
     isBot: false,
     connected: true,
@@ -86,6 +87,10 @@ function player(overrides: Partial<PlayerSnapshot>): PlayerSnapshot {
     angle: 0,
     health: 100,
     maxHealth: 100,
+    damage: 27,
+    moveSpeed: PLAYER_SPEED,
+    fireCooldownMs: 450,
+    projectileSpeed: 620,
     score: 0,
     kills: 0,
     energyCollected: 0,

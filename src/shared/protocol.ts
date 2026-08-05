@@ -1,3 +1,5 @@
+import type { CharacterId } from "./character-catalog";
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -27,6 +29,7 @@ export interface PerformanceHint {
 export interface PlayerSnapshot extends Vec2 {
   id: string;
   nickname: string;
+  characterId: CharacterId;
   color: string;
   isBot: boolean;
   connected: boolean;
@@ -36,6 +39,10 @@ export interface PlayerSnapshot extends Vec2 {
   angle: number;
   health: number;
   maxHealth: number;
+  damage: number;
+  moveSpeed: number;
+  fireCooldownMs: number;
+  projectileSpeed: number;
   score: number;
   kills: number;
   energyCollected: number;
@@ -59,7 +66,7 @@ export interface EnergySnapshot extends Vec2 {
 export interface RoomSnapshot {
   phase: GamePhase;
   canStart: boolean;
-  players: Array<Pick<PlayerSnapshot, "id" | "nickname" | "color" | "isBot" | "connected" | "ready" | "score">>;
+  players: Array<Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready" | "score">>;
 }
 
 export interface GameSnapshot {
@@ -78,7 +85,7 @@ export interface GameSnapshot {
 
 export interface JoinPayload {
   nickname: string;
-  color: string;
+  characterId: CharacterId;
 }
 
 export interface ReconnectPayload {

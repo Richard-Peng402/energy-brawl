@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { io as createClient, type Socket as ClientSocket } from "socket.io-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { PLAYER_COLORS, RECONNECT_WINDOW_MS, SERVER_TICK_MS } from "../src/shared/constants";
+import { RECONNECT_WINDOW_MS, SERVER_TICK_MS } from "../src/shared/constants";
 import type {
   Ack,
   ClientToServerEvents,
@@ -64,8 +64,8 @@ describe("game network", () => {
   it("rejects blank nicknames and accepts a valid player", async () => {
     const { client } = await createHarness();
 
-    const rejected = await emitAck(client, "join", { nickname: "   ", color: PLAYER_COLORS[0] });
-    const accepted = await emitAck(client, "join", { nickname: "小明", color: PLAYER_COLORS[0] });
+    const rejected = await emitAck(client, "join", { nickname: "   ", characterId: "blaze" });
+    const accepted = await emitAck(client, "join", { nickname: "小明", characterId: "blaze" });
 
     expect(rejected).toMatchObject({ ok: false });
     expect(accepted).toMatchObject({ ok: true, data: { playerId: expect.any(String) } });
@@ -73,7 +73,7 @@ describe("game network", () => {
 
   it("requires the host token before starting a match", async () => {
     const { client } = await createHarness();
-    await emitAck(client, "join", { nickname: "小明", color: PLAYER_COLORS[0] });
+    await emitAck(client, "join", { nickname: "小明", characterId: "blaze" });
     await emitAck(client, "setReady", true);
 
     const rejected = await emitAck(client, "hostCommand", { token: "wrong", command: "start" });
@@ -88,7 +88,7 @@ describe("game network", () => {
     const unsafeEmit = client.emit.bind(client) as unknown as (event: string, payload: unknown) => void;
 
     unsafeEmit("hostCommand", { token: "wrong", command: "start" });
-    const accepted = await emitAck(client, "join", { nickname: "仍可加入", color: PLAYER_COLORS[0] });
+    const accepted = await emitAck(client, "join", { nickname: "仍可加入", characterId: "blaze" });
 
     expect(accepted.ok).toBe(true);
   });
@@ -122,7 +122,7 @@ describe("game network", () => {
     const joinedState = new Promise<Parameters<ServerToClientEvents["roomState"]>[0]>((resolve) => {
       observer.once("roomState", resolve);
     });
-    await emitAck(player, "join", { nickname: "观察对象", color: PLAYER_COLORS[0] });
+    await emitAck(player, "join", { nickname: "观察对象", characterId: "blaze" });
     await expect(joinedState).resolves.toMatchObject({ players: [{ connected: true }] });
     const disconnectedState = new Promise<Parameters<ServerToClientEvents["roomState"]>[0]>((resolve) => {
       observer.once("roomState", resolve);
@@ -141,7 +141,7 @@ describe("game network", () => {
 
   it("returns a finished match to the lobby through the player event", async () => {
     const { client, room } = await createHarness();
-    await emitAck(client, "join", { nickname: "Player", color: PLAYER_COLORS[0] });
+    await emitAck(client, "join", { nickname: "Player", characterId: "blaze" });
     await emitAck(client, "setReady", true);
     await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
     await emitAck(client, "hostCommand", { token: "test-host-token", command: "end" });
@@ -171,8 +171,8 @@ describe("game network", () => {
     cleanups.push(async () => {
       reducedClient.disconnect();
     });
-    await emitAck(client, "join", { nickname: "Player", color: PLAYER_COLORS[0] });
-    await emitAck(reducedClient, "join", { nickname: "Reduced", color: PLAYER_COLORS[1] });
+    await emitAck(client, "join", { nickname: "Player", characterId: "blaze" });
+    await emitAck(reducedClient, "join", { nickname: "Reduced", characterId: "medic" });
     await emitAck(client, "setReady", true);
     await emitAck(reducedClient, "setReady", true);
     await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
@@ -204,7 +204,7 @@ describe("game network", () => {
 
   it("does not reset an existing snapshot deadline for repeated or invalid hints", async () => {
     const { client, network } = await createHarness();
-    await emitAck(client, "join", { nickname: "Player", color: PLAYER_COLORS[0] });
+    await emitAck(client, "join", { nickname: "Player", characterId: "blaze" });
     await emitAck(client, "setReady", true);
     await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
     network.advance(SERVER_TICK_MS * 2);
@@ -233,7 +233,7 @@ describe("game network", () => {
 
   it("caps a production clock poll at three fixed simulation steps", async () => {
     const { client, network, room } = await createHarness();
-    await emitAck(client, "join", { nickname: "Player", color: PLAYER_COLORS[0] });
+    await emitAck(client, "join", { nickname: "Player", characterId: "blaze" });
     await emitAck(client, "setReady", true);
     await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
     const before = room.gameSnapshot()!.serverTime;
