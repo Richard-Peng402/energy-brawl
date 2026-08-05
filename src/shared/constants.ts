@@ -18,10 +18,11 @@ export const SERVER_TICK_MS = 1_000 / SERVER_TICK_RATE;
 export const SNAPSHOT_RATE = 30;
 export const REDUCED_SNAPSHOT_RATE = 20;
 
-export const ARENA_WIDTH = 2_160;
-export const ARENA_HEIGHT = 1_215;
-export const VIEW_WIDTH = 1_280;
-export const VIEW_HEIGHT = 720;
+export const ARENA_SCALE = 4 / 3;
+export const ARENA_WIDTH = 2_880;
+export const ARENA_HEIGHT = 1_620;
+export const VIEW_WIDTH = 1_536;
+export const VIEW_HEIGHT = 864;
 export const PLAYER_RADIUS = 27;
 export const PLAYER_SPEED = 265;
 export const FIRE_COOLDOWN_MS = 450;
@@ -41,6 +42,18 @@ export const PLAYER_COLORS = [
   "#ff8c42",
 ] as const;
 
+const scalePoint = ({ x, y }: Vec2): Vec2 => ({
+  x: x * ARENA_SCALE,
+  y: y * ARENA_SCALE,
+});
+
+const scaleRect = ({ x, y, width, height }: Rect): Rect => ({
+  x: x * ARENA_SCALE,
+  y: y * ARENA_SCALE,
+  width: width * ARENA_SCALE,
+  height: height * ARENA_SCALE,
+});
+
 export const SPAWN_POINTS: readonly Vec2[] = [
   { x: 260, y: 260 },
   { x: 1080, y: 210 },
@@ -48,7 +61,7 @@ export const SPAWN_POINTS: readonly Vec2[] = [
   { x: 260, y: 955 },
   { x: 1080, y: 1005 },
   { x: 1900, y: 955 },
-];
+].map(scalePoint);
 
 export const ENERGY_SPAWN_POINTS: readonly Vec2[] = [
   { x: 1080, y: 350 },
@@ -61,7 +74,7 @@ export const ENERGY_SPAWN_POINTS: readonly Vec2[] = [
   { x: 1400, y: 300 },
   { x: 300, y: 607 },
   { x: 1860, y: 607 },
-];
+].map(scalePoint);
 
 export const WALLS: readonly Rect[] = [
   { x: 930, y: 475, width: 300, height: 55 },
@@ -78,4 +91,4 @@ export const WALLS: readonly Rect[] = [
   { x: 1715, y: 695, width: 55, height: 190 },
   { x: 720, y: 155, width: 180, height: 45 },
   { x: 1260, y: 1015, width: 180, height: 45 },
-];
+].map(scaleRect);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PLAYER_SPEED } from "../src/shared/constants";
+import { ARENA_SCALE, PLAYER_RADIUS, PLAYER_SPEED } from "../src/shared/constants";
 import { predictLocalPosition } from "../src/client/prediction";
 
 describe("local movement prediction", () => {
@@ -11,10 +11,15 @@ describe("local movement prediction", () => {
   });
 
   it("does not predict through solid walls", () => {
-    const next = predictLocalPosition({ x: 900, y: 500 }, { x: 1, y: 0 }, 100);
+    const startX = 900 * ARENA_SCALE;
+    const next = predictLocalPosition(
+      { x: startX, y: 500 * ARENA_SCALE },
+      { x: 1, y: 0 },
+      100,
+    );
 
-    expect(next.x).toBeLessThanOrEqual(903);
-    expect(next.x).toBeGreaterThan(900);
+    expect(next.x).toBeLessThanOrEqual(930 * ARENA_SCALE - PLAYER_RADIUS);
+    expect(next.x).toBeGreaterThan(startX);
   });
 
   it("uses the full movement delta just like the authoritative simulation", () => {

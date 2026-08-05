@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ARENA_SCALE,
+  ARENA_WIDTH,
   ENERGY_SCORE,
   HOLD_DURATION_MS,
   HOLDER_KILL_BONUS,
@@ -29,6 +31,8 @@ function createWorld() {
     { id: "blue", nickname: "蓝方", color: "#4da3ff", isBot: false },
   ]);
 }
+
+const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
 
 describe("authoritative simulation", () => {
   it("awards two points for a defeat and respawns the victim", () => {
@@ -290,8 +294,8 @@ describe("authoritative simulation", () => {
   it("depenetrates a player that starts inside a wall", () => {
     const world = createWorld();
     const player = world.players.get("red")!;
-    player.x = 945;
-    player.y = 500;
+    player.x = scaleArenaPosition(945);
+    player.y = scaleArenaPosition(500);
     player.shieldUntil = 0;
 
     stepWorld(world, 16);
@@ -303,10 +307,10 @@ describe("authoritative simulation", () => {
     const world = createWorld();
     const left = world.players.get("red")!;
     const right = world.players.get("blue")!;
-    left.x = 900;
-    left.y = 500;
-    right.x = 930;
-    right.y = 500;
+    left.x = scaleArenaPosition(900);
+    left.y = scaleArenaPosition(500);
+    right.x = scaleArenaPosition(930);
+    right.y = scaleArenaPosition(500);
     left.shieldUntil = 0;
     right.shieldUntil = 0;
 
@@ -332,7 +336,7 @@ describe("authoritative simulation", () => {
 
     expect(circleHitsCircle(left, PLAYER_RADIUS, right, PLAYER_RADIUS)).toBe(false);
     expect(left.x).toBeGreaterThanOrEqual(PLAYER_RADIUS);
-    expect(right.x).toBeLessThanOrEqual(2160 - PLAYER_RADIUS);
+    expect(right.x).toBeLessThanOrEqual(ARENA_WIDTH - PLAYER_RADIUS);
   });
 
   it("fully separates a six-player cluster at the arena boundary", () => {
@@ -364,14 +368,14 @@ describe("authoritative simulation", () => {
   it("destroys a projectile at the first wall crossed in one frame", () => {
     const world = createWorld();
     const target = world.players.get("blue")!;
-    target.x = 1300;
-    target.y = 500;
+    target.x = scaleArenaPosition(1300);
+    target.y = scaleArenaPosition(500);
     target.shieldUntil = 0;
     world.projectiles.set("tunneling", {
       id: "tunneling",
       ownerId: "red",
-      x: 900,
-      y: 500,
+      x: scaleArenaPosition(900),
+      y: scaleArenaPosition(500),
       vx: 5000,
       vy: 0,
       expiresAt: world.now + 1000,
@@ -386,14 +390,14 @@ describe("authoritative simulation", () => {
   it("resolves a player hit before a later wall and applies one damage event", () => {
     const world = createWorld();
     const target = world.players.get("blue")!;
-    target.x = 900;
-    target.y = 500;
+    target.x = scaleArenaPosition(900);
+    target.y = scaleArenaPosition(500);
     target.shieldUntil = 0;
     world.projectiles.set("player-first", {
       id: "player-first",
       ownerId: "red",
-      x: 850,
-      y: 500,
+      x: scaleArenaPosition(850),
+      y: scaleArenaPosition(500),
       vx: 5000,
       vy: 0,
       expiresAt: world.now + 1000,
