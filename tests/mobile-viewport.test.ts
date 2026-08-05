@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { MobileViewport, readViewport } from "../src/client/mobile-viewport";
+import { calculateArenaCameraZoom, MobileViewport, readViewport } from "../src/client/mobile-viewport";
 
 describe("mobile viewport", () => {
+  it("fills ultra-wide landscape screens while preserving the reference vertical view", () => {
+    expect(calculateArenaCameraZoom(430, 864)).toBeCloseTo(430 / 864);
+    expect(calculateArenaCameraZoom(375, 864)).toBeCloseTo(375 / 864);
+  });
+
   it("prefers visual viewport dimensions", () => {
     expect(readViewport({ width: 844, height: 390 }, 932, 430, false)).toEqual({
       width: 844,

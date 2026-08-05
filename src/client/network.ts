@@ -1,5 +1,6 @@
 import { io, type Socket } from "socket.io-client";
 
+import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
 import type {
   Ack,
   ClientToServerEvents,
@@ -12,6 +13,28 @@ import type {
   RoomSnapshot,
   ServerToClientEvents,
 } from "../shared/protocol";
+
+export type CharacterSelectionCard = (typeof CHARACTER_CATALOG)[number] & {
+  selected: boolean;
+  unavailable: boolean;
+};
+
+export function buildCharacterSelection(
+  room: RoomSnapshot | null,
+  ownPlayerId: string | null,
+  selectedCharacterId: CharacterId,
+): CharacterSelectionCard[] {
+  const occupiedByOtherHumans = new Set(
+    (room?.players ?? [])
+      .filter((player) => !player.isBot && player.id !== ownPlayerId)
+      .map((player) => player.characterId),
+  );
+  return CHARACTER_CATALOG.map((character) => ({
+    ...character,
+    selected: character.id === selectedCharacterId,
+    unavailable: occupiedByOtherHumans.has(character.id),
+  }));
+}
 
 const TOKEN_KEY = "energy-brawl.reconnect-token";
 const PLAYER_KEY = "energy-brawl.player-id";

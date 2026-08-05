@@ -220,15 +220,17 @@ input:focus-visible {
 .lobby-workspace {
   display: grid;
   grid-template-columns: minmax(220px, 0.82fr) minmax(320px, 1.18fr);
+  grid-template-rows: auto minmax(0, 1fr);
   align-items: center;
-  gap: 22px;
-  padding: 22px max(28px, env(safe-area-inset-right)) 22px 28px;
+  gap: 12px;
+  padding: 12px max(18px, env(safe-area-inset-right)) 12px 18px;
   background-color: #171d22;
   background-image: linear-gradient(#20272c 1px, transparent 1px), linear-gradient(90deg, #20272c 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
 .join-panel,
+.character-panel,
 .roster-panel,
 .results-panel {
   border: 1px solid #445159;
@@ -237,10 +239,18 @@ input:focus-visible {
   box-shadow: 8px 8px 0 rgb(0 0 0 / 20%);
 }
 
+.character-panel {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .join-panel {
   display: grid;
-  gap: 10px;
-  padding: 18px;
+  align-self: stretch;
+  align-content: center;
+  gap: 8px;
+  padding: 12px 14px;
 }
 
 .join-panel label,
@@ -263,27 +273,164 @@ input:focus-visible {
 .color-list {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 7px;
-  margin-bottom: 4px;
+  gap: 5px;
+  padding: 7px 8px;
 }
 
 .color-swatch {
-  aspect-ratio: 1;
+  position: relative;
+  min-height: 62px;
   min-width: 26px;
-  border: 2px solid #0d1115;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  border: 2px solid #2e3940;
   border-radius: 4px;
-  background: var(--swatch);
+  padding: 4px 5px 4px 3px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--swatch) 23%, #131a1f), #11171b 72%);
+  color: #f7fbfc;
+  text-align: left;
   cursor: pointer;
 }
 
 .color-swatch.is-selected {
-  border-color: #ffffff;
-  box-shadow: 0 0 0 2px #f2c14e;
+  border-color: var(--swatch);
+  box-shadow: inset 0 -3px 0 var(--swatch), 0 0 0 1px rgb(255 255 255 / 58%);
 }
 
 .color-swatch:disabled {
   opacity: 0.22;
   cursor: not-allowed;
+}
+
+.character-portrait {
+  width: 46px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--swatch) 34%, #0d1115);
+}
+
+.character-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 3px rgb(0 0 0 / 48%));
+}
+
+.character-card-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.character-card-copy strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-card-copy small {
+  overflow: hidden;
+  color: #aebbc1;
+  font-size: 8px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-lock {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  border-radius: 2px;
+  padding: 2px 4px;
+  background: rgb(13 17 21 / 88%);
+  color: #ffd2d3;
+  font-size: 7px;
+  font-weight: 900;
+}
+
+.character-detail {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.25fr) minmax(150px, 0.9fr) minmax(240px, 1.4fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 9px;
+  border-top: 1px solid #354149;
+  background: #182126;
+}
+
+.character-detail-heading {
+  min-width: 0;
+}
+
+.character-detail-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.character-detail-heading strong {
+  font-size: 13px;
+}
+
+.character-detail-heading span,
+.character-detail-heading p {
+  color: #aebbc1;
+  font-size: 8px;
+}
+
+.character-detail-heading p {
+  overflow: hidden;
+  margin: 3px 0 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.character-detail-heading p b {
+  color: #f2c14e;
+}
+
+.character-traits {
+  display: grid;
+  gap: 3px;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.trait-good {
+  color: #82f1d4;
+}
+
+.trait-cost {
+  color: #ff9fa2;
+}
+
+.character-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.character-stats span {
+  display: grid;
+  gap: 2px;
+  color: #87959b;
+  font-size: 7px;
+  text-align: center;
+}
+
+.character-stats b {
+  color: #f5f8f9;
+  font-size: 9px;
 }
 
 .primary-button,
@@ -314,6 +461,7 @@ button:disabled {
 }
 
 .roster-panel {
+  align-self: stretch;
   overflow: hidden;
 }
 
@@ -342,7 +490,7 @@ button:disabled {
 
 .roster-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .roster-slot {
@@ -358,7 +506,7 @@ button:disabled {
   background: #1d2429;
 }
 
-.roster-slot:nth-child(even) {
+.roster-slot:nth-child(3n) {
   border-right: 0;
 }
 
@@ -971,9 +1119,35 @@ button:disabled {
   }
 
   .lobby-workspace {
-    gap: 14px;
-    padding-top: 12px;
-    padding-bottom: 12px;
+    gap: 6px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .section-heading {
+    min-height: 28px;
+    padding-inline: 8px;
+  }
+
+  .color-list {
+    gap: 4px;
+    padding: 4px 6px;
+  }
+
+  .color-swatch {
+    min-height: 52px;
+    grid-template-columns: 39px minmax(0, 1fr);
+    padding: 3px;
+  }
+
+  .character-portrait {
+    width: 37px;
+    height: 42px;
+  }
+
+  .character-detail {
+    min-height: 44px;
+    padding: 4px 7px 5px;
   }
 
   .join-panel {
@@ -984,12 +1158,18 @@ button:disabled {
   .join-panel input,
   .primary-button,
   .ready-button {
-    min-height: 36px;
-    height: 36px;
+    min-height: 32px;
+    height: 32px;
   }
 
   .roster-slot {
-    height: 45px;
+    height: 27px;
+    padding-inline: 7px;
+  }
+
+  .ready-button {
+    width: calc(100% - 8px);
+    margin: 4px;
   }
 
   .self-status,
@@ -1017,6 +1197,10 @@ button:disabled {
 
   .color-swatch {
     min-width: 0;
+  }
+
+  .character-detail {
+    grid-template-columns: minmax(170px, 1.2fr) minmax(130px, 0.8fr) minmax(220px, 1.3fr);
   }
 }
 
@@ -1057,6 +1241,37 @@ button:disabled {
   .color-list {
     grid-template-columns: repeat(3, 1fr);
     gap: 4px;
+  }
+
+  .color-swatch {
+    min-height: 46px;
+    grid-template-columns: 35px minmax(0, 1fr);
+  }
+
+  .character-portrait {
+    width: 33px;
+    height: 36px;
+  }
+
+  .character-detail {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+    gap: 4px 8px;
+  }
+
+  .character-stats {
+    grid-column: 1 / -1;
+  }
+
+  .character-card-copy strong {
+    font-size: 10px;
+  }
+
+  .roster-status {
+    display: none;
+  }
+
+  .roster-slot {
+    grid-template-columns: 10px minmax(0, 1fr);
   }
 }
 

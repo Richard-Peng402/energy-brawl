@@ -5,6 +5,11 @@ export interface ViewportState {
   fullscreen: boolean;
 }
 
+export function calculateArenaCameraZoom(viewportHeight: number, referenceHeight: number): number {
+  if (viewportHeight <= 0 || referenceHeight <= 0) return 1;
+  return viewportHeight / referenceHeight;
+}
+
 interface VisualViewportLike extends EventTarget {
   width: number;
   height: number;

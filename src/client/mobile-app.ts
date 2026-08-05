@@ -1,8 +1,9 @@
 import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
 import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
+import { CHARACTER_ASSETS } from "./asset-registry";
 import { GameRenderer } from "./game-scene";
-import { GameNetworkClient } from "./network";
+import { buildCharacterSelection, GameNetworkClient } from "./network";
 import { MobileViewport } from "./mobile-viewport";
 import { TouchRouter } from "./touch-router";
 import { VirtualStick } from "./virtual-stick";
@@ -150,13 +151,28 @@ export class MobileApp {
   }
 
   private renderColors(): void {
-    const used = new Set(this.network.room?.players.map((player) => player.characterId) ?? []);
-    const ownCharacterId = this.network.room?.players.find((player) => player.id === this.network.playerId)?.characterId;
-    this.find("#color-list").innerHTML = CHARACTER_CATALOG.map((character) => {
-      const unavailable = used.has(character.id) && ownCharacterId !== character.id;
-      const selected = this.selectedCharacterId === character.id;
-      return `<button class="color-swatch${selected ? " is-selected" : ""}" type="button" data-character-id="${character.id}" style="--swatch:${character.color}" aria-label="选择${character.name}" title="${character.name}" ${unavailable ? "disabled" : ""}></button>`;
+    const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
+    if (ownSeat) this.selectedCharacterId = ownSeat.characterId;
+    const cards = buildCharacterSelection(this.network.room, this.network.playerId, this.selectedCharacterId);
+    this.find("#color-list").innerHTML = cards.map((character) => {
+      const unavailable = character.unavailable || Boolean(ownSeat && ownSeat.characterId !== character.id);
+      return `<button class="color-swatch character-card${character.selected ? " is-selected" : ""}" type="button" data-character-id="${character.id}" style="--swatch:${character.color}" aria-label="选择${character.name}" aria-pressed="${character.selected}" ${unavailable ? "disabled" : ""}>
+        <span class="character-portrait"><img src="${CHARACTER_ASSETS[character.id].portrait}" data-character-fallback="${CHARACTER_ASSETS[character.id].fallback}" alt="" /></span>
+        <span class="character-card-copy"><strong>${character.name}</strong><small>${character.role}</small></span>
+        ${character.unavailable ? '<span class="character-lock">已占用</span>' : ""}
+      </button>`;
     }).join("");
+    for (const image of this.root.querySelectorAll<HTMLImageElement>("[data-character-fallback]")) {
+      image.addEventListener("error", () => {
+        const fallback = image.dataset.characterFallback;
+        if (fallback && image.src !== new URL(fallback, window.location.href).href) image.src = fallback;
+        else image.hidden = true;
+      }, { once: true });
+    }
+    const selected = cards.find((character) => character.id === this.selectedCharacterId) ?? cards[0]!;
+    this.find("#character-detail").innerHTML = `<div class="character-detail-heading"><div><strong>${selected.name}</strong><span>${selected.role}</span></div><p><b>${selected.passiveName}</b> · ${selected.passiveDescription}</p></div>
+      <div class="character-traits"><span class="trait-good">优势 ${selected.advantage}</span><span class="trait-cost">代价 ${selected.tradeoff}</span></div>
+      <div class="character-stats" aria-label="${selected.name}精确数值"><span>生命 <b>${selected.maxHealth}</b></span><span>伤害 <b>${selected.damage}</b></span><span>移速 <b>${selected.moveSpeed}</b></span><span>射速 <b>${selected.fireCooldownMs}ms</b></span><span>弹速 <b>${selected.projectileSpeed}</b></span></div>`;
   }
 
   private renderRoster(): void {
@@ -323,11 +339,14 @@ function mobileTemplate(): string {
           <p id="lobby-status">正在连接房间</p>
         </div>
         <div class="lobby-workspace">
+          <section class="character-panel">
+            <div class="section-heading"><span>选择角色</span><small>每名真人角色唯一 · AI 不锁定</small></div>
+            <div id="color-list" class="color-list"></div>
+            <div id="character-detail" class="character-detail"></div>
+          </section>
           <form id="join-form" class="join-panel">
             <label for="nickname">你的昵称</label>
             <input id="nickname" maxlength="12" autocomplete="nickname" placeholder="输入昵称" required />
-            <span class="field-label">战斗颜色</span>
-            <div id="color-list" class="color-list"></div>
             <button class="primary-button" type="submit">加入房间</button>
           </form>
           <div class="roster-panel">

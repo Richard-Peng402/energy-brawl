@@ -19,6 +19,7 @@ import {
   type GameNetwork,
 } from "../src/server/network";
 import { GameRoom } from "../src/server/room";
+import { buildCharacterSelection } from "../src/client/network";
 
 type TestClient = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -52,6 +53,35 @@ async function createHarness(): Promise<{ client: TestClient; network: GameNetwo
 }
 
 describe("game network", () => {
+  it("locks characters used by other humans but keeps AI choices available with full details", () => {
+    const room = {
+      phase: "lobby" as const,
+      canStart: false,
+      players: [
+        { id: "human", nickname: "真人", characterId: "blaze" as const, color: "#f00", isBot: false, connected: true, ready: false, score: 0 },
+        { id: "bot", nickname: "AI", characterId: "medic" as const, color: "#0f0", isBot: true, connected: true, ready: true, score: 0 },
+      ],
+    };
+
+    const cards = buildCharacterSelection(room, "viewer", "medic");
+
+    expect(cards.find((card) => card.id === "blaze")).toMatchObject({ unavailable: true });
+    expect(cards.find((card) => card.id === "medic")).toMatchObject({
+      unavailable: false,
+      selected: true,
+      role: "续航支援",
+      passiveName: "能量回流",
+      passiveDescription: "拾取普通能量球恢复 12 点生命。",
+      advantage: "能量球治疗 12",
+      tradeoff: "单发伤害 23",
+      maxHealth: expect.any(Number),
+      damage: 23,
+      moveSpeed: expect.any(Number),
+      fireCooldownMs: expect.any(Number),
+      projectileSpeed: expect.any(Number),
+    });
+  });
+
   it("skips a day of stale snapshot deadlines in one calculation", () => {
     const serverTime = 86_400_000;
 
