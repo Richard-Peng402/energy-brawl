@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeStickVector, VirtualStick } from "../src/client/virtual-stick";
+import { clampStickVisualOrigin, normalizeStickVector, VirtualStick } from "../src/client/virtual-stick";
 
 describe("virtual stick math", () => {
   it("keeps values inside the unit circle", () => {
@@ -15,6 +15,13 @@ describe("virtual stick math", () => {
     expect(normalizeStickVector(0, 0, 0)).toEqual({ x: 0, y: 0, magnitude: 0 });
   });
 
+  it("keeps floating stick visuals inside safe edges and away from the center skill button", () => {
+    expect(clampStickVisualOrigin(4, 4, 667, 375, 64)).toEqual({ x: 76, y: 76 });
+    expect(clampStickVisualOrigin(330, 360, 667, 375, 64)).toEqual({ x: 224.5, y: 299 });
+    expect(clampStickVisualOrigin(340, 360, 667, 375, 64)).toEqual({ x: 442.5, y: 299 });
+    expect(clampStickVisualOrigin(660, 4, 667, 375, 64)).toEqual({ x: 591, y: 76 });
+  });
+
   it("uses the accepted pointer location as a floating origin", () => {
     const fixture = createStick();
     fixture.zone.dispatch("pointerdown", { pointerId: 1, clientX: 80, clientY: 60 });
@@ -23,7 +30,7 @@ describe("virtual stick math", () => {
     expect(fixture.stick.getValue().x).toBeCloseTo(0.5);
     expect(fixture.stick.getValue().y).toBeCloseTo(0.375);
     expect(fixture.visual.style.transform).toContain("80px");
-    expect(fixture.visual.style.transform).toContain("60px");
+    expect(fixture.visual.style.transform).toContain("76px");
   });
 
   it("ignores another pointer and resets on cancellation", () => {
@@ -35,6 +42,37 @@ describe("virtual stick math", () => {
     fixture.zone.dispatch("pointercancel", { pointerId: 7, clientX: 100, clientY: 100 });
     expect(fixture.stick.getValue()).toEqual({ x: 0, y: 0, magnitude: 0 });
     expect(fixture.visual.classList.contains("is-active")).toBe(false);
+  });
+
+  it("supports routed control without installing zone listeners", () => {
+    const fixture = createStick(false);
+
+    expect(fixture.stick.begin(5, 80, 60)).toBe(true);
+    fixture.stick.move(5, 112, 84);
+    expect(fixture.stick.getValue().magnitude).toBeGreaterThan(0);
+    fixture.stick.end(5);
+    expect(fixture.stick.getValue()).toEqual({ x: 0, y: 0, magnitude: 0 });
+  });
+
+  it("resets the legacy stick when the browser loses focus", () => {
+    const browserWindow = new EventTarget();
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: browserWindow,
+    });
+
+    try {
+      const fixture = createStick();
+      fixture.stick.begin(9, 80, 60);
+      fixture.stick.move(9, 112, 84);
+      expect(fixture.stick.getValue().magnitude).toBeGreaterThan(0);
+
+      expect(() => browserWindow.dispatchEvent(new Event("blur"))).not.toThrow();
+      expect(fixture.stick.getValue()).toEqual({ x: 0, y: 0, magnitude: 0 });
+      fixture.stick.dispose();
+    } finally {
+      Reflect.deleteProperty(globalThis, "window");
+    }
   });
 
   it("keeps simultaneous left and right sticks independent", () => {
@@ -49,11 +87,11 @@ describe("virtual stick math", () => {
   });
 });
 
-function createStick(): { zone: FakeElement; visual: FakeElement; stick: VirtualStick } {
+function createStick(listenToZone = true): { zone: FakeElement; visual: FakeElement; stick: VirtualStick } {
   const zone = new FakeElement();
   const visual = new FakeElement();
   visual.child = new FakeElement();
-  return { zone, visual, stick: new VirtualStick(zone as unknown as HTMLElement, visual as unknown as HTMLElement, 64) };
+  return { zone, visual, stick: new VirtualStick(zone as unknown as HTMLElement, visual as unknown as HTMLElement, 64, listenToZone) };
 }
 
 class FakeElement extends EventTarget {

@@ -2,6 +2,8 @@ import { LOBBY_RETURN_DELAY_MS, PLAYER_COLORS, TARGET_SCORE } from "../shared/co
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { GameRenderer } from "./game-scene";
 import { GameNetworkClient } from "./network";
+import { MobileViewport } from "./mobile-viewport";
+import { TouchRouter } from "./touch-router";
 import { VirtualStick } from "./virtual-stick";
 
 const NAME_KEY = "energy-brawl.nickname";
@@ -10,6 +12,8 @@ export class MobileApp {
   private readonly network = new GameNetworkClient(true);
   private readonly moveStick: VirtualStick;
   private readonly aimStick: VirtualStick;
+  private readonly touchRouter: TouchRouter;
+  private readonly viewport: MobileViewport;
   private renderer: GameRenderer | null = null;
   private selectedColor: string = PLAYER_COLORS[0];
   private inputSequence = 0;
@@ -23,8 +27,17 @@ export class MobileApp {
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = mobileTemplate();
-    this.moveStick = new VirtualStick(this.find("#move-zone"), this.find("#move-stick"));
-    this.aimStick = new VirtualStick(this.find("#aim-zone"), this.find("#aim-stick"));
+    const arena = this.find("#arena-screen");
+    this.moveStick = new VirtualStick(arena, this.find("#move-stick"), 64, false);
+    this.aimStick = new VirtualStick(arena, this.find("#aim-stick"), 64, false);
+    this.touchRouter = new TouchRouter(
+      this.moveStick,
+      this.aimStick,
+      () => arena.getBoundingClientRect().width || window.innerWidth,
+      () => this.showToast("技能槽为空"),
+    );
+    this.viewport = new MobileViewport(this.resetControls);
+    this.viewport.start();
     this.bindActions();
     this.bindArenaGestures();
     this.network.subscribe(() => this.render());
@@ -62,10 +75,29 @@ export class MobileApp {
       const result = await this.network.returnToLobby();
       if (!result.ok) this.showToast(result.error ?? "无法返回大厅");
     });
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-fullscreen]")) {
+      button.addEventListener("click", async () => {
+        const entered = await this.viewport.requestFullscreen();
+        if (!entered) this.showToast("当前浏览器将使用沉浸式横屏布局");
+      });
+    }
   }
 
   private bindArenaGestures(): void {
     const arena = this.find("#arena-screen");
+    arena.addEventListener("pointerdown", (event) => {
+      const target = event.target as HTMLElement;
+      const role = this.touchRouter.pointerDown(event, Boolean(target.closest?.("[data-skill-button]")));
+      if (role && arena.setPointerCapture) arena.setPointerCapture(event.pointerId);
+    });
+    arena.addEventListener("pointermove", (event) => this.touchRouter.pointerMove(event));
+    const release = (event: PointerEvent) => {
+      this.touchRouter.pointerUp(event.pointerId);
+      if (arena.hasPointerCapture?.(event.pointerId)) arena.releasePointerCapture(event.pointerId);
+    };
+    arena.addEventListener("pointerup", release);
+    arena.addEventListener("pointercancel", release);
+    arena.addEventListener("lostpointercapture", (event) => this.touchRouter.pointerUp(event.pointerId));
     arena.addEventListener("gesturestart", (event) => event.preventDefault());
     arena.addEventListener("dblclick", (event) => event.preventDefault());
     let lastTouchEndAt = 0;
@@ -252,6 +284,13 @@ export class MobileApp {
     requestAnimationFrame(this.inputLoop);
   };
 
+  private readonly resetControls = (): void => {
+    this.touchRouter.resetAll();
+    this.renderer?.resetLocalInputs();
+    this.renderer?.setLocalInput({ x: 0, y: 0 });
+    this.renderer?.setLocalAim({ x: 0, y: 0 });
+  };
+
   private showToast(message: string): void {
     const toast = this.find("#toast");
     toast.textContent = message;
@@ -273,7 +312,7 @@ function mobileTemplate(): string {
     <main class="mobile-shell">
       <header class="game-header">
         <div class="mini-brand"><span class="brand-bolt">E</span><strong>能量乱斗</strong></div>
-        <span id="connection-state" class="connection-state">正在连接</span>
+        <div class="header-actions"><button class="fullscreen-button" data-fullscreen type="button">全屏</button><span id="connection-state" class="connection-state">正在连接</span></div>
       </header>
 
       <section id="lobby-screen" class="lobby-screen">
@@ -307,11 +346,11 @@ function mobileTemplate(): string {
           </div>
           <div id="match-clock" class="match-clock">5:00</div>
           <div id="leaderboard" class="leaderboard"></div>
+          <button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>
           <div id="respawn-state" class="respawn-state is-hidden"></div>
         </div>
         <div class="control-layer">
-          <div id="move-zone" class="touch-zone move-zone" aria-label="移动摇杆"></div>
-          <div id="aim-zone" class="touch-zone aim-zone" aria-label="瞄准摇杆"></div>
+          <button id="skill-button" class="skill-button" data-skill-button type="button" aria-label="使用技能" aria-disabled="true">技能</button>
           <div id="move-stick" class="virtual-stick move-stick"><div class="stick-mark">MOVE</div><div class="stick-knob"></div></div>
           <div id="aim-stick" class="virtual-stick aim-stick"><div class="stick-mark">FIRE</div><div class="stick-knob"></div></div>
         </div>

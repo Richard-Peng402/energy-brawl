@@ -23,9 +23,9 @@
 html,
 body,
 #app {
-  width: 100%;
+  width: 100dvw;
   min-width: 320px;
-  height: 100%;
+  height: 100dvh;
   margin: 0;
   overflow: hidden;
 }
@@ -82,8 +82,8 @@ input:focus-visible {
 
 .mobile-shell {
   position: relative;
-  width: 100%;
-  height: 100svh;
+  width: 100dvw;
+  height: 100dvh;
   background: #101419;
 }
 
@@ -100,6 +100,25 @@ input:focus-visible {
   justify-content: space-between;
   border-bottom: 1px solid #313b42;
   background: #101419;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fullscreen-button {
+  min-width: 52px;
+  height: 30px;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 4px;
+  padding: 0 10px;
+  background: rgb(13 17 21 / 82%);
+  color: #f4f7f8;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .mini-brand,
@@ -562,6 +581,32 @@ button:disabled {
   z-index: 20;
 }
 
+.arena-fullscreen {
+  position: absolute;
+  z-index: 30;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  pointer-events: auto;
+}
+
+.skill-button {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 8px));
+  width: 74px;
+  height: 52px;
+  transform: translateX(-50%);
+  border: 2px solid rgb(242 193 78 / 62%);
+  border-radius: 50%;
+  background: rgb(13 17 21 / 72%);
+  color: rgb(244 247 248 / 58%);
+  font-size: 11px;
+  font-weight: 950;
+  pointer-events: auto;
+  touch-action: none;
+}
+
 .touch-zone {
   position: absolute;
   z-index: 1;
@@ -644,7 +689,7 @@ button:disabled {
 
 .results-panel {
   width: min(640px, 82vw);
-  max-height: calc(100svh - 84px);
+  max-height: calc(100dvh - 84px);
   overflow: auto;
   padding: 18px;
 }
@@ -959,11 +1004,59 @@ button:disabled {
 
 @media (max-width: 1000px) and (orientation: landscape) {
   .lobby-screen {
-    grid-template-columns: 210px minmax(570px, 1fr);
+    grid-template-columns: minmax(170px, 0.5fr) minmax(0, 1fr);
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .lobby-workspace {
-    grid-template-columns: 220px minmax(330px, 1fr);
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    min-width: 0;
+  }
+
+  .color-swatch {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 720px) and (orientation: landscape) {
+  .lobby-screen {
+    grid-template-columns: 170px minmax(0, 1fr);
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .lobby-intro {
+    padding-left: max(18px, env(safe-area-inset-left));
+    padding-right: 18px;
+  }
+
+  .lobby-intro h1 {
+    font-size: 30px;
+  }
+
+  .lobby-workspace {
+    grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+    min-width: 0;
+    gap: 8px;
+    padding-left: 10px;
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+
+  .join-panel,
+  .roster-panel {
+    min-width: 0;
+  }
+
+  .join-panel {
+    padding: 8px;
+  }
+
+  .color-list {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
   }
 }
 
