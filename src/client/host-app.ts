@@ -185,7 +185,7 @@ function hostTemplate(): string {
         <h2>修改 <b id="stat-player-name"></b></h2>
         <label>属性<select id="stat-field"><option value="health">当前生命</option><option value="maxHealth">最大生命</option><option value="damage">伤害</option><option value="score">积分</option><option value="moveSpeed">移动速度</option><option value="fireCooldownMs">射击间隔（毫秒）</option></select></label>
         <label>新数值<input id="stat-value" type="number" inputmode="numeric" required /></label>
-        <p>提交后服务器会在下一固定帧应用，并立即同步所有客户端。</p>
+        <p>提交后服务器会立即应用，并同步所有客户端。</p>
         <div><button id="stat-cancel" type="button">取消</button><button class="primary-button" type="submit">应用修改</button></div>
       </form>
     </dialog>
