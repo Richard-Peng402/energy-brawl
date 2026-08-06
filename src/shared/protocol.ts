@@ -125,6 +125,13 @@ export interface JoinResult {
 
 export type HostCommand = "start" | "end" | "reset";
 
+export type AdminStat = "health" | "maxHealth" | "damage" | "score" | "moveSpeed" | "fireCooldownMs";
+
+export type HostAdminCommand =
+  | { type: "setStat"; playerId: string; stat: AdminStat; value: number }
+  | { type: "kick"; playerId: string }
+  | { type: "forceWinner"; playerId: string };
+
 export interface ClientToServerEvents {
   join: (payload: JoinPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
   reconnectPlayer: (payload: ReconnectPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
@@ -134,6 +141,7 @@ export interface ClientToServerEvents {
   playerInput: (input: PlayerInput) => void;
   useSkill: (payload: UseSkillPayload) => void;
   hostCommand: (payload: { token: string; command: HostCommand }, acknowledge: (result: Ack) => void) => void;
+  hostAdminCommand: (payload: { token: string; command: HostAdminCommand }, acknowledge: (result: Ack) => void) => void;
 }
 
 export interface ServerToClientEvents {

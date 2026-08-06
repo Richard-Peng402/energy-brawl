@@ -27,6 +27,7 @@ import {
   type PlayerSeed,
 } from "./simulation";
 import { clearSkillSlot } from "./skill-system";
+import type { HostAdminService } from "./host-admin";
 
 interface RoomSeat extends PlayerSeed {
   socketId: string | null;
@@ -44,10 +45,19 @@ export class GameRoom {
   private readonly nextBotThinkAt = new Map<string, number>();
   private readonly pendingInputs = new Map<string, PlayerInput>();
   private readonly pendingSkillActions = new Map<string, UseSkillPayload>();
+  private hostAdmin: HostAdminService | null = null;
   private world: GameWorld | null = null;
   private clockMs = 0;
   private autoResetAt: number | null = null;
   private nextPlayerNumber = 1;
+
+  attachHostAdmin(service: HostAdminService): void {
+    this.hostAdmin = service;
+  }
+
+  gameWorld(): GameWorld | null {
+    return this.world;
+  }
 
   joinHuman(socketId: string, payload: JoinPayload): Ack<JoinResult> {
     if (this.world) return { ok: false, error: "对局已经开始，请等待下一局" };
@@ -240,6 +250,8 @@ export class GameRoom {
       }
       return lifecycleChanged;
     }
+
+    this.hostAdmin?.drain(this.world);
 
     for (const [playerId, input] of this.pendingInputs) applyPlayerInput(this.world, playerId, input);
     this.pendingInputs.clear();

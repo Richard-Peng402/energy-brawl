@@ -9,6 +9,7 @@ import { REDUCED_SNAPSHOT_RATE, SERVER_TICK_MS, SNAPSHOT_RATE } from "../shared/
 import type {
   Ack,
   ClientToServerEvents,
+  HostAdminCommand,
   HostCommand,
   JoinPayload,
   PerformanceHint,
@@ -20,6 +21,7 @@ import { isCharacterId } from "../shared/character-catalog";
 import { GameRoom } from "./room";
 import { FixedStepAccumulator } from "./fixed-loop";
 import { RollingMetric } from "./performance";
+import { HostAdminService } from "./host-admin";
 
 interface InterServerEvents {}
 const SNAPSHOT_DEADLINE_EPSILON_MS = 1e-6;
@@ -45,6 +47,8 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
   const lastInputAt = new Map<string, number>();
   const fixedLoop = new FixedStepAccumulator(SERVER_TICK_MS, 3);
   const simulationDuration = new RollingMetric();
+  const hostAdmin = new HostAdminService(hostToken);
+  room.attachHostAdmin(hostAdmin);
   let snapshotOpportunityMs = 0;
 
   const broadcastRoom = () => io.emit("roomState", room.snapshot());
@@ -133,6 +137,13 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
         broadcastRoom();
         broadcastGameTransition();
       }
+    });
+
+    socket.on("hostAdminCommand", (payload, acknowledge) => {
+      const result = payload && typeof payload.token === "string" && isHostAdminCommand(payload.command)
+        ? hostAdmin.enqueue({ remoteAddress: socket.handshake.address, token: payload.token, command: payload.command }, room.gameWorld())
+        : invalid("主机命令格式无效");
+      sendAcknowledgement(acknowledge, result);
     });
 
     socket.on("disconnect", () => {
@@ -225,6 +236,16 @@ function isPlayerInput(input: unknown): input is PlayerInput {
     Number.isFinite(candidate.aimY) &&
     typeof candidate.firing === "boolean"
   );
+}
+
+function isHostAdminCommand(command: unknown): command is HostAdminCommand {
+  if (!command || typeof command !== "object") return false;
+  const candidate = command as Partial<HostAdminCommand> & { stat?: unknown; value?: unknown };
+  if (typeof candidate.playerId !== "string") return false;
+  if (candidate.type === "kick" || candidate.type === "forceWinner") return true;
+  return candidate.type === "setStat" &&
+    ["health", "maxHealth", "damage", "score", "moveSpeed", "fireCooldownMs"].includes(String(candidate.stat)) &&
+    Number.isFinite(candidate.value);
 }
 
 function isUseSkillPayload(payload: unknown): payload is UseSkillPayload {

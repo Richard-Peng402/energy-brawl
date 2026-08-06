@@ -289,6 +289,10 @@ export function applyWorldSkillAction(world: GameWorld, playerId: string, skillA
   return true;
 }
 
+export function refreshWorldScoreState(world: GameWorld, playerId: string): void {
+  handleScoreChange(world, playerId);
+}
+
 export function worldToSnapshot(world: GameWorld): GameSnapshot {
   return {
     serverTime: world.now,

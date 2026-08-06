@@ -8,6 +8,7 @@ import type {
   Ack,
   ClientToServerEvents,
   HostCommand,
+  HostAdminCommand,
   JoinPayload,
   JoinResult,
   ServerToClientEvents,
@@ -290,6 +291,22 @@ describe("game network", () => {
 
     expect(room.gameSnapshot()!.serverTime - before).toBeCloseTo(SERVER_TICK_MS * 3);
   });
+
+  it("queues a loopback host admin command until the next fixed simulation step", async () => {
+    const { client, network, room } = await createHarness();
+    const joined = await emitAck(client, "join", { nickname: "Admin Target", characterId: "blaze" });
+    await emitAck(client, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    const result = await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "setStat", playerId: joined.data!.playerId, stat: "score", value: 9 },
+    });
+    expect(result.ok).toBe(true);
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.score).toBe(0);
+
+    network.advance(SERVER_TICK_MS);
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.score).toBe(9);
+  });
 });
 
 function emitAck(client: TestClient, event: "join", payload: JoinPayload): Promise<Ack<JoinResult>>;
@@ -298,6 +315,11 @@ function emitAck(
   client: TestClient,
   event: "hostCommand",
   payload: { token: string; command: HostCommand },
+): Promise<Ack>;
+function emitAck(
+  client: TestClient,
+  event: "hostAdminCommand",
+  payload: { token: string; command: HostAdminCommand },
 ): Promise<Ack>;
 function emitAck(
   client: TestClient,
