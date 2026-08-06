@@ -6,7 +6,7 @@ import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
 import type { GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import { calculateAimGuide } from "./aim-guide";
 import { ARENA_ASSETS, CHARACTER_ASSETS, SKILL_ICON_ASSETS, type CharacterAssetState } from "./asset-registry";
-import { advanceCameraFollow } from "./camera-follow";
+import { resolveCameraView, shouldSnapCameraOnRespawn } from "./camera-follow";
 import {
   FixedObjectPool,
   characterTextureKey,
@@ -170,7 +170,6 @@ class ArenaScene extends Phaser.Scene {
     this.createGeneratedFallbackTextures();
     this.drawArena();
     this.createEffectPools();
-    this.cameras.main.setBounds(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
     this.resizeCamera(this.scale.width, this.scale.height);
     this.scale.on(Phaser.Scale.Events.RESIZE, (gameSize: Phaser.Structs.Size) => this.resizeCamera(gameSize.width, gameSize.height));
     this.aimCorridor = this.add.rectangle(0, 0, 1, 64, 0xff5a5f, 0.2).setOrigin(0, 0.5).setDepth(8).setVisible(false);
@@ -203,7 +202,7 @@ class ArenaScene extends Phaser.Scene {
       if (player) this.updatePlayerVisual(view, player, now);
       if (view.shield) view.shield.setPosition(view.container.x, view.container.y);
     }
-    this.updateCamera(delta);
+    this.updateCamera();
     this.updateAimGuide();
   }
 
@@ -261,6 +260,24 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private drawArena(): void {
+    const perimeterPadding = VIEW_WIDTH;
+    this.add
+      .rectangle(
+        ARENA_WIDTH / 2,
+        ARENA_HEIGHT / 2,
+        ARENA_WIDTH + perimeterPadding * 2,
+        ARENA_HEIGHT + perimeterPadding * 2,
+        0x071015,
+        1,
+      )
+      .setDepth(-20);
+    const perimeterGrid = this.add.graphics().setDepth(-19).lineStyle(2, 0x6c93a3, 0.055);
+    for (let x = -perimeterPadding; x <= ARENA_WIDTH + perimeterPadding; x += 160) {
+      perimeterGrid.lineBetween(x, -perimeterPadding, x, ARENA_HEIGHT + perimeterPadding);
+    }
+    for (let y = -perimeterPadding; y <= ARENA_HEIGHT + perimeterPadding; y += 160) {
+      perimeterGrid.lineBetween(-perimeterPadding, y, ARENA_WIDTH + perimeterPadding, y);
+    }
     this.add.tileSprite(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, ARENA_WIDTH, ARENA_HEIGHT, "arena-floor-v3").setDepth(-10).setTint(0x94b7c4);
     const grid = this.add.graphics();
     grid.setDepth(-8).lineStyle(2, 0xc9f1ff, 0.055);
@@ -313,6 +330,7 @@ class ArenaScene extends Phaser.Scene {
 
   private syncSnapshot(snapshot: GameSnapshot): void {
     const activePlayers = new Set(snapshot.players.map((player) => player.id));
+    let localPlayerRespawned = false;
     for (const [id, view] of this.playerViews) {
       if (!activePlayers.has(id)) {
         if (view.shield) view.shield.setVisible(false);
@@ -324,6 +342,11 @@ class ArenaScene extends Phaser.Scene {
     for (const player of snapshot.players) {
       const view = this.playerViews.get(player.id) ?? this.createPlayerView(player);
       if (player.id === this.localPlayerId) {
+        localPlayerRespawned = shouldSnapCameraOnRespawn(view.wasAlive, player.alive);
+        if (localPlayerRespawned) {
+          view.container.setPosition(player.x, player.y);
+          this.correctionRemaining = { x: 0, y: 0 };
+        }
         const current = { x: view.container.x, y: view.container.y };
         const reconciliation = this.inputReconciler.reconcile(player, current);
         if (reconciliation.correctionDistance > 80) {
@@ -362,6 +385,8 @@ class ArenaScene extends Phaser.Scene {
       view.wasAlive = player.alive;
       this.updatePlayerVisual(view, player, now);
     }
+
+    if (localPlayerRespawned) this.updateCamera();
 
     this.syncEnergy(snapshot);
     this.syncSkillOrbs(snapshot);
@@ -614,9 +639,10 @@ class ArenaScene extends Phaser.Scene {
   private resizeCamera(width: number, height: number): void {
     this.cameras.main.setViewport(0, 0, width, height);
     this.cameras.main.setZoom(calculateArenaCameraZoom(height, VIEW_HEIGHT));
+    this.updateCamera();
   }
 
-  private updateCamera(deltaMs: number): void {
+  private updateCamera(): void {
     if (!this.snapshot || this.snapshot.phase === "finished" || !this.localPlayerId) return;
     const view = this.playerViews.get(this.localPlayerId);
     if (!view) return;
@@ -624,24 +650,12 @@ class ArenaScene extends Phaser.Scene {
     const zoom = Math.max(0.01, camera.zoom);
     const viewportWidth = camera.width / zoom;
     const viewportHeight = camera.height / zoom;
-    const current = {
-      x: camera.scrollX + viewportWidth / 2,
-      y: camera.scrollY + viewportHeight / 2,
-    };
-    const next = advanceCameraFollow(
-      current,
+    const next = resolveCameraView(
       { x: view.container.x, y: view.container.y },
-      {
-        viewportWidth,
-        viewportHeight,
-        arenaWidth: ARENA_WIDTH,
-        arenaHeight: ARENA_HEIGHT,
-        deadzoneWidth: viewportWidth * 0.24,
-        deadzoneHeight: viewportHeight * 0.18,
-        smoothing: 9,
-      },
-      deltaMs,
+      { width: viewportWidth, height: viewportHeight },
+      { width: ARENA_WIDTH, height: ARENA_HEIGHT },
     );
-    camera.setScroll(next.x - viewportWidth / 2, next.y - viewportHeight / 2);
+    camera.setBounds(next.bounds.x, next.bounds.y, next.bounds.width, next.bounds.height);
+    camera.centerOn(next.center.x, next.center.y);
   }
 }
