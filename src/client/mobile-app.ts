@@ -3,6 +3,8 @@ import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
+import { CombatAudio } from "./combat-audio";
+import { didPickUpLocalSkill } from "./combat-feedback";
 import { GameRenderer } from "./game-scene";
 import { buildCharacterSelection, GameNetworkClient } from "./network";
 import { MobileViewport } from "./mobile-viewport";
@@ -18,11 +20,12 @@ export class MobileApp {
   private readonly aimStick: VirtualStick;
   private readonly touchRouter: TouchRouter;
   private readonly viewport: MobileViewport;
+  private readonly audio = new CombatAudio(window.localStorage);
   private renderer: GameRenderer | null = null;
   private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
   private inputSequence = 0;
   private skillActionSequence = 0;
-  private lastSkillType: SkillType | null = null;
+  private lastSkillType: SkillType | null | undefined = undefined;
   private lastInputSentAt = 0;
   private acceptingInput = false;
   private toastTimer = 0;
@@ -140,7 +143,7 @@ export class MobileApp {
     } else {
       this.find("#results-overlay").classList.add("is-hidden");
       this.skillActionSequence = 0;
-      this.lastSkillType = null;
+      this.lastSkillType = undefined;
       if (this.renderer) {
         this.renderer.destroy();
         this.renderer = null;
@@ -250,6 +253,7 @@ export class MobileApp {
       ? `<img src="${SKILL_ICON_ASSETS[type]}" alt="" /><span><b>${SKILL_CATALOG[type].name}</b><small>一次</small></span>`
       : `<span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span>`;
     button.setAttribute("aria-label", type ? `使用${SKILL_CATALOG[type].name}` : "技能槽为空");
+    if (didPickUpLocalSkill(previous, type)) this.audio.playPickup();
     if (type && previous !== type) this.showToast(`获得技能：${SKILL_CATALOG[type].name}`);
   }
 
@@ -274,7 +278,7 @@ export class MobileApp {
   }
 
   private ensureRenderer(): void {
-    if (!this.renderer) this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId);
+    if (!this.renderer) this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId, this.audio);
   }
 
   private readonly inputLoop = (time: number): void => {

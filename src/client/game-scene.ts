@@ -7,6 +7,7 @@ import type { GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/
 import { calculateAimGuide } from "./aim-guide";
 import { ARENA_ASSETS, CHARACTER_ASSETS, SKILL_ICON_ASSETS, type CharacterAssetState } from "./asset-registry";
 import { resolveCameraView, shouldSnapCameraOnRespawn } from "./camera-follow";
+import { CombatAudio } from "./combat-audio";
 import {
   effectCapacity,
   projectileAngle,
@@ -69,8 +70,8 @@ export class GameRenderer {
   private readonly scene: ArenaScene;
   private readonly game: Phaser.Game;
 
-  constructor(container: HTMLElement, localPlayerId: string | null) {
-    this.scene = new ArenaScene(localPlayerId);
+  constructor(container: HTMLElement, localPlayerId: string | null, audio: CombatAudio) {
+    this.scene = new ArenaScene(localPlayerId, audio);
     const width = Math.max(1, container.clientWidth || VIEW_WIDTH);
     const height = Math.max(1, container.clientHeight || VIEW_HEIGHT);
     this.game = new Phaser.Game({
@@ -150,7 +151,7 @@ class ArenaScene extends Phaser.Scene {
   private lowPerformance = false;
   private ready = false;
 
-  constructor(private localPlayerId: string | null) {
+  constructor(private localPlayerId: string | null, private readonly audio: CombatAudio) {
     super({ key: "arena" });
   }
 
@@ -379,6 +380,7 @@ class ArenaScene extends Phaser.Scene {
       if (player.health < view.lastHealth && player.alive) {
         view.hitUntil = now + 180;
         this.playCombatEffect("hit", view.container.x, view.container.y, 0xff5a5f);
+        if (player.id === this.localPlayerId) this.audio.playHurt();
       } else if (player.health > view.lastHealth && player.alive && now - view.lastHealEffectAt >= 500) {
         view.lastHealEffectAt = now;
         this.playCombatEffect("heal", view.container.x, view.container.y, 0x66ffd1);
@@ -512,6 +514,12 @@ class ArenaScene extends Phaser.Scene {
           const ownerView = this.playerViews.get(owner.id);
           if (ownerView) ownerView.attackUntil = performance.now() + 150;
           this.playCombatEffect("muzzle", owner.x + Math.cos(owner.angle) * 50, owner.y + Math.sin(owner.angle) * 50, color);
+          const localView = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : null;
+          this.audio.playFire({
+            local: owner.id === this.localPlayerId,
+            sourceId: owner.id,
+            distance: localView ? Math.hypot(owner.x - localView.container.x, owner.y - localView.container.y) : 1_200,
+          });
         }
       }
       const start = older.projectiles.find((candidate) => candidate.id === projectile.id) ?? projectile;
@@ -653,6 +661,7 @@ class ArenaScene extends Phaser.Scene {
     const x = view.container.x;
     const y = view.container.y;
     this.playCombatEffect("impact", x, y, view.color);
+    if (view.ownerId === this.localPlayerId) this.audio.playImpact();
     if (!shouldRenderEffect("spark", this.lowPerformance)) return;
     const pool = this.effectPools?.spark;
     if (!pool) return;
