@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   FixedObjectPool,
+  ReusableObjectPool,
   characterTextureKey,
   deriveCharacterVisualState,
   resolveCharacterTextureKey,
@@ -21,6 +22,22 @@ describe("v3 render effect pool", () => {
     expect(pool.capacity).toBe(2);
     expect(reused).toBe(first);
     expect([first.uses, second.uses]).toEqual([2, 1]);
+  });
+
+  it("leases only its fixed capacity and reuses a released object", () => {
+    const factory = vi.fn((index: number) => ({ index, visible: false }));
+    const pool = new ReusableObjectPool(2, factory, (item) => { item.visible = false; });
+
+    const first = pool.acquire((item) => { item.visible = true; });
+    const second = pool.acquire();
+    expect(pool.acquire()).toBeNull();
+    expect(factory).toHaveBeenCalledTimes(2);
+
+    expect(pool.release(first!)).toBe(true);
+    expect(pool.acquire()).toBe(first);
+    expect(pool.release(first!)).toBe(true);
+    expect(pool.release(first!)).toBe(false);
+    expect(second).not.toBeNull();
   });
 
   it("falls back to the generated character-color texture after an asset load failure", () => {
@@ -45,5 +62,11 @@ describe("v3 render effect pool", () => {
     }
     expect(shouldRenderEffect("environment", true)).toBe(false);
     expect(shouldRenderEffect("environment", false)).toBe(true);
+  });
+
+  it("drops decorative sparks but keeps readable combat effects in reduced mode", () => {
+    expect(shouldRenderEffect("spark", true)).toBe(false);
+    expect(shouldRenderEffect("trail", true)).toBe(true);
+    expect(shouldRenderEffect("impact", true)).toBe(true);
   });
 });
