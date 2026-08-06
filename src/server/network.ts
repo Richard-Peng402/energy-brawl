@@ -14,6 +14,7 @@ import type {
   PerformanceHint,
   PlayerInput,
   ServerToClientEvents,
+  UseSkillPayload,
 } from "../shared/protocol";
 import { isCharacterId } from "../shared/character-catalog";
 import { GameRoom } from "./room";
@@ -115,6 +116,10 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
       if (now - (lastInputAt.get(socket.id) ?? 0) < 15 || !isPlayerInput(input)) return;
       lastInputAt.set(socket.id, now);
       room.handleInput(socket.id, input);
+    });
+
+    socket.on("useSkill", (payload) => {
+      if (isUseSkillPayload(payload)) room.handleSkillAction(socket.id, payload);
     });
 
     socket.on("hostCommand", (payload, acknowledge) => {
@@ -220,6 +225,12 @@ function isPlayerInput(input: unknown): input is PlayerInput {
     Number.isFinite(candidate.aimY) &&
     typeof candidate.firing === "boolean"
   );
+}
+
+function isUseSkillPayload(payload: unknown): payload is UseSkillPayload {
+  if (!payload || typeof payload !== "object") return false;
+  const candidate = payload as Partial<UseSkillPayload>;
+  return Number.isSafeInteger(candidate.skillActionSeq) && candidate.skillActionSeq! >= 0;
 }
 
 function isPerformanceHint(hint: unknown): hint is PerformanceHint {

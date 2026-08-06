@@ -1,4 +1,5 @@
 import type { CharacterId } from "./character-catalog";
+import type { SkillType } from "./skill-catalog";
 
 export interface Vec2 {
   x: number;
@@ -50,6 +51,8 @@ export interface PlayerSnapshot extends Vec2 {
   respawnAt: number | null;
   shieldUntil: number;
   lastProcessedInput: number;
+  skillSlot: SkillSlotSnapshot;
+  lastProcessedSkillAction: number;
 }
 
 export interface ProjectileSnapshot extends Vec2 {
@@ -61,6 +64,20 @@ export interface ProjectileSnapshot extends Vec2 {
 
 export interface EnergySnapshot extends Vec2 {
   id: string;
+}
+
+export interface SkillOrbSnapshot extends Vec2 {
+  id: string;
+  type: SkillType;
+}
+
+export interface SkillSlotSnapshot {
+  type: SkillType | null;
+  charges: 0 | 1;
+}
+
+export interface UseSkillPayload {
+  skillActionSeq: number;
 }
 
 export interface RoomSnapshot {
@@ -81,6 +98,7 @@ export interface GameSnapshot {
   players: PlayerSnapshot[];
   projectiles: ProjectileSnapshot[];
   energy: EnergySnapshot[];
+  skillOrbs: SkillOrbSnapshot[];
 }
 
 export interface JoinPayload {
@@ -112,6 +130,7 @@ export interface ClientToServerEvents {
   returnToLobby: (acknowledge: (result: Ack) => void) => void;
   performanceHint: (hint: PerformanceHint) => void;
   playerInput: (input: PlayerInput) => void;
+  useSkill: (payload: UseSkillPayload) => void;
   hostCommand: (payload: { token: string; command: HostCommand }, acknowledge: (result: Ack) => void) => void;
 }
 

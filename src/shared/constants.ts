@@ -32,6 +32,12 @@ export const PROJECTILE_LIFETIME_MS = 1_850;
 export const ENERGY_RADIUS = 18;
 export const ENERGY_RESPAWN_MS = 5_000;
 export const MAX_ENERGY = 6;
+export const MAX_SKILL_ORBS = 3;
+export const SKILL_ORB_RADIUS = 20;
+export const SKILL_ORB_SPAWN_MIN_MS = 10_000;
+export const SKILL_ORB_SPAWN_MAX_MS = 14_000;
+export const SKILL_ORB_SAFE_DISTANCE = 170;
+export const SKILL_ACTION_MAX_JUMP = 1_024;
 
 export const PLAYER_COLORS = [
   "#ff5a5f",
@@ -74,6 +80,18 @@ export const ENERGY_SPAWN_POINTS: readonly Vec2[] = [
   { x: 1400, y: 300 },
   { x: 300, y: 607 },
   { x: 1860, y: 607 },
+].map(scalePoint);
+
+export const SKILL_ORB_SPAWN_POINTS: readonly Vec2[] = [
+  { x: 1080, y: 350 },
+  { x: 570, y: 250 },
+  { x: 1590, y: 965 },
+  { x: 1590, y: 250 },
+  { x: 570, y: 965 },
+  { x: 1080, y: 110 },
+  { x: 1080, y: 1105 },
+  { x: 205, y: 607 },
+  { x: 1955, y: 607 },
 ].map(scalePoint);
 
 export const WALLS: readonly Rect[] = [

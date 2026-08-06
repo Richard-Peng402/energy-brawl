@@ -14,6 +14,7 @@ import {
   PROJECTILE_LIFETIME_MS,
   PROJECTILE_RADIUS,
   RESPAWN_DELAY_MS,
+  SKILL_ORB_RADIUS,
   SPAWN_POINTS,
   SPAWN_SHIELD_MS,
   TARGET_SCORE,
@@ -23,6 +24,14 @@ import { getCharacter, MEDIC_ENERGY_HEAL, type CharacterId } from "../shared/cha
 import { firstWallHit, moveCircleSafely, sweepCircleCircle } from "../shared/collision";
 import { StaticSpatialIndex } from "../shared/spatial-index";
 import { circleHitsCircle, clamp, distanceSquared, normalize } from "../shared/math";
+import {
+  advanceSkillSystem,
+  applySkillAction,
+  clearSkillSlot,
+  collectSkillOrb,
+  createSkillSystem,
+  type SkillSystemState,
+} from "./skill-system";
 import type {
   EnergySnapshot,
   GamePhase,
@@ -61,6 +70,7 @@ export interface GameWorld {
   players: Map<string, WorldPlayer>;
   projectiles: Map<string, WorldProjectile>;
   energy: Map<string, EnergySnapshot>;
+  skillSystem: SkillSystemState;
   nextProjectileId: number;
   nextEnergyId: number;
   nextEnergySpawnAt: number;
@@ -106,6 +116,8 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
       respawnAt: null,
       shieldUntil: now + SPAWN_SHIELD_MS,
       lastProcessedInput: 0,
+      skillSlot: { type: null, charges: 0 },
+      lastProcessedSkillAction: 0,
       input: { ...EMPTY_INPUT },
       nextFireAt: now,
     });
@@ -123,6 +135,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
     players,
     projectiles: new Map(),
     energy: new Map(),
+    skillSystem: createSkillSystem(now),
     nextProjectileId: 1,
     nextEnergyId: 1,
     nextEnergySpawnAt: now,
@@ -187,6 +200,12 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
   collectTouchedEnergy(world);
   if (isFinished(world)) return;
   replenishEnergy(world);
+  collectTouchedSkillOrbs(world);
+  advanceSkillSystem(
+    world.skillSystem,
+    world.now,
+    [...world.players.values()].filter((player) => player.alive),
+  );
 
   if (world.phase === "playing" && world.remainingMs === 0) finishNormalTime(world);
 }
@@ -209,6 +228,7 @@ export function damagePlayer(
   victim.vy = 0;
   victim.respawnAt = world.now + RESPAWN_DELAY_MS;
   victim.input = { ...EMPTY_INPUT, seq: victim.lastProcessedInput };
+  clearSkillSlot(victim);
 
   const attacker = world.players.get(attackerId);
   if (attacker && attacker.id !== victim.id) {
@@ -234,6 +254,18 @@ export function collectEnergy(world: GameWorld, playerId: string, energyId: stri
   return true;
 }
 
+export function collectWorldSkillOrb(world: GameWorld, playerId: string, orbId: string): boolean {
+  if (world.phase === "finished") return false;
+  const player = world.players.get(playerId);
+  return Boolean(player?.alive && collectSkillOrb(world.skillSystem, player, orbId));
+}
+
+export function applyWorldSkillAction(world: GameWorld, playerId: string, skillActionSeq: number): boolean {
+  if (world.phase === "finished") return false;
+  const player = world.players.get(playerId);
+  return player ? applySkillAction(player, skillActionSeq).accepted : false;
+}
+
 export function worldToSnapshot(world: GameWorld): GameSnapshot {
   return {
     serverTime: world.now,
@@ -247,6 +279,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, ...player }) => player),
     projectiles: [...world.projectiles.values()].map(({ expiresAt: _expiresAt, ...projectile }) => projectile),
     energy: [...world.energy.values()],
+    skillOrbs: [...world.skillSystem.orbs.values()],
   };
 }
 
@@ -343,6 +376,17 @@ function collectTouchedEnergy(world: GameWorld): void {
       if (circleHitsCircle(player, PLAYER_RADIUS, energy, ENERGY_RADIUS)) {
         collectEnergy(world, player.id, energy.id);
         if (world.phase === "finished") return;
+      }
+    }
+  }
+}
+
+function collectTouchedSkillOrbs(world: GameWorld): void {
+  for (const player of world.players.values()) {
+    if (!player.alive) continue;
+    for (const orb of world.skillSystem.orbs.values()) {
+      if (circleHitsCircle(player, PLAYER_RADIUS, orb, SKILL_ORB_RADIUS)) {
+        collectWorldSkillOrb(world, player.id, orb.id);
       }
     }
   }

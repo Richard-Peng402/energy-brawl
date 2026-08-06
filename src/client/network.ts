@@ -106,6 +106,10 @@ export class GameNetworkClient {
     if (this.connected && this.playerSessionReady) this.socket.emit("playerInput", input);
   }
 
+  sendSkillAction(skillActionSeq: number): void {
+    if (this.connected && this.playerSessionReady) this.socket.emit("useSkill", { skillActionSeq });
+  }
+
   sendPerformanceHint(hint: PerformanceHint): void {
     if (!this.connected) return;
     this.snapshotMode = hint.snapshotMode;

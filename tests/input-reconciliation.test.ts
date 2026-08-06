@@ -98,6 +98,8 @@ function player(overrides: Partial<PlayerSnapshot>): PlayerSnapshot {
     respawnAt: null,
     shieldUntil: 0,
     lastProcessedInput: 0,
+    skillSlot: { type: null, charges: 0 },
+    lastProcessedSkillAction: 0,
     ...overrides,
   };
 }

@@ -232,6 +232,22 @@ describe("game network", () => {
     expect(gameSnapshot).toHaveBeenCalledTimes(90);
   });
 
+  it("queues skill actions from the socket until the next fixed simulation step", async () => {
+    const { client, network, room } = await createHarness();
+    const joined = await emitAck(client, "join", { nickname: "Skill User", characterId: "blaze" });
+    await emitAck(client, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    const serverSocket = network.io.sockets.sockets.get(client.id!)!;
+    const received = new Promise<void>((resolve) => serverSocket.once("useSkill", () => queueMicrotask(resolve)));
+
+    client.emit("useSkill", { skillActionSeq: 1 });
+    await received;
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.lastProcessedSkillAction).toBe(0);
+    network.advance(SERVER_TICK_MS);
+
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.lastProcessedSkillAction).toBe(1);
+  });
+
   it("does not reset an existing snapshot deadline for repeated or invalid hints", async () => {
     const { client, network } = await createHarness();
     await emitAck(client, "join", { nickname: "Player", characterId: "blaze" });

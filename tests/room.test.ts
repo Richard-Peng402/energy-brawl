@@ -1,13 +1,56 @@
 import { describe, expect, it } from "vitest";
 
 import { CHARACTER_CATALOG, type CharacterId } from "../src/shared/character-catalog";
-import { LOBBY_RETURN_DELAY_MS, RECONNECT_WINDOW_MS } from "../src/shared/constants";
+import { LOBBY_RETURN_DELAY_MS, RECONNECT_WINDOW_MS, SKILL_ORB_SPAWN_MIN_MS } from "../src/shared/constants";
 import { GameRoom } from "../src/server/room";
+import { collectWorldSkillOrb, type GameWorld } from "../src/server/simulation";
 
 const join = (room: GameRoom, socketId: string, nickname: string, characterId: CharacterId = "blaze") =>
   room.joinHuman(socketId, { nickname, characterId });
 
 describe("game room", () => {
+  it("queues monotonic skill actions until the simulation tick", () => {
+    const room = new GameRoom();
+    const joined = join(room, "socket-1", "Player");
+    room.setReady("socket-1", true);
+    room.startMatch();
+
+    expect(room.handleSkillAction("socket-1", { skillActionSeq: 1 })).toBe(true);
+    expect(room.handleSkillAction("socket-1", { skillActionSeq: 1 })).toBe(false);
+    expect(room.handleSkillAction("socket-1", { skillActionSeq: Number.NaN })).toBe(false);
+    expect(room.handleSkillAction("socket-1", { skillActionSeq: 1_000_000 })).toBe(false);
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.lastProcessedSkillAction).toBe(0);
+
+    room.tick(16);
+
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.lastProcessedSkillAction).toBe(1);
+  });
+
+  it("preserves a collected skill on reconnect but clears it after bot takeover", () => {
+    const room = new GameRoom();
+    const joined = join(room, "socket-1", "技能玩家", "blaze");
+    join(room, "socket-2", "留守玩家", "medic");
+    room.setReady("socket-1", true);
+    room.setReady("socket-2", true);
+    room.startMatch();
+    room.tick(SKILL_ORB_SPAWN_MIN_MS);
+    const orb = room.gameSnapshot()!.skillOrbs[0]!;
+    const world = (room as unknown as { world: GameWorld }).world;
+    expect(collectWorldSkillOrb(world, joined.data!.playerId, orb.id)).toBe(true);
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.skillSlot.charges).toBe(1);
+
+    room.disconnect("socket-1");
+    expect(room.reconnectHuman("socket-3", joined.data!.reconnectToken).ok).toBe(true);
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.skillSlot.charges).toBe(1);
+
+    room.disconnect("socket-3");
+    room.tick(RECONNECT_WINDOW_MS + 1);
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)).toMatchObject({
+      isBot: true,
+      skillSlot: { type: null, charges: 0 },
+    });
+  });
+
   it("fills all empty seats with bots on start", () => {
     const room = new GameRoom();
     const joined = join(room, "socket-1", "玩家一");

@@ -4,6 +4,7 @@ import {
   LOBBY_RETURN_DELAY_MS,
   MAX_PLAYERS,
   RECONNECT_WINDOW_MS,
+  SKILL_ACTION_MAX_JUMP,
 } from "../shared/constants";
 import { CHARACTER_CATALOG, getCharacter, isCharacterId } from "../shared/character-catalog";
 import type {
@@ -13,16 +14,19 @@ import type {
   JoinResult,
   PlayerInput,
   RoomSnapshot,
+  UseSkillPayload,
 } from "../shared/protocol";
 import { chooseBotInput } from "./bot";
 import {
   applyPlayerInput,
+  applyWorldSkillAction,
   createGameWorld,
   stepWorld,
   worldToSnapshot,
   type GameWorld,
   type PlayerSeed,
 } from "./simulation";
+import { clearSkillSlot } from "./skill-system";
 
 interface RoomSeat extends PlayerSeed {
   socketId: string | null;
@@ -39,6 +43,7 @@ export class GameRoom {
   private readonly socketPlayers = new Map<string, string>();
   private readonly nextBotThinkAt = new Map<string, number>();
   private readonly pendingInputs = new Map<string, PlayerInput>();
+  private readonly pendingSkillActions = new Map<string, UseSkillPayload>();
   private world: GameWorld | null = null;
   private clockMs = 0;
   private autoResetAt: number | null = null;
@@ -95,9 +100,11 @@ export class GameRoom {
     const player = this.world?.players.get(seat.id);
     if (player) {
       this.pendingInputs.delete(seat.id);
+      this.pendingSkillActions.delete(seat.id);
       player.connected = true;
       player.isBot = false;
       player.lastProcessedInput = 0;
+      player.lastProcessedSkillAction = 0;
       player.input = {
         seq: 0,
         moveX: 0,
@@ -129,6 +136,7 @@ export class GameRoom {
     this.world = createGameWorld([...this.seats.values()], this.clockMs);
     this.autoResetAt = null;
     this.pendingInputs.clear();
+    this.pendingSkillActions.clear();
     for (const seat of this.seats.values()) {
       const player = this.world.players.get(seat.id);
       if (!player) continue;
@@ -161,6 +169,7 @@ export class GameRoom {
     this.autoResetAt = null;
     this.nextBotThinkAt.clear();
     this.pendingInputs.clear();
+    this.pendingSkillActions.clear();
     for (const [id, seat] of this.seats) {
       if (seat.isBot || !seat.connected) {
         this.seats.delete(id);
@@ -178,6 +187,7 @@ export class GameRoom {
     const seat = this.seats.get(playerId);
     if (!seat) return;
     this.pendingInputs.delete(playerId);
+    this.pendingSkillActions.delete(playerId);
     seat.socketId = null;
     seat.connected = false;
     seat.ready = false;
@@ -201,6 +211,22 @@ export class GameRoom {
     return true;
   }
 
+  handleSkillAction(socketId: string, payload: UseSkillPayload): boolean {
+    const seat = this.seatForSocket(socketId);
+    if (!seat || !seat.connected || seat.isBot || !this.world || this.world.phase === "finished") return false;
+    if (!Number.isSafeInteger(payload.skillActionSeq) || payload.skillActionSeq < 0) return false;
+    const player = this.world.players.get(seat.id);
+    const queued = this.pendingSkillActions.get(seat.id);
+    if (
+      !player ||
+      payload.skillActionSeq <= player.lastProcessedSkillAction ||
+      payload.skillActionSeq - player.lastProcessedSkillAction > SKILL_ACTION_MAX_JUMP ||
+      (queued && payload.skillActionSeq <= queued.skillActionSeq)
+    ) return false;
+    this.pendingSkillActions.set(seat.id, { skillActionSeq: payload.skillActionSeq });
+    return true;
+  }
+
   tick(deltaMs: number): boolean {
     if (!Number.isFinite(deltaMs) || deltaMs <= 0) return false;
     this.clockMs += deltaMs;
@@ -217,6 +243,10 @@ export class GameRoom {
 
     for (const [playerId, input] of this.pendingInputs) applyPlayerInput(this.world, playerId, input);
     this.pendingInputs.clear();
+    for (const [playerId, action] of this.pendingSkillActions) {
+      applyWorldSkillAction(this.world, playerId, action.skillActionSeq);
+    }
+    this.pendingSkillActions.clear();
 
     for (const player of this.world.players.values()) {
       if (!player.isBot || this.clockMs < (this.nextBotThinkAt.get(player.id) ?? 0)) continue;
@@ -323,7 +353,10 @@ export class GameRoom {
       seat.reconnectToken = null;
       seat.isBot = true;
       const player = this.world?.players.get(seat.id);
-      if (player) player.isBot = true;
+      if (player) {
+        player.isBot = true;
+        clearSkillSlot(player);
+      }
     }
 
     if (this.world && ![...this.seats.values()].some((seat) => !seat.isBot)) {

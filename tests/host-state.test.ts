@@ -41,11 +41,14 @@ describe("host presentation state", () => {
           respawnAt: null,
           shieldUntil: 0,
           lastProcessedInput: 0,
+          skillSlot: { type: null, charges: 0 },
+          lastProcessedSkillAction: 0,
           score: 15,
         },
       ],
       projectiles: [],
       energy: [],
+      skillOrbs: [],
     };
 
     const presentation = resolveHostPresentation(room, game);

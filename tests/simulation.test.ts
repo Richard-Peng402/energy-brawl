@@ -12,6 +12,7 @@ import {
   PLAYER_RADIUS,
   PROJECTILE_DAMAGE,
   RESPAWN_DELAY_MS,
+  SKILL_ORB_SPAWN_MIN_MS,
   SPAWN_SHIELD_MS,
   TARGET_SCORE,
   WALLS,
@@ -21,9 +22,11 @@ import { getCharacter } from "../src/shared/character-catalog";
 import {
   applyPlayerInput,
   collectEnergy,
+  collectWorldSkillOrb,
   createGameWorld,
   damagePlayer,
   stepWorld,
+  worldToSnapshot,
 } from "../src/server/simulation";
 
 function createWorld() {
@@ -95,6 +98,27 @@ describe("authoritative simulation", () => {
     collectEnergy(world, medic.id, [...world.energy.keys()][0]!);
 
     expect(medic.health).toBe(medic.maxHealth);
+  });
+
+  it("replaces a held skill without scoring and clears the slot on death", () => {
+    const world = createWorld();
+    const player = world.players.get("red")!;
+    player.score = 7;
+    player.skillSlot = { type: "shield", charges: 1 };
+    stepWorld(world, SKILL_ORB_SPAWN_MIN_MS);
+    const orb = [...world.skillSystem.orbs.values()][0]!;
+
+    expect(collectWorldSkillOrb(world, player.id, orb.id)).toBe(true);
+    expect(player.skillSlot).toEqual({ type: orb.type, charges: 1 });
+    expect(player.score).toBe(7);
+    player.shieldUntil = 0;
+    damagePlayer(world, player.id, "blue", player.health);
+
+    expect(player.skillSlot).toEqual({ type: null, charges: 0 });
+    expect(worldToSnapshot(world)).toEqual(expect.objectContaining({
+      skillOrbs: expect.any(Array),
+      players: expect.arrayContaining([expect.objectContaining({ lastProcessedSkillAction: 0 })]),
+    }));
   });
 
   it("starts a thirty-second hold for the unique leader at fifteen points", () => {
