@@ -25,9 +25,10 @@ export class HostApp {
       const playerId = button.dataset.playerId;
       const action = button.dataset.adminAction;
       if (!playerId || !action) return;
-      if (action === "kick" && window.confirm("确认踢出该玩家？本局将由 AI 接管。")) {
+      const lobby = (this.network.room?.phase ?? "lobby") === "lobby";
+      if (action === "kick" && window.confirm(lobby ? "确认踢出该玩家并释放大厅席位？" : "确认踢出该玩家？本局将由 AI 接管。")) {
         void this.admin({ type: "kick", playerId });
-      } else if (action === "forceWinner" && window.confirm("确认强制该玩家获胜并结束本局？")) {
+      } else if (action === "forceWinner" && window.confirm(lobby ? "确认将该玩家预设为下一局胜者？开局后将立即结算。" : "确认强制该玩家获胜并结束本局？")) {
         void this.admin({ type: "forceWinner", playerId });
       } else if (action === "setStat") {
         this.openStatEditor(playerId);
@@ -48,7 +49,7 @@ export class HostApp {
   }
 
   private openStatEditor(playerId: string): void {
-    const player = this.network.game?.players.find((candidate) => candidate.id === playerId);
+    const player = this.presentedPlayer(playerId);
     if (!player) return;
     this.editingPlayerId = playerId;
     this.find("#stat-player-name").textContent = player.nickname;
@@ -57,7 +58,7 @@ export class HostApp {
   }
 
   private fillCurrentStatValue(): void {
-    const player = this.network.game?.players.find((candidate) => candidate.id === this.editingPlayerId);
+    const player = this.editingPlayerId ? this.presentedPlayer(this.editingPlayerId) : undefined;
     if (!player) return;
     const stat = this.find<HTMLSelectElement>("#stat-field").value as AdminStat;
     this.find<HTMLInputElement>("#stat-value").value = String(player[stat]);
@@ -82,7 +83,7 @@ export class HostApp {
 
   private async admin(command: Parameters<GameNetworkClient["hostAdminCommand"]>[1]): Promise<void> {
     const result = await this.network.hostAdminCommand(this.token, command);
-    this.message = result.ok ? "房主命令已排队" : result.error ?? "房主命令执行失败";
+    this.message = result.ok ? "房主命令已生效" : result.error ?? "房主命令执行失败";
     this.render();
   }
 
@@ -105,11 +106,12 @@ export class HostApp {
 
     const players = presentation.players;
     const phase = presentation.phase;
-    const adminEnabled = this.token.length > 0 && (phase === "playing" || phase === "overtime");
+    const adminEnabled = canUseHostAdmin(phase, this.token);
+    const pendingWinnerId = room?.pendingWinnerId ?? null;
     this.find("#host-roster").innerHTML = Array.from({ length: 6 }, (_, index) => players[index])
       .map((player, index) =>
         player
-          ? `<div class="host-seat"><span class="seat-index">${index + 1}</span><i style="--player-color:${player.color}"></i><div class="host-player-name"><b>${escapeHtml(player.nickname)}</b><small>${player.isBot ? "AI" : player.connected ? "在线" : "离线"}</small></div><span class="host-player-stats">生命 ${player.health ?? "—"}/${player.maxHealth ?? "—"} · 伤害 ${player.damage ?? "—"} · 积分 ${player.score} · 移速 ${player.moveSpeed ?? "—"} · 射击 ${player.fireCooldownMs ?? "—"}ms</span><div class="host-player-actions">${adminEnabled ? `<button type="button" data-admin-action="setStat" data-player-id="${player.id}">改数值</button><button type="button" data-admin-action="kick" data-player-id="${player.id}">踢出</button><button type="button" data-admin-action="forceWinner" data-player-id="${player.id}">强制获胜</button>` : ""}</div></div>`
+          ? `<div class="host-seat${pendingWinnerId === player.id ? " is-preset-winner" : ""}"><span class="seat-index">${index + 1}</span><i style="--player-color:${player.color}"></i><div class="host-player-name"><b>${escapeHtml(player.nickname)}</b><small>${pendingWinnerId === player.id ? "已预设胜者" : player.isBot ? "AI" : player.connected ? "在线" : "离线"}</small></div><span class="host-player-stats">生命 ${player.health}/${player.maxHealth} · 伤害 ${player.damage} · 积分 ${player.score} · 移速 ${player.moveSpeed} · 射击 ${player.fireCooldownMs}ms</span><div class="host-player-actions">${adminEnabled ? `<button type="button" data-admin-action="setStat" data-player-id="${player.id}">改数值</button><button type="button" data-admin-action="kick" data-player-id="${player.id}">踢出</button><button type="button" data-admin-action="forceWinner" data-player-id="${player.id}">${phase === "lobby" ? "预设获胜" : "强制获胜"}</button>` : ""}</div></div>`
           : `<div class="host-seat is-empty"><span class="seat-index">${index + 1}</span><i></i><b>空位</b><span>等待玩家</span><strong>—</strong></div>`,
       )
       .join("");
@@ -118,6 +120,11 @@ export class HostApp {
     this.find<HTMLButtonElement>("#host-start").disabled = !hasToken || !room?.canStart || phase !== "lobby";
     this.find<HTMLButtonElement>("#host-end").disabled = !hasToken || (phase !== "playing" && phase !== "overtime");
     this.find<HTMLButtonElement>("#host-reset").disabled = !hasToken || phase === "lobby";
+  }
+
+  private presentedPlayer(playerId: string): HostPlayer | undefined {
+    const room = this.network.room ?? this.info?.room ?? null;
+    return resolveHostPresentation(room, this.network.game).players.find((candidate) => candidate.id === playerId);
   }
 
   private find<T extends HTMLElement = HTMLElement>(selector: string): T {
@@ -138,6 +145,10 @@ export function resolveHostPresentation(
     };
   }
   return { phase: room?.phase ?? "lobby", players: room?.players ?? [] };
+}
+
+export function canUseHostAdmin(phase: GamePhase, token: string): boolean {
+  return token.length > 0 && phase !== "finished";
 }
 
 type HostPlayer = RoomSnapshot["players"][number] & Partial<Pick<GameSnapshot["players"][number], "health" | "maxHealth" | "damage" | "moveSpeed" | "fireCooldownMs">>;

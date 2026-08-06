@@ -9,7 +9,9 @@ import {
 import { CHARACTER_CATALOG, getCharacter, isCharacterId } from "../shared/character-catalog";
 import type {
   Ack,
+  AdminStat,
   GameSnapshot,
+  HostAdminCommand,
   JoinPayload,
   JoinResult,
   PlayerInput,
@@ -22,13 +24,13 @@ import {
   applyWorldSkillAction,
   createGameWorld,
   forceWorldWinner,
+  refreshWorldScoreState,
   stepWorld,
   worldToSnapshot,
   type GameWorld,
   type PlayerSeed,
 } from "./simulation";
 import { clearSkillSlot } from "./skill-system";
-import type { HostAdminService } from "./host-admin";
 
 interface RoomSeat extends PlayerSeed {
   socketId: string | null;
@@ -47,17 +49,11 @@ export class GameRoom {
   private readonly pendingInputs = new Map<string, PlayerInput>();
   private readonly pendingSkillActions = new Map<string, UseSkillPayload>();
   private readonly kickedSocketIds: string[] = [];
-  private hostAdmin: HostAdminService | null = null;
   private world: GameWorld | null = null;
   private clockMs = 0;
   private autoResetAt: number | null = null;
-  private adminStateChanged = false;
   private nextPlayerNumber = 1;
   private pendingWinnerId: string | null = null;
-
-  attachHostAdmin(service: HostAdminService): void {
-    this.hostAdmin = service;
-  }
 
   gameWorld(): GameWorld | null {
     return this.world;
@@ -67,10 +63,30 @@ export class GameRoom {
     return this.kickedSocketIds.splice(0);
   }
 
-  consumeAdminStateChanged(): boolean {
-    const changed = this.adminStateChanged;
-    this.adminStateChanged = false;
-    return changed;
+  hasPlayer(playerId: string): boolean {
+    return this.seats.has(playerId) && (!this.world || this.world.players.has(playerId));
+  }
+
+  applyHostAdminCommand(command: HostAdminCommand): Ack {
+    if (!this.hasPlayer(command.playerId)) return { ok: false, error: "目标玩家不存在" };
+    if (this.world?.phase === "finished") return { ok: false, error: "当前阶段不可执行" };
+
+    if (command.type === "setStat") {
+      return this.world
+        ? this.applyWorldStat(command.playerId, command.stat, command.value)
+        : this.applyLobbyStat(command.playerId, command.stat, command.value);
+    }
+    if (command.type === "kick") {
+      return this.kickPlayer(command.playerId) ? { ok: true } : { ok: false, error: "踢出失败" };
+    }
+    if (this.world) {
+      this.world.now = Math.max(this.world.now, this.clockMs);
+      if (!forceWorldWinner(this.world, command.playerId)) return { ok: false, error: "强制获胜失败" };
+      this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
+      return { ok: true };
+    }
+    this.pendingWinnerId = command.playerId;
+    return { ok: true };
   }
 
   joinHuman(socketId: string, payload: JoinPayload): Ack<JoinResult> {
@@ -167,6 +183,11 @@ export class GameRoom {
       player.connected = seat.connected;
       player.ready = seat.ready || seat.isBot;
     }
+    const pendingWinnerId = this.pendingWinnerId;
+    this.pendingWinnerId = null;
+    if (pendingWinnerId && forceWorldWinner(this.world, pendingWinnerId)) {
+      this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
+    }
     return { ok: true };
   }
 
@@ -254,7 +275,6 @@ export class GameRoom {
 
   tick(deltaMs: number): boolean {
     if (!Number.isFinite(deltaMs) || deltaMs <= 0) return false;
-    this.adminStateChanged = false;
     this.clockMs += deltaMs;
     const lifecycleChanged = this.expireReconnectTokens();
     if (!this.world) return lifecycleChanged;
@@ -268,7 +288,6 @@ export class GameRoom {
     }
 
     const wasFinished = this.worldIsFinished();
-    this.adminStateChanged = this.hostAdmin?.drain(this.world, (command) => this.applyHostAdminCommand(command)).changed ?? false;
 
     for (const [playerId, input] of this.pendingInputs) applyPlayerInput(this.world, playerId, input);
     this.pendingInputs.clear();
@@ -353,17 +372,10 @@ export class GameRoom {
     return this.world?.phase === "finished";
   }
 
-  private applyHostAdminCommand(command: Exclude<import("../shared/protocol").HostAdminCommand, { type: "setStat" }>): boolean {
-    if (command.type === "kick") return this.kickPlayer(command.playerId);
-    if (!this.world) return false;
-    this.world.now = Math.max(this.world.now, this.clockMs);
-    return forceWorldWinner(this.world, command.playerId);
-  }
-
   private kickPlayer(playerId: string): boolean {
     const seat = this.seats.get(playerId);
     const player = this.world?.players.get(playerId);
-    if (!seat || !player) return false;
+    if (!seat || (this.world && !player)) return false;
 
     if (seat.socketId) {
       this.socketPlayers.delete(seat.socketId);
@@ -371,27 +383,74 @@ export class GameRoom {
     }
     this.pendingInputs.delete(playerId);
     this.pendingSkillActions.delete(playerId);
+    if (!this.world) {
+      this.seats.delete(playerId);
+      if (this.pendingWinnerId === playerId) this.pendingWinnerId = null;
+      return true;
+    }
     seat.socketId = null;
     seat.reconnectToken = null;
     seat.connected = false;
     seat.ready = true;
     seat.disconnectedAt = null;
     seat.isBot = true;
-    player.connected = false;
-    player.isBot = true;
-    player.input = {
-      seq: player.lastProcessedInput,
+    player!.connected = false;
+    player!.isBot = true;
+    player!.input = {
+      seq: player!.lastProcessedInput,
       moveX: 0,
       moveY: 0,
-      aimX: Math.cos(player.angle),
-      aimY: Math.sin(player.angle),
+      aimX: Math.cos(player!.angle),
+      aimY: Math.sin(player!.angle),
       firing: false,
     };
-    player.vx = 0;
-    player.vy = 0;
-    clearSkillSlot(player);
+    player!.vx = 0;
+    player!.vy = 0;
+    clearSkillSlot(player!);
     this.nextBotThinkAt.set(playerId, this.clockMs);
     return true;
+  }
+
+  private applyLobbyStat(playerId: string, stat: AdminStat, value: number): Ack {
+    const seat = this.seats.get(playerId);
+    if (!seat) return { ok: false, error: "目标玩家不存在" };
+    const character = getCharacter(seat.characterId);
+    const stats = {
+      health: seat.stats?.health ?? character.maxHealth,
+      maxHealth: seat.stats?.maxHealth ?? character.maxHealth,
+      damage: seat.stats?.damage ?? character.damage,
+      score: seat.stats?.score ?? 0,
+      moveSpeed: seat.stats?.moveSpeed ?? character.moveSpeed,
+      fireCooldownMs: seat.stats?.fireCooldownMs ?? character.fireCooldownMs,
+    };
+    if (stat === "health" && value > stats.maxHealth) stats.maxHealth = value;
+    stats[stat] = value;
+    if (stat === "maxHealth") stats.health = Math.min(stats.health, stats.maxHealth);
+    seat.stats = stats;
+    return { ok: true };
+  }
+
+  private applyWorldStat(playerId: string, stat: AdminStat, value: number): Ack {
+    const player = this.world?.players.get(playerId);
+    if (!player || !this.world) return { ok: false, error: "目标玩家不存在" };
+    switch (stat) {
+      case "health":
+        if (value > player.maxHealth) player.maxHealth = value;
+        player.health = value;
+        break;
+      case "maxHealth":
+        player.maxHealth = value;
+        player.health = Math.min(player.health, player.maxHealth);
+        break;
+      case "damage": player.damage = value; break;
+      case "score":
+        player.score = value;
+        refreshWorldScoreState(this.world, player.id);
+        break;
+      case "moveSpeed": player.moveSpeed = value; break;
+      case "fireCooldownMs": player.fireCooldownMs = value; break;
+    }
+    return { ok: true };
   }
 
   private seatForSocket(socketId: string): RoomSeat | undefined {

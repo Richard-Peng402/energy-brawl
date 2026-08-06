@@ -1091,6 +1091,16 @@ button:disabled {
   border-bottom: 0;
 }
 
+.host-seat.is-preset-winner {
+  box-shadow: inset 4px 0 #f2c14e;
+  background: linear-gradient(90deg, rgb(242 193 78 / 12%), #1c2328 34%);
+}
+
+.host-seat.is-preset-winner .host-player-name small {
+  color: #f2c14e;
+  font-weight: 800;
+}
+
 .host-seat.is-empty {
   color: #6e7a80;
   background: #151a1e;

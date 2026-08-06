@@ -293,7 +293,7 @@ describe("game network", () => {
     expect(room.gameSnapshot()!.serverTime - before).toBeCloseTo(SERVER_TICK_MS * 3);
   });
 
-  it("queues a loopback host admin command until the next fixed simulation step", async () => {
+  it("applies a loopback host admin command before acknowledging it", async () => {
     const { client, network, room } = await createHarness();
     const joined = await emitAck(client, "join", { nickname: "Admin Target", characterId: "blaze" });
     await emitAck(client, "setReady", true);
@@ -303,10 +303,40 @@ describe("game network", () => {
       command: { type: "setStat", playerId: joined.data!.playerId, stat: "score", value: 9 },
     });
     expect(result.ok).toBe(true);
-    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.score).toBe(0);
-
-    network.advance(SERVER_TICK_MS);
     expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.score).toBe(9);
+  });
+
+  it("applies lobby stats, lobby kicks, and a preset winner before the match starts", async () => {
+    const { client, room } = await createHarness();
+    const first = await emitAck(client, "join", { nickname: "Lobby Admin Target", characterId: "blaze" });
+
+    const changed = await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "setStat", playerId: first.data!.playerId, stat: "damage", value: 80 },
+    });
+    expect(changed).toEqual({ ok: true });
+    expect(room.snapshot().players[0]).toMatchObject({ damage: 80 });
+
+    const kicked = await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "kick", playerId: first.data!.playerId },
+    });
+    expect(kicked).toEqual({ ok: true });
+    expect(room.snapshot().players).toHaveLength(0);
+  });
+
+  it("finishes immediately for a winner preset in the lobby", async () => {
+    const { client, room } = await createHarness();
+    const joined = await emitAck(client, "join", { nickname: "Preset Winner", characterId: "medic" });
+    expect(await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "forceWinner", playerId: joined.data!.playerId },
+    })).toEqual({ ok: true });
+    expect(room.snapshot().pendingWinnerId).toBe(joined.data!.playerId);
+
+    await emitAck(client, "setReady", true);
+    expect(await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" })).toEqual({ ok: true });
+    expect(room.gameSnapshot()).toMatchObject({ phase: "finished", winnerIds: [joined.data!.playerId] });
   });
 
   it("broadcasts the authoritative snapshot after a host stat change", async () => {
@@ -321,8 +351,6 @@ describe("game network", () => {
       command: { type: "setStat", playerId: joined.data!.playerId, stat: "damage", value: 80 },
     });
     expect(result.ok).toBe(true);
-
-    network.advance(SERVER_TICK_MS);
 
     await expect(update).resolves.toMatchObject({
       players: expect.arrayContaining([expect.objectContaining({ id: joined.data!.playerId, damage: 80 })]),
@@ -342,10 +370,10 @@ describe("game network", () => {
       command: { type: "kick", playerId: joined.data!.playerId },
     });
     expect(accepted.ok).toBe(true);
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)).toMatchObject({ isBot: true, connected: false });
     network.advance(SERVER_TICK_MS);
 
     await expect(disconnected).resolves.toBe("io server disconnect");
-    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)).toMatchObject({ isBot: true, connected: false });
   });
 
   it("broadcasts a forced winner transition", async () => {

@@ -1,7 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 
-import type { Ack, AdminStat, HostAdminCommand } from "../shared/protocol";
-import { refreshWorldScoreState, type GameWorld } from "./simulation";
+import type { Ack, AdminStat, GamePhase, HostAdminCommand } from "../shared/protocol";
 
 export interface HostAdminRequest {
   remoteAddress: string | undefined;
@@ -14,16 +13,8 @@ export interface HostAdminLog {
   command: HostAdminCommand;
   result: "applied" | "rejected";
   detail: string;
-  before?: number;
-  after?: number;
 }
 
-export interface HostAdminDrainResult {
-  processed: number;
-  changed: boolean;
-}
-
-const MAX_QUEUE = 128;
 const MAX_LOGS = 200;
 const STAT_RANGES: Readonly<Record<AdminStat, readonly [number, number]>> = {
   health: [1, 500],
@@ -35,47 +26,38 @@ const STAT_RANGES: Readonly<Record<AdminStat, readonly [number, number]>> = {
 };
 
 export class HostAdminService {
-  private readonly queue: HostAdminCommand[] = [];
   private readonly logs: HostAdminLog[] = [];
 
   constructor(private readonly token: string, private readonly now: () => number = Date.now) {}
 
-  enqueue(request: HostAdminRequest, world: GameWorld | null): Ack {
-    const error = this.validate(request, world);
+  authorize(request: HostAdminRequest, phase: GamePhase, playerExists: boolean): Ack {
+    const error = this.validate(request, phase, playerExists);
     if (error) {
       this.record({ timestamp: this.now(), command: request.command, result: "rejected", detail: error });
       return { ok: false, error };
     }
-    this.queue.push(structuredClone(request.command));
     return { ok: true };
   }
 
-  drain(world: GameWorld, handleOther?: (command: Exclude<HostAdminCommand, { type: "setStat" }>) => boolean): HostAdminDrainResult {
-    const pending = this.queue.splice(0);
-    let changed = false;
-    for (const command of pending) {
-      if (command.type === "setStat") changed = this.applyStat(world, command) || changed;
-      else {
-        const applied = handleOther?.(command) === true;
-        changed = applied || changed;
-        this.record({ timestamp: this.now(), command, result: applied ? "applied" : "rejected", detail: applied ? "ok" : "unsupported" });
-      }
-    }
-    return { processed: pending.length, changed };
+  recordResult(command: HostAdminCommand, result: Ack): void {
+    this.record({
+      timestamp: this.now(),
+      command: structuredClone(command),
+      result: result.ok ? "applied" : "rejected",
+      detail: result.ok ? "ok" : result.error ?? "状态未改变",
+    });
   }
 
   getLogs(): readonly HostAdminLog[] {
     return [...this.logs];
   }
 
-  private validate(request: HostAdminRequest, world: GameWorld | null): string | null {
-    if (!isLoopbackAddress(request.remoteAddress)) return "主机命令只允许本机调用";
-    if (!safeTokenEqual(request.token, this.token)) return "主机权限无效";
-    if (!world || world.phase === "finished") return "当前阶段不可执行";
-    if (this.queue.length >= MAX_QUEUE) return "主机命令队列已满";
+  private validate(request: HostAdminRequest, phase: GamePhase, playerExists: boolean): string | null {
+    if (!isLoopbackAddress(request.remoteAddress)) return "房主命令只允许本机调用";
+    if (!safeTokenEqual(request.token, this.token)) return "房主权限无效";
+    if (phase === "finished") return "当前阶段不可执行";
     if (!request.command || typeof request.command !== "object") return "命令格式无效";
-    const playerId = request.command.playerId;
-    if (typeof playerId !== "string" || !world.players.has(playerId)) return "目标玩家不存在";
+    if (typeof request.command.playerId !== "string" || !playerExists) return "目标玩家不存在";
     if (request.command.type === "setStat") {
       if (!(request.command.stat in STAT_RANGES) || !Number.isFinite(request.command.value)) return "数值命令无效";
       const [minimum, maximum] = STAT_RANGES[request.command.stat];
@@ -84,32 +66,6 @@ export class HostAdminService {
       return "命令类型无效";
     }
     return null;
-  }
-
-  private applyStat(world: GameWorld, command: Extract<HostAdminCommand, { type: "setStat" }>): boolean {
-    const player = world.players.get(command.playerId);
-    if (!player) return false;
-    const before = player[command.stat];
-    switch (command.stat) {
-      case "health":
-        if (command.value > player.maxHealth) player.maxHealth = command.value;
-        player.health = command.value;
-        break;
-      case "maxHealth":
-        player.maxHealth = command.value;
-        player.health = Math.min(player.health, player.maxHealth);
-        break;
-      case "damage": player.damage = command.value; break;
-      case "score":
-        player.score = command.value;
-        refreshWorldScoreState(world, player.id);
-        break;
-      case "moveSpeed": player.moveSpeed = command.value; break;
-      case "fireCooldownMs": player.fireCooldownMs = command.value; break;
-    }
-    const after = player[command.stat];
-    this.record({ timestamp: this.now(), command, result: "applied", detail: "ok", before, after });
-    return before !== after;
   }
 
   private record(log: HostAdminLog): void {

@@ -48,7 +48,6 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
   const fixedLoop = new FixedStepAccumulator(SERVER_TICK_MS, 3);
   const simulationDuration = new RollingMetric();
   const hostAdmin = new HostAdminService(hostToken);
-  room.attachHostAdmin(hostAdmin);
   let snapshotOpportunityMs = 0;
 
   const broadcastRoom = () => io.emit("roomState", room.snapshot());
@@ -57,6 +56,11 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
     if (snapshot) io.emit("gameState", snapshot);
   };
   const broadcastGameTransition = () => io.emit("gameState", room.gameSnapshot());
+  const disconnectKickedSockets = () => {
+    for (const socketId of room.consumeKickedSocketIds()) {
+      io.sockets.sockets.get(socketId)?.disconnect(true);
+    }
+  };
   const broadcastVolatileSnapshots = () => {
     const snapshot = room.gameSnapshot();
     if (!snapshot) return;
@@ -140,10 +144,20 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
     });
 
     socket.on("hostAdminCommand", (payload, acknowledge) => {
-      const result = payload && typeof payload.token === "string" && isHostAdminCommand(payload.command)
-        ? hostAdmin.enqueue({ remoteAddress: socket.handshake.address, token: payload.token, command: payload.command }, room.gameWorld())
-        : invalid("主机命令格式无效");
+      if (!payload || typeof payload.token !== "string" || !isHostAdminCommand(payload.command)) {
+        sendAcknowledgement(acknowledge, invalid("主机命令格式无效"));
+        return;
+      }
+      const request = { remoteAddress: socket.handshake.address, token: payload.token, command: payload.command };
+      const authorization = hostAdmin.authorize(request, room.snapshot().phase, room.hasPlayer(payload.command.playerId));
+      const result = authorization.ok ? room.applyHostAdminCommand(payload.command) : authorization;
+      if (authorization.ok) hostAdmin.recordResult(payload.command, result);
       sendAcknowledgement(acknowledge, result);
+      if (result.ok) {
+        broadcastRoom();
+        broadcastGameTransition();
+        setImmediate(disconnectKickedSockets);
+      }
     });
 
     socket.on("disconnect", () => {
@@ -157,13 +171,10 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
   const advance = (deltaMs: number): void => {
     const startedAt = performance.now();
     const transitioned = room.tick(deltaMs);
-    const adminStateChanged = room.consumeAdminStateChanged();
     const kickedSocketIds = room.consumeKickedSocketIds();
-    for (const socketId of kickedSocketIds) {
-      io.sockets.sockets.get(socketId)?.disconnect(true);
-    }
+    for (const socketId of kickedSocketIds) io.sockets.sockets.get(socketId)?.disconnect(true);
     simulationDuration.add(performance.now() - startedAt);
-    if (transitioned || adminStateChanged || kickedSocketIds.length > 0) {
+    if (transitioned || kickedSocketIds.length > 0) {
       broadcastRoom();
       broadcastGameTransition();
     }

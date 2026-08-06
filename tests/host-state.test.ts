@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { GameSnapshot, RoomSnapshot } from "../src/shared/protocol";
-import { resolveHostPresentation } from "../src/client/host-app";
+import { canUseHostAdmin, resolveHostPresentation } from "../src/client/host-app";
 
 describe("host presentation state", () => {
+  it("enables host admin tools in the lobby but not after a match finishes", () => {
+    expect(canUseHostAdmin("lobby", "secret")).toBe(true);
+    expect(canUseHostAdmin("playing", "secret")).toBe(true);
+    expect(canUseHostAdmin("finished", "secret")).toBe(false);
+    expect(canUseHostAdmin("lobby", "")).toBe(false);
+  });
+
   it("uses the live game phase and scores over the stale room snapshot", () => {
     const room: RoomSnapshot = {
       phase: "playing",

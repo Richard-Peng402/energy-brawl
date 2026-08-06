@@ -4,12 +4,36 @@ import { CHARACTER_CATALOG, getCharacter, type CharacterId } from "../src/shared
 import { LOBBY_RETURN_DELAY_MS, RECONNECT_WINDOW_MS, SKILL_ORB_SPAWN_MIN_MS } from "../src/shared/constants";
 import { GameRoom } from "../src/server/room";
 import { collectWorldSkillOrb, type GameWorld } from "../src/server/simulation";
-import { HostAdminService } from "../src/server/host-admin";
 
 const join = (room: GameRoom, socketId: string, nickname: string, characterId: CharacterId = "blaze") =>
   room.joinHuman(socketId, { nickname, characterId });
 
 describe("game room", () => {
+  it("applies lobby stat changes, kicks seats, and presets the next winner synchronously", () => {
+    const room = new GameRoom();
+    const first = join(room, "socket-admin-1", "属性目标", "blaze");
+    const second = join(room, "socket-admin-2", "预设胜者", "medic");
+    const apply = (command: Parameters<GameRoom["applyHostAdminCommand"]>[0]) => room.applyHostAdminCommand(command);
+
+    expect(apply({ type: "setStat", playerId: first.data!.playerId, stat: "health", value: 180 })).toEqual({ ok: true });
+    expect(apply({ type: "setStat", playerId: first.data!.playerId, stat: "damage", value: 80 })).toEqual({ ok: true });
+    expect(room.snapshot().players.find((player) => player.id === first.data!.playerId)).toMatchObject({
+      health: 180,
+      maxHealth: 180,
+      damage: 80,
+    });
+
+    expect(apply({ type: "kick", playerId: first.data!.playerId })).toEqual({ ok: true });
+    expect(room.snapshot().players.some((player) => player.id === first.data!.playerId)).toBe(false);
+    expect(room.consumeKickedSocketIds()).toEqual(["socket-admin-1"]);
+
+    expect(apply({ type: "forceWinner", playerId: second.data!.playerId })).toEqual({ ok: true });
+    expect(room.snapshot().pendingWinnerId).toBe(second.data!.playerId);
+    room.setReady("socket-admin-2", true);
+    expect(room.startMatch().ok).toBe(true);
+    expect(room.gameSnapshot()).toMatchObject({ phase: "finished", winnerIds: [second.data!.playerId] });
+  });
+
   it("exposes editable character stats while players are still in the lobby", () => {
     const room = new GameRoom();
     const joined = join(room, "socket-preview", "大厅预览", "fortress");
@@ -37,11 +61,7 @@ describe("game room", () => {
     const joined = join(room, "socket-1", "Target");
     room.setReady("socket-1", true);
     room.startMatch();
-    const service = new HostAdminService("secret");
-    room.attachHostAdmin(service);
-    expect(service.enqueue({ remoteAddress: "127.0.0.1", token: "secret", command: { type: "kick", playerId: joined.data!.playerId } }, room.gameWorld()).ok).toBe(true);
-
-    room.tick(16);
+    expect(room.applyHostAdminCommand({ type: "kick", playerId: joined.data!.playerId })).toEqual({ ok: true });
 
     const player = room.gameSnapshot()!.players.find((candidate) => candidate.id === joined.data!.playerId)!;
     expect(player).toMatchObject({ isBot: true, connected: false, skillSlot: { type: null, charges: 0 } });
@@ -55,12 +75,8 @@ describe("game room", () => {
     const first = join(room, "socket-1", "Winner");
     room.setReady("socket-1", true);
     room.startMatch();
-    const service = new HostAdminService("secret");
-    room.attachHostAdmin(service);
-    expect(service.enqueue({ remoteAddress: "::1", token: "secret", command: { type: "forceWinner", playerId: first.data!.playerId } }, room.gameWorld()).ok).toBe(true);
-
-    expect(room.tick(16)).toBe(true);
-    expect(room.gameSnapshot()).toMatchObject({ phase: "finished", winnerIds: [first.data!.playerId], finishedAt: 16 });
+    expect(room.applyHostAdminCommand({ type: "forceWinner", playerId: first.data!.playerId })).toEqual({ ok: true });
+    expect(room.gameSnapshot()).toMatchObject({ phase: "finished", winnerIds: [first.data!.playerId], finishedAt: 0 });
     expect(room.tick(LOBBY_RETURN_DELAY_MS)).toBe(true);
     expect(room.snapshot().phase).toBe("lobby");
   });
