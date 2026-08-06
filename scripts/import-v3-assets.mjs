@@ -14,7 +14,10 @@ const approvedSources = new Set([
 ]);
 
 const runtime = (relative) => `/assets/v3/${relative.replaceAll("\\", "/")}`;
-const characterOutputs = characterIds.flatMap((id) => rasterStates.map((state) => runtime(`characters/${id}/${state}.png`)));
+const characterOutputs = characterIds.flatMap((id) => [
+  ...rasterStates.map((state) => runtime(`characters/${id}/${state}.png`)),
+  runtime(`characters/${id}/combat.svg`),
+]);
 const arenaOutputs = ["floor", "wall", "decal", "light"].map((name) => runtime(`arena/${name}.png`));
 
 const manifestEntries = [
@@ -40,6 +43,18 @@ const colors = {
 };
 
 const fallbackSvg = (color) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><radialGradient id="g"><stop stop-color="${color}"/><stop offset="1" stop-color="#151c25"/></radialGradient></defs><circle cx="64" cy="64" r="58" fill="#091018" stroke="${color}" stroke-width="5"/><path d="M64 23 89 38l9 31-18 31H48L30 69l9-31Z" fill="url(#g)"/><circle cx="64" cy="53" r="15" fill="#dffaff"/><path d="m48 82 16-18 16 18-8 19H56Z" fill="${color}"/></svg>`;
+const combatSvg = (id, color) => {
+  const bodies = {
+    blaze: '<path d="M62 32h68l18 23-7 70-22 23H70l-22-23-7-70Z"/><path d="M42 58 16 82v30h28M148 58l28 24v30h-28"/><path d="M79 26h34l8 22H71Z"/>',
+    medic: '<circle cx="96" cy="96" r="59"/><path d="M55 66 31 49l-9 25 27 19M137 66l24-17 9 25-27 19"/><path d="M82 80h28v18h18v28h-18v18H82v-18H64V98h18Z" fill="#f7fbff" stroke="none"/>',
+    fortress: '<path d="m96 25 66 34-12 76-54 34-54-34-12-76Z"/><path d="M96 25v144M30 59h132M42 119h108" fill="none"/><path d="m29 75-22 20 17 37 31-11M163 75l22 20-17 37-31-11"/>',
+    arc: '<path d="M57 42h78l24 25-12 73-27 19H72l-27-19-12-73Z"/><path d="M46 65 15 48l-7 24 34 29M146 65l31-17 7 24-34 29"/><path d="M78 29h36l11 24H67Z"/>',
+    phase: '<path d="m96 18 46 36-10 82-36 39-36-39-10-82Z"/><path d="M96 18v157M50 74h92" fill="none"/><path d="M132 47 178 30v18l-43 19Z"/>',
+    runner: '<path d="m96 18 56 47-21 80-35 26-35-26-21-80Z"/><path d="M48 61 9 44l6 27 38 23M144 61l39-17-6 27-38 23"/><path d="m83 24 13-12 13 12-13 21Z"/>',
+  };
+  const body = bodies[id] ?? bodies.blaze;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><defs><linearGradient id="body" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f4fbff" stop-opacity=".42"/><stop offset=".42" stop-color="${color}"/><stop offset="1" stop-color="#08111a"/></linearGradient></defs><ellipse cx="102" cy="168" rx="66" ry="13" fill="#000" opacity=".42"/><g fill="url(#body)" stroke="#d8f5ff" stroke-width="4" stroke-linejoin="round">${body}</g><circle cx="96" cy="70" r="17" fill="#06111a" stroke="#eafcff" stroke-width="4"/><circle cx="90" cy="69" r="4" fill="${color}"/><circle cx="102" cy="69" r="4" fill="${color}"/><path d="M82 99h28" stroke="#eafcff" stroke-width="5" stroke-linecap="round"/><path d="M153 94h31" stroke="${color}" stroke-width="8" stroke-linecap="round"/><circle cx="184" cy="94" r="6" fill="#f7fbff" stroke="${color}" stroke-width="3"/></svg>`;
+};
 const skillSvg = (kind) => {
   const paths = {
     dash: '<path d="m24 64 43-42-7 29h35L50 106l9-34H24Z"/>',
@@ -54,6 +69,7 @@ await Promise.all(characterIds.map(async (id) => {
   const file = join(assetRoot, "characters", id, "fallback.svg");
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, fallbackSvg(colors[id]), "utf8");
+  await writeFile(join(assetRoot, "characters", id, "combat.svg"), combatSvg(id, colors[id]), "utf8");
 }));
 await Promise.all(["dash", "shield", "spread", "heal"].map(async (kind) => {
   const file = join(assetRoot, "skills", `${kind}.svg`);
@@ -73,8 +89,12 @@ for (const entry of manifestEntries) {
   for (const output of entry.outputFiles) {
     if (!output.startsWith("/assets/v3/")) throw new Error(`Invalid runtime path: ${output}`);
     const file = join(root, "public", output);
-    const { width, height } = await pngDimensions(file);
-    if (width > 2048 || height > 2048) throw new Error(`Texture exceeds 2048x2048: ${output} (${width}x${height})`);
+    if (output.endsWith(".png")) {
+      const { width, height } = await pngDimensions(file);
+      if (width > 2048 || height > 2048) throw new Error(`Texture exceeds 2048x2048: ${output} (${width}x${height})`);
+    } else if (!(await stat(file)).size) {
+      throw new Error(`Generated asset is empty: ${output}`);
+    }
   }
 }
 

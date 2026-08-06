@@ -20,7 +20,7 @@ describe("secure host admin queue", () => {
     const game = world();
     expect(service.enqueue({ remoteAddress, token: "secret", command: setScore(7) }, game).ok).toBe(true);
     expect(game.players.get("player-1")!.score).toBe(0);
-    expect(service.drain(game)).toBe(1);
+    expect(service.drain(game)).toEqual({ processed: 1, changed: true });
     expect(game.players.get("player-1")!.score).toBe(7);
   });
 
@@ -56,7 +56,7 @@ describe("secure host admin queue", () => {
       setScore(TARGET_SCORE),
     ];
     for (const command of commands) expect(service.enqueue({ remoteAddress: "::1", token: "secret", command }, game).ok).toBe(true);
-    expect(service.drain(game)).toBe(commands.length);
+    expect(service.drain(game)).toEqual({ processed: commands.length, changed: true });
     expect(player).toMatchObject({ maxHealth: 60, health: 60, damage: 80, moveSpeed: 500, fireCooldownMs: 100, score: TARGET_SCORE });
     expect(game.holderId).toBe(player.id);
 
@@ -65,5 +65,29 @@ describe("secure host admin queue", () => {
     }
     expect(service.getLogs()).toHaveLength(200);
     expect(service.getLogs().at(-1)).toMatchObject({ result: "rejected" });
+  });
+
+  it("reports whether a queued command changed authoritative state", () => {
+    const service = new HostAdminService("secret");
+    const game = world();
+    expect(service.enqueue({ remoteAddress: "127.0.0.1", token: "secret", command: setScore(7) }, game).ok).toBe(true);
+    expect(service.drain(game)).toEqual({ processed: 1, changed: true });
+    expect(service.enqueue({ remoteAddress: "127.0.0.1", token: "secret", command: setScore(7) }, game).ok).toBe(true);
+    expect(service.drain(game)).toEqual({ processed: 1, changed: false });
+  });
+
+  it("raises max health when the host sets current health above the old maximum", () => {
+    const service = new HostAdminService("secret");
+    const game = world();
+    const player = game.players.get("player-1")!;
+    expect(service.enqueue({
+      remoteAddress: "127.0.0.1",
+      token: "secret",
+      command: { type: "setStat", playerId: player.id, stat: "health", value: 180 },
+    }, game).ok).toBe(true);
+
+    service.drain(game);
+
+    expect(player).toMatchObject({ health: 180, maxHealth: 180 });
   });
 });

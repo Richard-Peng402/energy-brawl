@@ -16,10 +16,11 @@ import {
   applySkillAction,
   collectSkillOrb,
   createSkillSystem,
+  seedInitialSkillOrbs,
 } from "../src/server/skill-system";
 
 describe("v3 skill orb model", () => {
-  it("spawns at most three orbs at safe points with a ten-to-fourteen second cadence", () => {
+  it("spawns at most six orbs at safe points with a four-to-seven second cadence", () => {
     const state = createSkillSystem(0, () => 0);
 
     advanceSkillSystem(state, SKILL_ORB_SPAWN_MIN_MS - 1, []);
@@ -35,6 +36,12 @@ describe("v3 skill orb model", () => {
       expect(SKILL_ORB_SPAWN_POINTS).toContainEqual({ x: orb.x, y: orb.y });
       expect(WALLS.some((wall) => circleHitsRect(orb, SKILL_ORB_RADIUS, wall))).toBe(false);
     }
+  });
+
+  it("seeds two immediately available skill orbs for a new match", () => {
+    const state = createSkillSystem(0, () => 0);
+    expect(seedInitialSkillOrbs(state, [])).toBe(2);
+    expect(state.orbs.size).toBe(2);
   });
 
   it("deals every skill from the rotation bag before repeating and replaces the old slot without scoring", () => {

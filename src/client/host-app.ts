@@ -6,6 +6,7 @@ export class HostApp {
   private readonly token = new URLSearchParams(window.location.search).get("token") ?? "";
   private info: ServerInfo | null = null;
   private message = "";
+  private editingPlayerId: string | null = null;
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = hostTemplate();
@@ -29,12 +30,37 @@ export class HostApp {
       } else if (action === "forceWinner" && window.confirm("确认强制该玩家获胜并结束本局？")) {
         void this.admin({ type: "forceWinner", playerId });
       } else if (action === "setStat") {
-        const stat = window.prompt("输入要修改的字段：health / maxHealth / damage / score / moveSpeed / fireCooldownMs", "health") as AdminStat | null;
-        if (!stat || !["health", "maxHealth", "damage", "score", "moveSpeed", "fireCooldownMs"].includes(stat)) return;
-        const value = Number(window.prompt(`输入 ${stat} 的新值（服务器会检查安全范围）`, ""));
-        if (Number.isFinite(value)) void this.admin({ type: "setStat", playerId, stat, value });
+        this.openStatEditor(playerId);
       }
     });
+    this.find<HTMLSelectElement>("#stat-field").addEventListener("change", () => this.fillCurrentStatValue());
+    this.find("#stat-cancel").addEventListener("click", () => this.find<HTMLDialogElement>("#stat-editor").close());
+    this.find<HTMLFormElement>("#stat-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (!this.editingPlayerId) return;
+      const stat = this.find<HTMLSelectElement>("#stat-field").value as AdminStat;
+      const value = Number(this.find<HTMLInputElement>("#stat-value").value);
+      if (!Number.isFinite(value)) return;
+      const playerId = this.editingPlayerId;
+      this.find<HTMLDialogElement>("#stat-editor").close();
+      void this.admin({ type: "setStat", playerId, stat, value });
+    });
+  }
+
+  private openStatEditor(playerId: string): void {
+    const player = this.network.game?.players.find((candidate) => candidate.id === playerId);
+    if (!player) return;
+    this.editingPlayerId = playerId;
+    this.find("#stat-player-name").textContent = player.nickname;
+    this.fillCurrentStatValue();
+    this.find<HTMLDialogElement>("#stat-editor").showModal();
+  }
+
+  private fillCurrentStatValue(): void {
+    const player = this.network.game?.players.find((candidate) => candidate.id === this.editingPlayerId);
+    if (!player) return;
+    const stat = this.find<HTMLSelectElement>("#stat-field").value as AdminStat;
+    this.find<HTMLInputElement>("#stat-value").value = String(player[stat]);
   }
 
   private async loadInfo(): Promise<void> {
@@ -142,6 +168,16 @@ function hostTemplate(): string {
         <div id="host-roster" class="host-roster"></div>
       </div>
     </section>
+    <dialog id="stat-editor" class="stat-editor">
+      <form id="stat-form" method="dialog">
+        <span class="eyebrow">HOST OVERRIDE</span>
+        <h2>修改 <b id="stat-player-name"></b></h2>
+        <label>属性<select id="stat-field"><option value="health">当前生命</option><option value="maxHealth">最大生命</option><option value="damage">伤害</option><option value="score">积分</option><option value="moveSpeed">移动速度</option><option value="fireCooldownMs">射击间隔（毫秒）</option></select></label>
+        <label>新数值<input id="stat-value" type="number" inputmode="numeric" required /></label>
+        <p>提交后服务器会在下一固定帧应用，并立即同步所有客户端。</p>
+        <div><button id="stat-cancel" type="button">取消</button><button class="primary-button" type="submit">应用修改</button></div>
+      </form>
+    </dialog>
   </main>`;
 }
 

@@ -40,6 +40,12 @@ function createWorld() {
 const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
 
 describe("authoritative simulation", () => {
+  it("starts each match with two visible skill orbs", () => {
+    const world = createWorld();
+
+    expect(world.skillSystem.orbs.size).toBe(2);
+  });
+
   it("awards two points for a defeat and respawns the victim", () => {
     const world = createWorld();
     stepWorld(world, SPAWN_SHIELD_MS + 1);

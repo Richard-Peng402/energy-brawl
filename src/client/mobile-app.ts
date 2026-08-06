@@ -1,6 +1,6 @@
 import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
 import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
-import { SKILL_CATALOG } from "../shared/skill-catalog";
+import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { GameRenderer } from "./game-scene";
@@ -21,6 +21,7 @@ export class MobileApp {
   private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
   private inputSequence = 0;
   private skillActionSequence = 0;
+  private lastSkillType: SkillType | null = null;
   private lastInputSentAt = 0;
   private acceptingInput = false;
   private toastTimer = 0;
@@ -138,6 +139,7 @@ export class MobileApp {
     } else {
       this.find("#results-overlay").classList.add("is-hidden");
       this.skillActionSequence = 0;
+      this.lastSkillType = null;
       if (this.renderer) {
         this.renderer.destroy();
         this.renderer = null;
@@ -239,12 +241,15 @@ export class MobileApp {
     const type = player?.skillSlot.charges === 1 ? player.skillSlot.type : null;
     button.classList.toggle("is-ready", Boolean(type));
     button.setAttribute("aria-disabled", String(!type));
-    if (button.dataset.skillType === (type ?? "empty")) return;
+    if (this.lastSkillType === type) return;
+    const previous = this.lastSkillType;
+    this.lastSkillType = type;
     button.dataset.skillType = type ?? "empty";
     button.innerHTML = type
       ? `<img src="${SKILL_ICON_ASSETS[type]}" alt="" /><span><b>${SKILL_CATALOG[type].name}</b><small>一次</small></span>`
       : `<span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span>`;
     button.setAttribute("aria-label", type ? `使用${SKILL_CATALOG[type].name}` : "技能槽为空");
+    if (type && previous !== type) this.showToast(`获得技能：${SKILL_CATALOG[type].name}`);
   }
 
   private renderResults(snapshot: GameSnapshot): void {

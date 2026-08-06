@@ -157,12 +157,13 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
   const advance = (deltaMs: number): void => {
     const startedAt = performance.now();
     const transitioned = room.tick(deltaMs);
+    const adminStateChanged = room.consumeAdminStateChanged();
     const kickedSocketIds = room.consumeKickedSocketIds();
     for (const socketId of kickedSocketIds) {
       io.sockets.sockets.get(socketId)?.disconnect(true);
     }
     simulationDuration.add(performance.now() - startedAt);
-    if (transitioned || kickedSocketIds.length > 0) {
+    if (transitioned || adminStateChanged || kickedSocketIds.length > 0) {
       broadcastRoom();
       broadcastGameTransition();
     }

@@ -32,10 +32,10 @@ export const PROJECTILE_LIFETIME_MS = 1_850;
 export const ENERGY_RADIUS = 18;
 export const ENERGY_RESPAWN_MS = 5_000;
 export const MAX_ENERGY = 6;
-export const MAX_SKILL_ORBS = 3;
+export const MAX_SKILL_ORBS = 6;
 export const SKILL_ORB_RADIUS = 20;
-export const SKILL_ORB_SPAWN_MIN_MS = 10_000;
-export const SKILL_ORB_SPAWN_MAX_MS = 14_000;
+export const SKILL_ORB_SPAWN_MIN_MS = 4_000;
+export const SKILL_ORB_SPAWN_MAX_MS = 7_000;
 export const SKILL_ORB_SAFE_DISTANCE = 170;
 export const SKILL_ACTION_MAX_JUMP = 1_024;
 

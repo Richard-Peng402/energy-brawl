@@ -21,11 +21,11 @@ export type AssetManifestEntry = {
 const path = (value: string): string => `/assets/v3/${value}`;
 const character = (id: CharacterId): Record<CharacterAssetState, string> => ({
   portrait: path(`characters/${id}/portrait.png`),
-  idle: path(`characters/${id}/idle.png`),
-  move: path(`characters/${id}/move.png`),
-  attack: path(`characters/${id}/attack.png`),
-  hit: path(`characters/${id}/hit.png`),
-  death: path(`characters/${id}/death.png`),
+  idle: path(`characters/${id}/combat.svg`),
+  move: path(`characters/${id}/combat.svg`),
+  attack: path(`characters/${id}/combat.svg`),
+  hit: path(`characters/${id}/combat.svg`),
+  death: path(`characters/${id}/combat.svg`),
   fallback: path(`characters/${id}/fallback.svg`),
 });
 

@@ -18,6 +18,11 @@ export interface HostAdminLog {
   after?: number;
 }
 
+export interface HostAdminDrainResult {
+  processed: number;
+  changed: boolean;
+}
+
 const MAX_QUEUE = 128;
 const MAX_LOGS = 200;
 const STAT_RANGES: Readonly<Record<AdminStat, readonly [number, number]>> = {
@@ -45,16 +50,18 @@ export class HostAdminService {
     return { ok: true };
   }
 
-  drain(world: GameWorld, handleOther?: (command: Exclude<HostAdminCommand, { type: "setStat" }>) => boolean): number {
+  drain(world: GameWorld, handleOther?: (command: Exclude<HostAdminCommand, { type: "setStat" }>) => boolean): HostAdminDrainResult {
     const pending = this.queue.splice(0);
+    let changed = false;
     for (const command of pending) {
-      if (command.type === "setStat") this.applyStat(world, command);
+      if (command.type === "setStat") changed = this.applyStat(world, command) || changed;
       else {
         const applied = handleOther?.(command) === true;
+        changed = applied || changed;
         this.record({ timestamp: this.now(), command, result: applied ? "applied" : "rejected", detail: applied ? "ok" : "unsupported" });
       }
     }
-    return pending.length;
+    return { processed: pending.length, changed };
   }
 
   getLogs(): readonly HostAdminLog[] {
@@ -79,13 +86,14 @@ export class HostAdminService {
     return null;
   }
 
-  private applyStat(world: GameWorld, command: Extract<HostAdminCommand, { type: "setStat" }>): void {
+  private applyStat(world: GameWorld, command: Extract<HostAdminCommand, { type: "setStat" }>): boolean {
     const player = world.players.get(command.playerId);
-    if (!player) return;
+    if (!player) return false;
     const before = player[command.stat];
     switch (command.stat) {
       case "health":
-        player.health = Math.min(player.maxHealth, command.value);
+        if (command.value > player.maxHealth) player.maxHealth = command.value;
+        player.health = command.value;
         break;
       case "maxHealth":
         player.maxHealth = command.value;
@@ -101,6 +109,7 @@ export class HostAdminService {
     }
     const after = player[command.stat];
     this.record({ timestamp: this.now(), command, result: "applied", detail: "ok", before, after });
+    return before !== after;
   }
 
   private record(log: HostAdminLog): void {

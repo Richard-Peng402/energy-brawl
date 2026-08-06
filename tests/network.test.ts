@@ -308,6 +308,27 @@ describe("game network", () => {
     expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.score).toBe(9);
   });
 
+  it("broadcasts the authoritative snapshot after a host stat change", async () => {
+    const { client, network, room } = await createHarness();
+    const joined = await emitAck(client, "join", { nickname: "Live Admin Target", characterId: "blaze" });
+    await emitAck(client, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    const update = new Promise<Parameters<ServerToClientEvents["gameState"]>[0]>((resolve) => client.once("gameState", resolve));
+
+    const result = await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "setStat", playerId: joined.data!.playerId, stat: "damage", value: 80 },
+    });
+    expect(result.ok).toBe(true);
+
+    network.advance(SERVER_TICK_MS);
+
+    await expect(update).resolves.toMatchObject({
+      players: expect.arrayContaining([expect.objectContaining({ id: joined.data!.playerId, damage: 80 })]),
+    });
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.damage).toBe(80);
+  });
+
   it("disconnects a kicked socket after the fixed simulation step and hands its seat to AI", async () => {
     const { client, network, room } = await createHarness();
     const joined = await emitAck(client, "join", { nickname: "Kick Target", characterId: "blaze" });

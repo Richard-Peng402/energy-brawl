@@ -6,6 +6,7 @@ import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
 import type { GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import { calculateAimGuide } from "./aim-guide";
 import { ARENA_ASSETS, CHARACTER_ASSETS, SKILL_ICON_ASSETS, type CharacterAssetState } from "./asset-registry";
+import { advanceCameraFollow } from "./camera-follow";
 import {
   FixedObjectPool,
   characterTextureKey,
@@ -26,6 +27,7 @@ interface PlayerView {
   name: Phaser.GameObjects.Text;
   healthFill: Phaser.GameObjects.Rectangle;
   shadow: Phaser.GameObjects.Ellipse;
+  ring: Phaser.GameObjects.Arc;
   shield: Phaser.GameObjects.Arc | null;
   lastHealth: number;
   wasAlive: boolean;
@@ -154,7 +156,10 @@ class ArenaScene extends Phaser.Scene {
     for (const type of SKILL_TYPES) this.load.svg(`skill-${type}`, SKILL_ICON_ASSETS[type], { width: 64, height: 64 });
     for (const character of CHARACTER_CATALOG) {
       for (const state of CHARACTER_RENDER_STATES) {
-        this.load.image(characterTextureKey(character.id, state), CHARACTER_ASSETS[character.id][state]);
+        const key = characterTextureKey(character.id, state);
+        const asset = CHARACTER_ASSETS[character.id][state];
+        if (asset.endsWith(".svg")) this.load.svg(key, asset, { width: 192, height: 192 });
+        else this.load.image(key, asset);
       }
     }
     this.load.on("loaderror", (file: Phaser.Loader.File) => this.failedTextureKeys.add(String(file.key)));
@@ -197,6 +202,7 @@ class ArenaScene extends Phaser.Scene {
       if (player) this.updatePlayerVisual(view, player, now);
       if (view.shield) view.shield.setPosition(view.container.x, view.container.y);
     }
+    this.updateCamera(delta);
     this.updateAimGuide();
   }
 
@@ -254,16 +260,16 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private drawArena(): void {
-    this.add.tileSprite(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, ARENA_WIDTH, ARENA_HEIGHT, "arena-floor-v3").setDepth(-10).setTint(0x6d89a0);
+    this.add.tileSprite(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, ARENA_WIDTH, ARENA_HEIGHT, "arena-floor-v3").setDepth(-10).setTint(0x94b7c4);
     const grid = this.add.graphics();
-    grid.setDepth(-8).lineStyle(1, 0xffffff, 0.035);
+    grid.setDepth(-8).lineStyle(2, 0xc9f1ff, 0.055);
     for (let x = 0; x <= ARENA_WIDTH; x += 80) grid.lineBetween(x, 0, x, ARENA_HEIGHT);
     for (let y = 0; y <= ARENA_HEIGHT; y += 80) grid.lineBetween(0, y, ARENA_WIDTH, y);
 
     const lanes = this.add.graphics().setDepth(-7);
-    lanes.lineStyle(4, 0xf2c14e, 0.18);
+    lanes.lineStyle(5, 0xf2c14e, 0.25);
     lanes.strokeCircle(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, 178);
-    lanes.lineStyle(3, 0x31d0aa, 0.14);
+    lanes.lineStyle(4, 0x31d0aa, 0.19);
     lanes.strokeRoundedRect(110, 90, ARENA_WIDTH - 220, ARENA_HEIGHT - 180, 70);
     lanes.lineStyle(18, 0x4da3ff, 0.08);
     lanes.lineBetween(180, ARENA_HEIGHT / 2, 720, ARENA_HEIGHT / 2);
@@ -288,14 +294,14 @@ class ArenaScene extends Phaser.Scene {
       this.tweens.add({ targets: light, alpha: 0.1, scale: 2.6, duration: 1_800, yoyo: true, repeat: -1, ease: "Sine.InOut" });
     }
     for (const wall of WALLS) {
-      const shadow = this.add.rectangle(wall.x + wall.width / 2 + 9, wall.y + wall.height / 2 + 10, wall.width, wall.height, 0x000000, 0.3).setDepth(-2);
+      const shadow = this.add.rectangle(wall.x + wall.width / 2 + 12, wall.y + wall.height / 2 + 13, wall.width, wall.height, 0x000000, 0.4).setDepth(-2);
       this.decorativeShadows.push(shadow);
       this.add.tileSprite(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, "arena-wall-v3")
         .setDepth(-1)
-        .setTint(0x71818c);
+        .setTint(0x9db7c4);
       this.add.rectangle(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, 0x000000, 0)
         .setDepth(0)
-        .setStrokeStyle(4, 0x9badb8, 0.82);
+        .setStrokeStyle(5, 0xd3edf7, 0.9);
     }
     this.add
       .rectangle(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, ARENA_WIDTH - 10, ARENA_HEIGHT - 10)
@@ -328,15 +334,13 @@ class ArenaScene extends Phaser.Scene {
             y: reconciliation.position.y - current.y,
           };
         }
-        if (snapshot.phase === "finished") this.cameras.main.stopFollow();
-        else this.cameras.main.startFollow(view.container, true, 0.12, 0.12);
       }
       const now = performance.now();
       view.aim.rotation = player.angle;
       view.sprite.setRotation(player.angle + Math.PI / 2);
       view.container.setAlpha(player.alive ? 1 : 0.62);
       view.name.setText(player.isBot ? `${player.nickname} · AI` : player.nickname);
-      view.healthFill.width = 58 * (player.health / player.maxHealth);
+      view.healthFill.width = 72 * (player.health / player.maxHealth);
       view.healthFill.setFillStyle(player.health <= 25 ? 0xff5a5f : 0x31d0aa);
       this.syncShield(view, player, snapshot.serverTime);
       view.sprite.setTint(player.id === this.localPlayerId ? 0xffffff : 0xf2f6f8);
@@ -362,21 +366,24 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private createPlayerView(player: PlayerSnapshot): PlayerView {
-    const shadow = this.add.ellipse(4, 11, PLAYER_RADIUS * 2.25, PLAYER_RADIUS * 1.35, 0x000000, 0.34);
-    const sprite = this.add.sprite(0, 0, resolveCharacterTextureKey(player.characterId, "idle", this.failedTextureKeys)).setDisplaySize(86, 86);
-    const aim = this.add.rectangle(PLAYER_RADIUS + 15, 0, 32, 10, 0xffffff, 0.95).setOrigin(0, 0.5);
-    const healthBg = this.add.rectangle(-29, 42, 58, 6, 0x07090b, 0.8).setOrigin(0, 0.5);
-    const healthFill = this.add.rectangle(-29, 42, 58, 6, 0x31d0aa, 1).setOrigin(0, 0.5);
+    const color = Phaser.Display.Color.HexStringToColor(player.color).color;
+    const shadow = this.add.ellipse(5, 17, PLAYER_RADIUS * 2.8, PLAYER_RADIUS * 1.55, 0x000000, 0.42);
+    const ring = this.add.circle(0, 3, PLAYER_RADIUS + 12, color, 0.08).setStrokeStyle(4, color, 0.78);
+    const sprite = this.add.sprite(0, 0, resolveCharacterTextureKey(player.characterId, "idle", this.failedTextureKeys)).setDisplaySize(104, 104);
+    const aim = this.add.rectangle(PLAYER_RADIUS + 19, 0, 38, 11, 0xffffff, 0.95).setOrigin(0, 0.5);
+    const healthBg = this.add.rectangle(-36, 51, 72, 7, 0x07090b, 0.88).setOrigin(0, 0.5);
+    const healthFill = this.add.rectangle(-36, 51, 72, 7, 0x31d0aa, 1).setOrigin(0, 0.5);
     const name = this.add
       .text(0, -47, player.nickname, {
         fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
-        fontSize: "18px",
+        fontSize: "19px",
         color: "#ffffff",
         stroke: "#050708",
         strokeThickness: 5,
       })
-      .setOrigin(0.5);
-    const container = this.add.container(player.x, player.y, [shadow, aim, sprite, healthBg, healthFill, name]).setDepth(4);
+      .setOrigin(0.5)
+      .setY(-58);
+    const container = this.add.container(player.x, player.y, [shadow, ring, aim, sprite, healthBg, healthFill, name]).setDepth(4);
     const view: PlayerView = {
       container,
       sprite,
@@ -384,6 +391,7 @@ class ArenaScene extends Phaser.Scene {
       name,
       healthFill,
       shadow,
+      ring,
       shield: null,
       lastHealth: player.health,
       wasAlive: player.alive,
@@ -422,14 +430,14 @@ class ArenaScene extends Phaser.Scene {
     for (const orb of snapshot.skillOrbs) {
       if (this.skillOrbViews.has(orb.id)) continue;
       const color = SKILL_COLORS[orb.type];
-      const ground = this.add.ellipse(0, 18, 72, 28, color, 0.18).setStrokeStyle(3, color, 0.45);
-      const glow = this.add.circle(0, 0, 34, color, 0.16).setStrokeStyle(4, color, 0.72);
-      const beam = this.add.rectangle(0, -34, 24, 92, color, 0.11).setOrigin(0.5, 1);
-      const icon = this.add.image(0, 0, `skill-${orb.type}`).setDisplaySize(42, 42);
+      const ground = this.add.ellipse(0, 22, 92, 34, color, 0.24).setStrokeStyle(4, color, 0.62);
+      const glow = this.add.circle(0, 0, 43, color, 0.2).setStrokeStyle(5, color, 0.9);
+      const beam = this.add.rectangle(0, -40, 34, 122, color, 0.16).setOrigin(0.5, 1);
+      const icon = this.add.image(0, 0, `skill-${orb.type}`).setDisplaySize(54, 54);
       const container = this.add.container(orb.x, orb.y, [beam, ground, glow, icon]).setDepth(3);
       this.skillOrbViews.set(orb.id, container);
-      this.tweens.add({ targets: glow, scale: 1.18, alpha: 0.55, duration: 680, yoyo: true, repeat: -1, ease: "Sine.InOut" });
-      this.tweens.add({ targets: icon, y: -7, duration: 840, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+      this.tweens.add({ targets: glow, scale: 1.24, alpha: 0.68, duration: 620, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+      this.tweens.add({ targets: icon, y: -10, angle: 4, duration: 760, yoyo: true, repeat: -1, ease: "Sine.InOut" });
     }
   }
 
@@ -583,7 +591,11 @@ class ArenaScene extends Phaser.Scene {
       view.sprite.setTexture(resolveCharacterTextureKey(player.characterId, state, this.failedTextureKeys));
     }
     const moving = state === "move";
-    view.sprite.setScale((86 / Math.max(view.sprite.width, view.sprite.height)) * (moving ? 1.025 : 1));
+    view.sprite.setScale((104 / Math.max(view.sprite.width, view.sprite.height)) * (moving ? 1.035 : 1));
+    view.ring.setScale(moving ? 1.08 : 1).setAlpha(player.alive ? (state === "attack" ? 0.95 : 0.68) : 0.18);
+    if (state === "hit") view.sprite.setTint(0xffb6b8);
+    else if (state === "attack") view.sprite.setTint(0xffedb0);
+    else view.sprite.setTint(player.id === this.localPlayerId ? 0xffffff : 0xe8f2f7);
     view.shadow.setAlpha(this.lowPerformance ? 0.16 : player.alive ? 0.34 : 0.12);
   }
 
@@ -599,5 +611,34 @@ class ArenaScene extends Phaser.Scene {
   private resizeCamera(width: number, height: number): void {
     this.cameras.main.setViewport(0, 0, width, height);
     this.cameras.main.setZoom(calculateArenaCameraZoom(height, VIEW_HEIGHT));
+  }
+
+  private updateCamera(deltaMs: number): void {
+    if (!this.snapshot || this.snapshot.phase === "finished" || !this.localPlayerId) return;
+    const view = this.playerViews.get(this.localPlayerId);
+    if (!view) return;
+    const camera = this.cameras.main;
+    const zoom = Math.max(0.01, camera.zoom);
+    const viewportWidth = camera.width / zoom;
+    const viewportHeight = camera.height / zoom;
+    const current = {
+      x: camera.scrollX + viewportWidth / 2,
+      y: camera.scrollY + viewportHeight / 2,
+    };
+    const next = advanceCameraFollow(
+      current,
+      { x: view.container.x, y: view.container.y },
+      {
+        viewportWidth,
+        viewportHeight,
+        arenaWidth: ARENA_WIDTH,
+        arenaHeight: ARENA_HEIGHT,
+        deadzoneWidth: viewportWidth * 0.24,
+        deadzoneHeight: viewportHeight * 0.18,
+        smoothing: 9,
+      },
+      deltaMs,
+    );
+    camera.setScroll(next.x - viewportWidth / 2, next.y - viewportHeight / 2);
   }
 }

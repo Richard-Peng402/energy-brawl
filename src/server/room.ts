@@ -51,6 +51,7 @@ export class GameRoom {
   private world: GameWorld | null = null;
   private clockMs = 0;
   private autoResetAt: number | null = null;
+  private adminStateChanged = false;
   private nextPlayerNumber = 1;
 
   attachHostAdmin(service: HostAdminService): void {
@@ -63,6 +64,12 @@ export class GameRoom {
 
   consumeKickedSocketIds(): string[] {
     return this.kickedSocketIds.splice(0);
+  }
+
+  consumeAdminStateChanged(): boolean {
+    const changed = this.adminStateChanged;
+    this.adminStateChanged = false;
+    return changed;
   }
 
   joinHuman(socketId: string, payload: JoinPayload): Ack<JoinResult> {
@@ -246,6 +253,7 @@ export class GameRoom {
 
   tick(deltaMs: number): boolean {
     if (!Number.isFinite(deltaMs) || deltaMs <= 0) return false;
+    this.adminStateChanged = false;
     this.clockMs += deltaMs;
     const lifecycleChanged = this.expireReconnectTokens();
     if (!this.world) return lifecycleChanged;
@@ -259,7 +267,7 @@ export class GameRoom {
     }
 
     const wasFinished = this.worldIsFinished();
-    this.hostAdmin?.drain(this.world, (command) => this.applyHostAdminCommand(command));
+    this.adminStateChanged = this.hostAdmin?.drain(this.world, (command) => this.applyHostAdminCommand(command)).changed ?? false;
 
     for (const [playerId, input] of this.pendingInputs) applyPlayerInput(this.world, playerId, input);
     this.pendingInputs.clear();

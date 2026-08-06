@@ -746,8 +746,8 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  width: 112px;
-  height: 54px;
+  width: 152px;
+  min-height: 60px;
   transform: translateX(-50%);
   border: 2px solid rgb(242 193 78 / 62%);
   border-radius: 16px;
@@ -763,9 +763,9 @@ button:disabled {
 
 .skill-button img,
 .skill-empty-mark {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   object-fit: contain;
   filter: saturate(0.55);
 }
@@ -777,8 +777,8 @@ button:disabled {
   line-height: 1.05;
 }
 
-.skill-button b { font-size: 11px; }
-.skill-button small { color: var(--muted); font-size: 9px; }
+.skill-button b { font-size: 13px; }
+.skill-button small { color: var(--muted); font-size: 10px; }
 .skill-button.is-ready { color: #fff; border-color: rgb(242 193 78 / 95%); filter: drop-shadow(0 0 10px rgb(242 193 78 / 24%)); }
 .skill-button.is-ready img { filter: none; }
 .skill-button.is-ready:active { transform: translateX(-50%) scale(0.94); }
@@ -1150,6 +1150,67 @@ button:disabled {
 .host-player-actions button:hover {
   border-color: #31d0aa;
   color: #ffffff;
+}
+
+.stat-editor {
+  width: min(460px, calc(100vw - 36px));
+  border: 1px solid #5a6972;
+  border-radius: 14px;
+  padding: 0;
+  background: #171d22;
+  color: #f4f7f8;
+  box-shadow: 0 26px 90px rgb(0 0 0 / 70%);
+}
+
+.stat-editor::backdrop {
+  background: rgb(4 7 10 / 76%);
+  backdrop-filter: blur(6px);
+}
+
+.stat-editor form {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+}
+
+.stat-editor h2,
+.stat-editor p {
+  margin: 0;
+}
+
+.stat-editor h2 b {
+  color: #f2c14e;
+}
+
+.stat-editor label {
+  display: grid;
+  gap: 7px;
+  color: #aab6bb;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.stat-editor select,
+.stat-editor input {
+  height: 44px;
+  border: 1px solid #526068;
+  border-radius: 7px;
+  padding: 0 12px;
+  background: #0d1115;
+  color: #ffffff;
+  font: inherit;
+}
+
+.stat-editor p {
+  color: #8f9ca2;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.stat-editor form > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .seat-index {

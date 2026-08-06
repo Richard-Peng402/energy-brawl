@@ -49,6 +49,12 @@ export function createSkillSystem(now = 0, random: () => number = Math.random): 
   };
 }
 
+export function seedInitialSkillOrbs(state: SkillSystemState, occupied: readonly Vec2[], count = 2): number {
+  let spawned = 0;
+  while (spawned < count && state.orbs.size < MAX_SKILL_ORBS && spawnSkillOrb(state, occupied)) spawned += 1;
+  return spawned;
+}
+
 export function advanceSkillSystem(state: SkillSystemState, now: number, occupied: readonly Vec2[]): void {
   if (!Number.isFinite(now) || now < state.nextSpawnAt) return;
   if (state.orbs.size >= MAX_SKILL_ORBS) {

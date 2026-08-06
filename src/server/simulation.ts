@@ -37,6 +37,7 @@ import {
   SHIELD_STRENGTH,
   SPREAD_ANGLE_RADIANS,
   SPREAD_PROJECTILE_DAMAGE,
+  seedInitialSkillOrbs,
   type SkillSystemState,
 } from "./skill-system";
 import type {
@@ -153,6 +154,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
   };
 
   while (world.energy.size < MAX_ENERGY) spawnEnergy(world);
+  seedInitialSkillOrbs(world.skillSystem, [...players.values()]);
   return world;
 }
 
