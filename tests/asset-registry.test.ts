@@ -20,7 +20,7 @@ describe("v3 asset registry", () => {
       const assets = CHARACTER_ASSETS[characterId];
       for (const file of characterFiles) expect(assets[file]).toMatch(/^\/assets\/v3\//);
       expect(assets.portrait).not.toBe(assets.idle);
-      expect(assets.idle).toMatch(/\/combat\.svg$/);
+      expect(assets.idle).toMatch(/\/combat\.png$/);
       expect(assets.move).toBe(assets.idle);
       expect(assets.attack).toBe(assets.idle);
     }
@@ -46,7 +46,8 @@ describe("v3 asset registry", () => {
       expect(APPROVED_ASSET_SOURCES).toContain(entry.sourceUrl);
       expect(entry.outputFiles.length).toBeGreaterThan(0);
     }
-    expect(ASSET_MANIFEST.flatMap((entry) => entry.outputFiles).filter((path) => path.endsWith("/combat.svg"))).toHaveLength(6);
+    expect(ASSET_MANIFEST.flatMap((entry) => entry.outputFiles).filter((path) => path.endsWith("/combat.png"))).toHaveLength(6);
+    expect(ASSET_MANIFEST.some((entry) => entry.source === "User-provided character art")).toBe(true);
   });
 
   it("rejects assets with unknown provenance", () => {

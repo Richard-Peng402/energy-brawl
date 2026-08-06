@@ -3,11 +3,14 @@ import manifest from "../../public/assets/v3/manifest.json";
 import type { CharacterId } from "../shared/character-catalog";
 
 export const APPROVED_ASSET_SOURCES = [
+  "local://user-provided-character-art",
   "https://opengameart.org/content/top-down-sci-fi-shooter-characters-20",
   "https://opengameart.org/content/top-down-sci-fi-shooter-pack",
   "https://opengameart.org/content/top-down-sci-fi-shooter-some-random-guys-terrain-texture",
   "https://kenney.nl/assets/top-down-shooter",
 ] as const;
+
+export const USER_PROVIDED_CHARACTER_ASSET_SOURCE = "local://user-provided-character-art";
 
 export type CharacterAssetState = "portrait" | "idle" | "move" | "attack" | "hit" | "death" | "fallback";
 export type AssetManifestEntry = {
@@ -21,11 +24,11 @@ export type AssetManifestEntry = {
 const path = (value: string): string => `/assets/v3/${value}`;
 const character = (id: CharacterId): Record<CharacterAssetState, string> => ({
   portrait: path(`characters/${id}/portrait.png`),
-  idle: path(`characters/${id}/combat.svg`),
-  move: path(`characters/${id}/combat.svg`),
-  attack: path(`characters/${id}/combat.svg`),
-  hit: path(`characters/${id}/combat.svg`),
-  death: path(`characters/${id}/combat.svg`),
+  idle: path(`characters/${id}/combat.png`),
+  move: path(`characters/${id}/combat.png`),
+  attack: path(`characters/${id}/combat.png`),
+  hit: path(`characters/${id}/combat.png`),
+  death: path(`characters/${id}/combat.png`),
   fallback: path(`characters/${id}/fallback.svg`),
 });
 

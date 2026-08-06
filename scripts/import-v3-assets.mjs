@@ -7,6 +7,7 @@ const assetRoot = join(root, "public", "assets", "v3");
 const characterIds = ["blaze", "medic", "fortress", "arc", "phase", "runner"];
 const rasterStates = ["portrait", "idle", "move", "attack", "hit", "death"];
 const approvedSources = new Set([
+  "local://user-provided-character-art",
   "https://opengameart.org/content/top-down-sci-fi-shooter-characters-20",
   "https://opengameart.org/content/top-down-sci-fi-shooter-pack",
   "https://opengameart.org/content/top-down-sci-fi-shooter-some-random-guys-terrain-texture",
@@ -15,12 +16,23 @@ const approvedSources = new Set([
 
 const runtime = (relative) => `/assets/v3/${relative.replaceAll("\\", "/")}`;
 const characterOutputs = characterIds.flatMap((id) => [
-  ...rasterStates.map((state) => runtime(`characters/${id}/${state}.png`)),
+  ...rasterStates.filter((state) => state !== "portrait").map((state) => runtime(`characters/${id}/${state}.png`)),
   runtime(`characters/${id}/combat.svg`),
+]);
+const userCharacterOutputs = characterIds.flatMap((id) => [
+  runtime(`characters/${id}/portrait.png`),
+  runtime(`characters/${id}/combat.png`),
 ]);
 const arenaOutputs = ["floor", "wall", "decal", "light"].map((name) => runtime(`arena/${name}.png`));
 
 const manifestEntries = [
+  {
+    source: "User-provided character art",
+    author: "Project owner",
+    license: "User-provided for this project",
+    sourceUrl: "local://user-provided-character-art",
+    outputFiles: userCharacterOutputs,
+  },
   {
     source: "Top-down Sci-fi Shooter Characters 2.0",
     author: "Tatermand",
