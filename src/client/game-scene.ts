@@ -2,9 +2,10 @@ import Phaser from "phaser";
 
 import { CHARACTER_CATALOG } from "../shared/character-catalog";
 import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_LIFETIME_MS, VIEW_HEIGHT, VIEW_WIDTH, WALLS } from "../shared/constants";
+import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
 import type { GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import { calculateAimGuide } from "./aim-guide";
-import { ARENA_ASSETS, CHARACTER_ASSETS, type CharacterAssetState } from "./asset-registry";
+import { ARENA_ASSETS, CHARACTER_ASSETS, SKILL_ICON_ASSETS, type CharacterAssetState } from "./asset-registry";
 import {
   FixedObjectPool,
   characterTextureKey,
@@ -47,6 +48,12 @@ const EFFECT_CAPACITY: Readonly<Record<CombatEffectKind, number>> = {
   dash: 12,
   heal: 10,
   respawn: 8,
+};
+const SKILL_COLORS: Readonly<Record<SkillType, number>> = {
+  dash: 0x4da3ff,
+  shield: 0x59ece2,
+  spread: 0xff6b70,
+  heal: 0x56e09a,
 };
 
 export class GameRenderer {
@@ -115,6 +122,7 @@ class ArenaScene extends Phaser.Scene {
   private readonly playerViews = new Map<string, PlayerView>();
   private readonly projectileViews = new Map<string, MovingView>();
   private readonly energyViews = new Map<string, Phaser.GameObjects.Sprite>();
+  private readonly skillOrbViews = new Map<string, Phaser.GameObjects.Container>();
   private readonly snapshotBuffer = new SnapshotBuffer<GameSnapshot>();
   private readonly inputReconciler = new InputReconciler();
   private snapshot: GameSnapshot | null = null;
@@ -143,6 +151,7 @@ class ArenaScene extends Phaser.Scene {
     this.load.image("arena-wall-v3", ARENA_ASSETS.wall);
     this.load.image("arena-decal-v3", ARENA_ASSETS.decal);
     this.load.image("arena-light-v3", ARENA_ASSETS.light);
+    for (const type of SKILL_TYPES) this.load.svg(`skill-${type}`, SKILL_ICON_ASSETS[type], { width: 64, height: 64 });
     for (const character of CHARACTER_CATALOG) {
       for (const state of CHARACTER_RENDER_STATES) {
         this.load.image(characterTextureKey(character.id, state), CHARACTER_ASSETS[character.id][state]);
@@ -349,6 +358,7 @@ class ArenaScene extends Phaser.Scene {
     }
 
     this.syncEnergy(snapshot);
+    this.syncSkillOrbs(snapshot);
   }
 
   private createPlayerView(player: PlayerSnapshot): PlayerView {
@@ -399,6 +409,27 @@ class ArenaScene extends Phaser.Scene {
       const sprite = this.add.sprite(energy.x, energy.y, "energy-core").setScale(0.5).setDepth(2);
       this.energyViews.set(energy.id, sprite);
       this.tweens.add({ targets: sprite, scale: 0.58, duration: 720, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+    }
+  }
+
+  private syncSkillOrbs(snapshot: GameSnapshot): void {
+    const active = new Set(snapshot.skillOrbs.map((orb) => orb.id));
+    for (const [id, container] of this.skillOrbViews) {
+      if (active.has(id)) continue;
+      this.skillOrbViews.delete(id);
+      this.tweens.add({ targets: container, scale: 1.35, alpha: 0, duration: 180, onComplete: () => container.destroy(true) });
+    }
+    for (const orb of snapshot.skillOrbs) {
+      if (this.skillOrbViews.has(orb.id)) continue;
+      const color = SKILL_COLORS[orb.type];
+      const ground = this.add.ellipse(0, 18, 72, 28, color, 0.18).setStrokeStyle(3, color, 0.45);
+      const glow = this.add.circle(0, 0, 34, color, 0.16).setStrokeStyle(4, color, 0.72);
+      const beam = this.add.rectangle(0, -34, 24, 92, color, 0.11).setOrigin(0.5, 1);
+      const icon = this.add.image(0, 0, `skill-${orb.type}`).setDisplaySize(42, 42);
+      const container = this.add.container(orb.x, orb.y, [beam, ground, glow, icon]).setDepth(3);
+      this.skillOrbViews.set(orb.id, container);
+      this.tweens.add({ targets: glow, scale: 1.18, alpha: 0.55, duration: 680, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+      this.tweens.add({ targets: icon, y: -7, duration: 840, yoyo: true, repeat: -1, ease: "Sine.InOut" });
     }
   }
 
@@ -524,7 +555,7 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private syncShield(view: PlayerView, player: PlayerSnapshot, serverTime: number): void {
-    const active = player.alive && player.shieldUntil > serverTime;
+    const active = player.alive && (player.shieldUntil > serverTime || (player.skillShieldHealth > 0 && player.skillShieldUntil > serverTime));
     if (!active) {
       view.shield?.setVisible(false);
       view.shield = null;

@@ -1,7 +1,8 @@
 import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
 import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
+import { SKILL_CATALOG } from "../shared/skill-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
-import { CHARACTER_ASSETS } from "./asset-registry";
+import { CHARACTER_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { GameRenderer } from "./game-scene";
 import { buildCharacterSelection, GameNetworkClient } from "./network";
 import { MobileViewport } from "./mobile-viewport";
@@ -19,6 +20,7 @@ export class MobileApp {
   private renderer: GameRenderer | null = null;
   private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
   private inputSequence = 0;
+  private skillActionSequence = 0;
   private lastInputSentAt = 0;
   private acceptingInput = false;
   private toastTimer = 0;
@@ -36,7 +38,7 @@ export class MobileApp {
       this.moveStick,
       this.aimStick,
       () => arena.getBoundingClientRect().width || window.innerWidth,
-      () => this.showToast("技能槽为空"),
+      this.useSkill,
     );
     this.viewport = new MobileViewport(this.resetControls);
     this.viewport.start();
@@ -135,6 +137,7 @@ export class MobileApp {
       this.renderResults(this.network.game);
     } else {
       this.find("#results-overlay").classList.add("is-hidden");
+      this.skillActionSequence = 0;
       if (this.renderer) {
         this.renderer.destroy();
         this.renderer = null;
@@ -228,6 +231,20 @@ export class MobileApp {
     const remaining = own?.respawnAt ? Math.max(0, own.respawnAt - snapshot.serverTime) : 0;
     respawn.textContent = own && !own.alive ? `${Math.ceil(remaining / 1_000)} 秒后重返战场` : "";
     respawn.classList.toggle("is-hidden", own?.alive !== false);
+    this.renderSkillButton(own);
+  }
+
+  private renderSkillButton(player: PlayerSnapshot | undefined): void {
+    const button = this.find<HTMLButtonElement>("#skill-button");
+    const type = player?.skillSlot.charges === 1 ? player.skillSlot.type : null;
+    button.classList.toggle("is-ready", Boolean(type));
+    button.setAttribute("aria-disabled", String(!type));
+    if (button.dataset.skillType === (type ?? "empty")) return;
+    button.dataset.skillType = type ?? "empty";
+    button.innerHTML = type
+      ? `<img src="${SKILL_ICON_ASSETS[type]}" alt="" /><span><b>${SKILL_CATALOG[type].name}</b><small>一次</small></span>`
+      : `<span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span>`;
+    button.setAttribute("aria-label", type ? `使用${SKILL_CATALOG[type].name}` : "技能槽为空");
   }
 
   private renderResults(snapshot: GameSnapshot): void {
@@ -308,6 +325,16 @@ export class MobileApp {
     this.renderer?.setLocalAim({ x: 0, y: 0 });
   };
 
+  private readonly useSkill = (): void => {
+    const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
+    if (!this.acceptingInput || own?.skillSlot.charges !== 1 || !own.skillSlot.type) {
+      this.showToast("技能槽为空");
+      return;
+    }
+    this.skillActionSequence = Math.max(this.skillActionSequence, own.lastProcessedSkillAction) + 1;
+    this.network.sendSkillAction(this.skillActionSequence);
+  };
+
   private showToast(message: string): void {
     const toast = this.find("#toast");
     toast.textContent = message;
@@ -370,7 +397,7 @@ function mobileTemplate(): string {
           <div id="respawn-state" class="respawn-state is-hidden"></div>
         </div>
         <div class="control-layer">
-          <button id="skill-button" class="skill-button" data-skill-button type="button" aria-label="使用技能" aria-disabled="true">技能</button>
+          <button id="skill-button" class="skill-button" data-skill-button data-skill-type="empty" type="button" aria-label="技能槽为空" aria-disabled="true"><span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span></button>
           <div id="move-stick" class="virtual-stick move-stick"><div class="stick-mark">MOVE</div><div class="stick-knob"></div></div>
           <div id="aim-stick" class="virtual-stick aim-stick"><div class="stick-mark">FIRE</div><div class="stick-knob"></div></div>
         </div>

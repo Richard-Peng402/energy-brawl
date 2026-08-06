@@ -16,7 +16,7 @@ import type {
   RoomSnapshot,
   UseSkillPayload,
 } from "../shared/protocol";
-import { chooseBotInput } from "./bot";
+import { chooseBotDecision } from "./bot";
 import {
   applyPlayerInput,
   applyWorldSkillAction,
@@ -250,7 +250,9 @@ export class GameRoom {
 
     for (const player of this.world.players.values()) {
       if (!player.isBot || this.clockMs < (this.nextBotThinkAt.get(player.id) ?? 0)) continue;
-      applyPlayerInput(this.world, player.id, chooseBotInput(this.world, player.id));
+      const decision = chooseBotDecision(this.world, player.id);
+      applyPlayerInput(this.world, player.id, decision.input);
+      if (decision.useSkill) applyWorldSkillAction(this.world, player.id, player.lastProcessedSkillAction + 1);
       this.nextBotThinkAt.set(player.id, this.clockMs + 300 + Math.random() * 150);
     }
     const wasFinished = this.worldIsFinished();

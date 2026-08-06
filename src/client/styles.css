@@ -742,18 +742,50 @@ button:disabled {
   z-index: 3;
   left: 50%;
   bottom: max(18px, calc(env(safe-area-inset-bottom) + 8px));
-  width: 74px;
-  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 112px;
+  height: 54px;
   transform: translateX(-50%);
   border: 2px solid rgb(242 193 78 / 62%);
-  border-radius: 50%;
-  background: rgb(13 17 21 / 72%);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgb(27 33 39 / 90%), rgb(8 11 14 / 86%));
   color: rgb(244 247 248 / 58%);
   font-size: 11px;
   font-weight: 950;
   pointer-events: auto;
   touch-action: none;
+  box-shadow: 0 8px 22px rgb(0 0 0 / 42%), inset 0 1px rgb(255 255 255 / 8%);
+  transition: transform 90ms ease, border-color 120ms ease, filter 120ms ease;
 }
+
+.skill-button img,
+.skill-empty-mark {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  object-fit: contain;
+  filter: saturate(0.55);
+}
+
+.skill-button > span:not(.skill-empty-mark) {
+  display: grid;
+  gap: 1px;
+  text-align: left;
+  line-height: 1.05;
+}
+
+.skill-button b { font-size: 11px; }
+.skill-button small { color: var(--muted); font-size: 9px; }
+.skill-button.is-ready { color: #fff; border-color: rgb(242 193 78 / 95%); filter: drop-shadow(0 0 10px rgb(242 193 78 / 24%)); }
+.skill-button.is-ready img { filter: none; }
+.skill-button.is-ready:active { transform: translateX(-50%) scale(0.94); }
+.skill-button[data-skill-type="dash"] { border-color: rgb(77 163 255 / 95%); }
+.skill-button[data-skill-type="shield"] { border-color: rgb(89 236 226 / 95%); }
+.skill-button[data-skill-type="spread"] { border-color: rgb(255 107 112 / 95%); }
+.skill-button[data-skill-type="heal"] { border-color: rgb(86 224 154 / 95%); }
 
 .touch-zone {
   position: absolute;
