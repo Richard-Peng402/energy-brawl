@@ -90,6 +90,16 @@ export class MobileApp {
         if (!entered) this.showToast("当前浏览器将使用沉浸式横屏布局");
       });
     }
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-sound-toggle]")) {
+      button.addEventListener("pointerdown", (event) => event.stopPropagation());
+      button.addEventListener("click", async () => {
+        await this.audio.unlock();
+        this.audio.toggleMuted();
+        this.syncSoundButtons();
+      });
+    }
+    this.root.addEventListener("pointerdown", () => { void this.audio.unlock(); }, { once: true });
+    this.syncSoundButtons();
   }
 
   private bindArenaGestures(): void {
@@ -257,6 +267,15 @@ export class MobileApp {
     if (type && previous !== type) this.showToast(`获得技能：${SKILL_CATALOG[type].name}`);
   }
 
+  private syncSoundButtons(): void {
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-sound-toggle]")) {
+      const muted = this.audio.isMuted;
+      button.classList.toggle("is-muted", muted);
+      button.textContent = muted ? "声音静音" : "声音开";
+      button.setAttribute("aria-label", muted ? "打开声音" : "关闭声音");
+    }
+  }
+
   private renderResults(snapshot: GameSnapshot): void {
     const overlay = this.find("#results-overlay");
     const finished = snapshot.phase === "finished";
@@ -375,7 +394,7 @@ function mobileTemplate(): string {
     <main class="mobile-shell">
       <header class="game-header">
         <div class="mini-brand"><span class="brand-bolt">E</span><strong>能量乱斗</strong></div>
-        <div class="header-actions"><button class="fullscreen-button" data-fullscreen type="button">全屏</button><span id="connection-state" class="connection-state">正在连接</span></div>
+         <div class="header-actions"><button class="sound-button" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button" data-fullscreen type="button">全屏</button><span id="connection-state" class="connection-state">正在连接</span></div>
       </header>
 
       <section id="lobby-screen" class="lobby-screen">
@@ -412,7 +431,7 @@ function mobileTemplate(): string {
           </div>
           <div id="match-clock" class="match-clock">5:00</div>
           <div id="leaderboard" class="leaderboard"></div>
-          <button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>
+           <button class="sound-button arena-sound" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>
           <div id="respawn-state" class="respawn-state is-hidden"></div>
         </div>
         <div class="control-layer">

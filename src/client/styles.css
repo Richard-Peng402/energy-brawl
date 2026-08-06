@@ -121,6 +121,25 @@ input:focus-visible {
   cursor: pointer;
 }
 
+.sound-button {
+  min-width: 62px;
+  height: 30px;
+  border: 1px solid rgb(49 208 170 / 55%);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: rgb(13 17 21 / 86%);
+  color: #d9fff5;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.sound-button.is-muted {
+  border-color: rgb(255 255 255 / 24%);
+  color: #8f9ca2;
+}
+
 .mini-brand,
 .host-brand {
   display: flex;
@@ -734,6 +753,14 @@ button:disabled {
   z-index: 30;
   top: max(10px, env(safe-area-inset-top));
   right: max(12px, env(safe-area-inset-right));
+  pointer-events: auto;
+}
+
+.arena-sound {
+  position: absolute;
+  z-index: 30;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(72px, calc(env(safe-area-inset-right) + 60px));
   pointer-events: auto;
 }
 
