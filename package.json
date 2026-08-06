@@ -11,6 +11,7 @@
     "server": "tsx src/server/index.ts",
     "assets:v3": "node scripts/import-v3-assets.mjs",
     "load-test": "tsx scripts/load-test.ts",
+    "load-test:v3": "tsx scripts/v3-load-test.ts",
     "test": "vitest",
     "typecheck": "tsc --noEmit"
   },
