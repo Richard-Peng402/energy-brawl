@@ -4,9 +4,11 @@ import type { GameWorld, WorldPlayer } from "./simulation";
 
 const RETREAT_HEALTH = 35;
 const RETREAT_DISTANCE_SQUARED = 500 * 500;
-const FIRE_DISTANCE_SQUARED = 520 * 520;
+const FIRE_DISTANCE_SQUARED = 420 * 420;
 const DASH_MIN_DISTANCE_SQUARED = 420 * 420;
 const DASH_MAX_DISTANCE_SQUARED = 900 * 900;
+const MOVE_INPUT_SCALE = 0.75;
+const SKILL_USE_CHANCE = 0.45;
 
 export interface BotDecision {
   input: PlayerInput;
@@ -40,7 +42,7 @@ export function chooseBotDecision(
 
   const aim = enemy ? imperfectAim(player, enemy, random) : movement;
   const heldSkill = player.skillSlot.charges === 1 ? player.skillSlot.type : null;
-  const useSkill = heldSkill === "heal"
+  const tacticalSkillWindow = heldSkill === "heal"
     ? player.health <= 45
     : heldSkill === "shield"
       ? Boolean(enemy && player.health <= 70 && enemyDistance <= RETREAT_DISTANCE_SQUARED)
@@ -49,6 +51,7 @@ export function chooseBotDecision(
         : heldSkill === "dash"
           ? Boolean(enemy && player.health > RETREAT_HEALTH && enemyDistance >= DASH_MIN_DISTANCE_SQUARED && enemyDistance <= DASH_MAX_DISTANCE_SQUARED)
           : false;
+  const useSkill = tacticalSkillWindow && random() < SKILL_USE_CHANCE;
 
   if (useSkill && heldSkill === "dash" && enemy) {
     movement = normalize({ x: enemy.x - player.x, y: enemy.y - player.y });
@@ -58,8 +61,8 @@ export function chooseBotDecision(
     useSkill,
     input: {
       seq: player.lastProcessedInput + 1,
-      moveX: movement.x,
-      moveY: movement.y,
+      moveX: movement.x * MOVE_INPUT_SCALE,
+      moveY: movement.y * MOVE_INPUT_SCALE,
       aimX: aim.x,
       aimY: aim.y,
       firing: Boolean(enemy && enemyDistance <= FIRE_DISTANCE_SQUARED),
@@ -94,6 +97,6 @@ function nearestPoint<T extends Vec2>(origin: Vec2, points: T[]): T | undefined 
 
 function imperfectAim(origin: Vec2, target: Vec2, random: () => number): Vec2 {
   const perfectAngle = Math.atan2(target.y - origin.y, target.x - origin.x);
-  const error = (random() - 0.5) * 0.44;
+  const error = (random() - 0.5) * 0.9;
   return { x: Math.cos(perfectAngle + error), y: Math.sin(perfectAngle + error) };
 }

@@ -148,6 +148,19 @@ describe("game room", () => {
     expect(snapshot.players.filter((player) => player.isBot)).toHaveLength(5);
   });
 
+  it("gives bots at least five hundred milliseconds between decisions", () => {
+    const room = new GameRoom();
+    join(room, "socket-think", "节奏玩家");
+    room.setReady("socket-think", true);
+    room.startMatch();
+
+    room.tick(16);
+
+    const nextThinkTimes = [...(room as unknown as { nextBotThinkAt: Map<string, number> }).nextBotThinkAt.values()];
+    expect(nextThinkTimes).toHaveLength(5);
+    expect(Math.min(...nextThinkTimes)).toBeGreaterThanOrEqual(516);
+  });
+
   it("lets a disconnected human reclaim the same seat", () => {
     const room = new GameRoom();
     const joined = join(room, "socket-1", "玩家一", "medic");

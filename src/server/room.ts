@@ -301,7 +301,7 @@ export class GameRoom {
       const decision = chooseBotDecision(this.world, player.id);
       applyPlayerInput(this.world, player.id, decision.input);
       if (decision.useSkill) applyWorldSkillAction(this.world, player.id, player.lastProcessedSkillAction + 1);
-      this.nextBotThinkAt.set(player.id, this.clockMs + 300 + Math.random() * 150);
+      this.nextBotThinkAt.set(player.id, this.clockMs + 500 + Math.random() * 250);
     }
     stepWorld(this.world, deltaMs);
     if (this.worldIsFinished() && this.autoResetAt === null) {

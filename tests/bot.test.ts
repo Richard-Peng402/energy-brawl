@@ -17,7 +17,7 @@ describe("bot decisions", () => {
 
     const { input } = chooseBotDecision(world, "bot-1", () => 0.5);
 
-    expect(input.moveX).toBeGreaterThan(0.9);
+    expect(Math.hypot(input.moveX, input.moveY)).toBeCloseTo(0.75, 4);
     expect(Math.abs(input.moveY)).toBeLessThan(0.1);
   });
 
@@ -34,7 +34,7 @@ describe("bot decisions", () => {
 
     const { input } = chooseBotDecision(world, "bot-1", () => 0.5);
 
-    expect(input.moveX).toBeLessThan(-0.9);
+    expect(input.moveX).toBeCloseTo(-0.75, 4);
     expect(input.firing).toBe(true);
   });
 
@@ -55,7 +55,27 @@ describe("bot decisions", () => {
     enemy.x = bot.x + enemyDistance;
     enemy.y = bot.y;
 
-    expect(chooseBotDecision(world, bot.id, () => 0.5).useSkill).toBe(true);
+    const randomValues = [0.5, 0.1];
+    expect(chooseBotDecision(world, bot.id, () => randomValues.shift() ?? 0.5).useSkill).toBe(true);
+  });
+
+  it("hesitates on skills, stops firing beyond 420 units, and has wider aim error", () => {
+    const world = createGameWorld([
+      { id: "bot-1", nickname: "脉冲", characterId: "medic", isBot: true },
+      { id: "human", nickname: "玩家", characterId: "blaze", isBot: false },
+    ]);
+    const bot = world.players.get("bot-1")!;
+    const enemy = world.players.get("human")!;
+    bot.skillSlot = { type: "spread", charges: 1 };
+    enemy.x = bot.x + 450;
+    enemy.y = bot.y;
+
+    const randomValues = [1, 1];
+    const decision = chooseBotDecision(world, bot.id, () => randomValues.shift() ?? 1);
+
+    expect(decision.input.firing).toBe(false);
+    expect(Math.atan2(decision.input.aimY, decision.input.aimX)).toBeCloseTo(0.45, 4);
+    expect(decision.useSkill).toBe(false);
   });
 
   it("prioritizes escape over skill orbs and skill orbs over ordinary energy", () => {
@@ -71,11 +91,11 @@ describe("bot decisions", () => {
     world.energy.clear();
     world.energy.set("energy", { id: "energy", x: bot.x + 60, y: bot.y });
     bot.health = 20;
-    expect(chooseBotDecision(world, bot.id, () => 0.5).input.moveX).toBeLessThan(-0.9);
+    expect(chooseBotDecision(world, bot.id, () => 0.5).input.moveX).toBeCloseTo(-0.75, 4);
 
     bot.health = bot.maxHealth;
     enemy.x = bot.x + 1_000;
     world.skillSystem.orbs.get("skill")!.x = bot.x - 160;
-    expect(chooseBotDecision(world, bot.id, () => 0.5).input.moveX).toBeLessThan(-0.9);
+    expect(chooseBotDecision(world, bot.id, () => 0.5).input.moveX).toBeCloseTo(-0.75, 4);
   });
 });
