@@ -294,7 +294,7 @@ const container = this.add.container(0, 0, [tail, glow, core]).setDepth(6).setVi
 2. 新弹丸从池中 `acquire`，写入 `ownerId`、角色颜色和初始 `lastTrail`；播放枪口闪光。
 3. 每帧插值后设置容器位置与 `projectileAngle({ x: projectile.vx, y: projectile.vy })`。
 4. 满足 `shouldEmitProjectileTrail` 时播放拖尾并更新 `lastTrail`。
-5. 池暂时无空闲对象时跳过新装饰，但保留已有弹丸；记录一次节流后的 `console.warn`，不得循环创建池外对象。
+5. 池暂时无空闲对象时静默跳过新装饰并保留已有弹丸；不得输出会污染验收控制台的 warning，也不得循环创建池外对象。
 
 子弹着色使用：
 

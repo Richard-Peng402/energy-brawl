@@ -8,10 +8,19 @@ import { calculateAimGuide } from "./aim-guide";
 import { ARENA_ASSETS, CHARACTER_ASSETS, SKILL_ICON_ASSETS, type CharacterAssetState } from "./asset-registry";
 import { resolveCameraView, shouldSnapCameraOnRespawn } from "./camera-follow";
 import {
+  effectCapacity,
+  projectileAngle,
+  PROJECTILE_VIEW_CAPACITY,
+  shouldEmitProjectileTrail,
+  type TrailMemory,
+} from "./combat-feedback";
+import {
   FixedObjectPool,
+  ReusableObjectPool,
   characterTextureKey,
   deriveCharacterVisualState,
   resolveCharacterTextureKey,
+  shouldRenderEffect,
   type CombatEffectKind,
   type CharacterVisualState,
 } from "./effect-pool";
@@ -39,19 +48,16 @@ interface PlayerView {
 }
 
 interface MovingView {
-  object: Phaser.GameObjects.Arc;
+  container: Phaser.GameObjects.Container;
+  glow: Phaser.GameObjects.Arc;
+  core: Phaser.GameObjects.Arc;
+  tail: Phaser.GameObjects.Rectangle;
+  ownerId: string;
+  color: number;
+  lastTrail: TrailMemory;
 }
 
 const CHARACTER_RENDER_STATES: readonly CharacterAssetState[] = ["idle", "move", "attack", "hit", "death", "fallback"];
-const EFFECT_CAPACITY: Readonly<Record<CombatEffectKind, number>> = {
-  muzzle: 18,
-  trail: 48,
-  hit: 18,
-  shield: 6,
-  dash: 12,
-  heal: 10,
-  respawn: 8,
-};
 const SKILL_COLORS: Readonly<Record<SkillType, number>> = {
   dash: 0x4da3ff,
   shield: 0x59ece2,
@@ -140,6 +146,7 @@ class ArenaScene extends Phaser.Scene {
   private readonly decorativeLights: Phaser.GameObjects.Image[] = [];
   private readonly decorativeShadows: Phaser.GameObjects.GameObject[] = [];
   private effectPools: Record<CombatEffectKind, FixedObjectPool<Phaser.GameObjects.Arc>> | null = null;
+  private projectilePool: ReusableObjectPool<MovingView> | null = null;
   private lowPerformance = false;
   private ready = false;
 
@@ -170,6 +177,7 @@ class ArenaScene extends Phaser.Scene {
     this.createGeneratedFallbackTextures();
     this.drawArena();
     this.createEffectPools();
+    this.createProjectilePool();
     this.resizeCamera(this.scale.width, this.scale.height);
     this.scale.on(Phaser.Scale.Events.RESIZE, (gameSize: Phaser.Structs.Size) => this.resizeCamera(gameSize.width, gameSize.height));
     this.aimCorridor = this.add.rectangle(0, 0, 1, 64, 0xff5a5f, 0.2).setOrigin(0, 0.5).setDepth(8).setVisible(false);
@@ -474,7 +482,8 @@ class ArenaScene extends Phaser.Scene {
     const active = new Set(lifecycleSnapshot.projectiles.map((projectile) => projectile.id));
     for (const [id, view] of this.projectileViews) {
       if (!active.has(id)) {
-        view.object.destroy();
+        this.playProjectileImpact(view);
+        this.projectilePool?.release(view);
         this.projectileViews.delete(id);
       }
     }
@@ -483,10 +492,22 @@ class ArenaScene extends Phaser.Scene {
       if (!view) {
         const owner = lifecycleSnapshot.players.find((player) => player.id === projectile.ownerId);
         const color = Phaser.Display.Color.HexStringToColor(owner?.color ?? "#ffffff").color;
-        const object = this.add.circle(projectile.x, projectile.y, 9, color, 1).setStrokeStyle(3, 0xffffff, 0.75);
-        view = { object };
+        const acquired = this.projectilePool?.acquire((item) => {
+          item.ownerId = projectile.ownerId;
+          item.color = color;
+          item.lastTrail = { x: projectile.x, y: projectile.y, emittedAt: performance.now() };
+          item.container
+            .setPosition(projectile.x, projectile.y)
+            .setRotation(projectileAngle({ x: projectile.vx, y: projectile.vy }))
+            .setVisible(true)
+            .setActive(true);
+          item.core.setFillStyle(0xffffff, 1).setStrokeStyle(3, color, 1);
+          item.glow.setFillStyle(color, this.lowPerformance ? 0.28 : 0.48);
+          item.tail.setFillStyle(color, this.lowPerformance ? 0.42 : 0.72);
+        });
+        if (!acquired) continue;
+        view = acquired;
         this.projectileViews.set(projectile.id, view);
-        this.playCombatEffect("trail", projectile.x, projectile.y, color);
         if (owner) {
           const ownerView = this.playerViews.get(owner.id);
           if (ownerView) ownerView.attackUntil = performance.now() + 150;
@@ -495,10 +516,13 @@ class ArenaScene extends Phaser.Scene {
       }
       const start = older.projectiles.find((candidate) => candidate.id === projectile.id) ?? projectile;
       const end = newer.projectiles.find((candidate) => candidate.id === projectile.id) ?? start;
-      view.object.setPosition(
-        Phaser.Math.Linear(start.x, end.x, alpha),
-        Phaser.Math.Linear(start.y, end.y, alpha),
-      );
+      const x = Phaser.Math.Linear(start.x, end.x, alpha);
+      const y = Phaser.Math.Linear(start.y, end.y, alpha);
+      view.container.setPosition(x, y).setRotation(projectileAngle({ x: projectile.vx, y: projectile.vy }));
+      if (shouldEmitProjectileTrail(view.lastTrail, { x, y }, performance.now(), this.lowPerformance)) {
+        this.playCombatEffect("trail", x, y, view.color);
+        view.lastTrail = { x, y, emittedAt: performance.now() };
+      }
     }
   }
 
@@ -553,9 +577,40 @@ class ArenaScene extends Phaser.Scene {
     }
   }
 
+  private createProjectilePool(): void {
+    this.projectilePool = new ReusableObjectPool(
+      PROJECTILE_VIEW_CAPACITY,
+      () => {
+        const tail = this.add.rectangle(-42, 0, 86, 12, 0xffffff, 0.72).setOrigin(1, 0.5);
+        const glow = this.add.circle(0, 0, 19, 0xffffff, 0.42).setBlendMode(Phaser.BlendModes.ADD);
+        const core = this.add.circle(0, 0, 8, 0xffffff, 1).setStrokeStyle(3, 0xffffff, 0.95);
+        const container = this.add.container(0, 0, [tail, glow, core])
+          .setDepth(6)
+          .setVisible(false)
+          .setActive(false);
+        return {
+          container,
+          glow,
+          core,
+          tail,
+          ownerId: "",
+          color: 0xffffff,
+          lastTrail: { x: 0, y: 0, emittedAt: 0 },
+        };
+      },
+      (view) => {
+        this.tweens.killTweensOf(view.container);
+        view.container.setVisible(false).setActive(false).setPosition(0, 0).setRotation(0);
+        view.ownerId = "";
+        view.color = 0xffffff;
+        view.lastTrail = { x: 0, y: 0, emittedAt: 0 };
+      },
+    );
+  }
+
   private createEffectPools(): void {
     const makePool = (kind: CombatEffectKind): FixedObjectPool<Phaser.GameObjects.Arc> => new FixedObjectPool(
-      EFFECT_CAPACITY[kind],
+      effectCapacity(kind),
       () => this.add.circle(0, 0, 10, 0xffffff, 0).setDepth(kind === "trail" ? 2 : 7).setVisible(false),
       (effect) => {
         this.tweens.killTweensOf(effect);
@@ -565,6 +620,8 @@ class ArenaScene extends Phaser.Scene {
     this.effectPools = {
       muzzle: makePool("muzzle"),
       trail: makePool("trail"),
+      impact: makePool("impact"),
+      spark: makePool("spark"),
       hit: makePool("hit"),
       shield: makePool("shield"),
       dash: makePool("dash"),
@@ -580,6 +637,8 @@ class ArenaScene extends Phaser.Scene {
     const configs: Record<Exclude<CombatEffectKind, "shield">, { radius: number; fill: number; stroke: number; duration: number; scale: number }> = {
       muzzle: { radius: 13, fill: 0.78, stroke: 2, duration: 95, scale: 1.8 },
       trail: { radius: 7, fill: 0.42, stroke: 0, duration: 190, scale: 2.3 },
+      impact: { radius: 15, fill: 0.2, stroke: 7, duration: 230, scale: 4.2 },
+      spark: { radius: 4, fill: 0.82, stroke: 0, duration: 180, scale: 0.25 },
       hit: { radius: PLAYER_RADIUS + 13, fill: 0.16, stroke: 5, duration: 210, scale: 1.55 },
       dash: { radius: PLAYER_RADIUS + 7, fill: 0.1, stroke: 4, duration: 220, scale: 1.75 },
       heal: { radius: PLAYER_RADIUS + 10, fill: 0.12, stroke: 4, duration: 320, scale: 1.65 },
@@ -588,6 +647,35 @@ class ArenaScene extends Phaser.Scene {
     const config = configs[kind];
     effect.setRadius(config.radius).setFillStyle(color, config.fill).setStrokeStyle(config.stroke, color, 0.9);
     this.tweens.add({ targets: effect, scale: config.scale, alpha: 0, duration: config.duration, ease: "Cubic.Out", onComplete: () => effect.setVisible(false) });
+  }
+
+  private playProjectileImpact(view: MovingView): void {
+    const x = view.container.x;
+    const y = view.container.y;
+    this.playCombatEffect("impact", x, y, view.color);
+    if (!shouldRenderEffect("spark", this.lowPerformance)) return;
+    const pool = this.effectPools?.spark;
+    if (!pool) return;
+    for (let index = 0; index < 5; index += 1) {
+      const angle = (Math.PI * 2 * index) / 5;
+      const spark = pool.acquire((item) => item
+        .setPosition(x, y)
+        .setRadius(4)
+        .setFillStyle(view.color, 0.82)
+        .setStrokeStyle(0, view.color, 0)
+        .setVisible(true));
+      const distance = 24 + index * 5;
+      this.tweens.add({
+        targets: spark,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance,
+        scale: 0.25,
+        alpha: 0,
+        duration: 180,
+        ease: "Cubic.Out",
+        onComplete: () => spark.setVisible(false),
+      });
+    }
   }
 
   private syncShield(view: PlayerView, player: PlayerSnapshot, serverTime: number): void {

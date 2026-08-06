@@ -1,5 +1,24 @@
 import type { SkillType } from "../shared/skill-catalog";
 import type { Vec2 } from "../shared/protocol";
+import type { CombatEffectKind } from "./effect-pool";
+
+export const PROJECTILE_VIEW_CAPACITY = 256;
+
+const EFFECT_CAPACITIES: Readonly<Record<CombatEffectKind, number>> = {
+  muzzle: 24,
+  trail: 160,
+  impact: 36,
+  spark: 96,
+  hit: 18,
+  shield: 6,
+  dash: 12,
+  heal: 10,
+  respawn: 8,
+};
+
+export function effectCapacity(kind: CombatEffectKind): number {
+  return EFFECT_CAPACITIES[kind];
+}
 
 export interface TrailMemory extends Vec2 {
   emittedAt: number;

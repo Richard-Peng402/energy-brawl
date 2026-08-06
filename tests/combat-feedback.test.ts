@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   didPickUpLocalSkill,
+  effectCapacity,
+  PROJECTILE_VIEW_CAPACITY,
   projectileAngle,
   shouldEmitProjectileTrail,
   trailIntervalMs,
@@ -30,5 +32,12 @@ describe("v3.3 projectile feedback", () => {
     expect(didPickUpLocalSkill(null, "dash")).toBe(true);
     expect(didPickUpLocalSkill("dash", "dash")).toBe(false);
     expect(didPickUpLocalSkill("dash", null)).toBe(false);
+  });
+
+  it("preallocates enough projectile and trail views for six-player crossfire", () => {
+    expect(PROJECTILE_VIEW_CAPACITY).toBe(256);
+    expect(effectCapacity("trail")).toBe(160);
+    expect(effectCapacity("impact")).toBe(36);
+    expect(effectCapacity("spark")).toBe(96);
   });
 });
