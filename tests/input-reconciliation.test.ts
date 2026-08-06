@@ -97,6 +97,8 @@ function player(overrides: Partial<PlayerSnapshot>): PlayerSnapshot {
     alive: true,
     respawnAt: null,
     shieldUntil: 0,
+    skillShieldHealth: 0,
+    skillShieldUntil: 0,
     lastProcessedInput: 0,
     skillSlot: { type: null, charges: 0 },
     lastProcessedSkillAction: 0,

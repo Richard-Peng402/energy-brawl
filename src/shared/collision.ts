@@ -212,3 +212,53 @@ export function moveCircleSafely(
   position = clampToBounds(position, radius, bounds);
   return depenetrate(position, radius, walls, bounds);
 }
+
+export interface CircleObstacle {
+  position: Vec2;
+  radius: number;
+}
+
+/** Moves along one continuous segment and stops at the first blocking surface. */
+export function moveCircleUntilBlocked(
+  start: Vec2,
+  delta: Vec2,
+  radius: number,
+  walls: readonly Rect[],
+  bounds: { width: number; height: number },
+  obstacles: readonly CircleObstacle[] = [],
+): Vec2 {
+  const origin = depenetrate(start, radius, walls, bounds);
+  let nearestTime = 1;
+  let nearestNormal: Vec2 | null = null;
+
+  const wallHit = firstWallHit(origin, delta, radius, walls);
+  if (wallHit && wallHit.time < nearestTime) {
+    nearestTime = wallHit.time;
+    nearestNormal = wallHit.normal;
+  }
+
+  for (const obstacle of obstacles) {
+    const hit = sweepCircleCircle(origin, delta, radius, obstacle.position, obstacle.radius);
+    if (hit && hit.time < nearestTime) {
+      nearestTime = hit.time;
+      nearestNormal = hit.normal;
+    }
+  }
+
+  const boundaryTimes = [
+    delta.x > 0 ? (bounds.width - radius - origin.x) / delta.x : Number.POSITIVE_INFINITY,
+    delta.x < 0 ? (radius - origin.x) / delta.x : Number.POSITIVE_INFINITY,
+    delta.y > 0 ? (bounds.height - radius - origin.y) / delta.y : Number.POSITIVE_INFINITY,
+    delta.y < 0 ? (radius - origin.y) / delta.y : Number.POSITIVE_INFINITY,
+  ].filter((time) => time >= 0 && time < nearestTime);
+  if (boundaryTimes.length > 0) {
+    nearestTime = Math.min(...boundaryTimes);
+    nearestNormal = null;
+  }
+
+  const result = {
+    x: origin.x + delta.x * nearestTime + (nearestNormal?.x ?? 0) * SKIN,
+    y: origin.y + delta.y * nearestTime + (nearestNormal?.y ?? 0) * SKIN,
+  };
+  return clampToBounds(result, radius, bounds);
+}

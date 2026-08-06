@@ -50,6 +50,8 @@ export interface PlayerSnapshot extends Vec2 {
   alive: boolean;
   respawnAt: number | null;
   shieldUntil: number;
+  skillShieldHealth: number;
+  skillShieldUntil: number;
   lastProcessedInput: number;
   skillSlot: SkillSlotSnapshot;
   lastProcessedSkillAction: number;

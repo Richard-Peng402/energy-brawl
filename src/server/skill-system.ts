@@ -30,6 +30,13 @@ export interface SkillActionPlayer extends SkillHolder {
   lastProcessedSkillAction: number;
 }
 
+export const DASH_DISTANCE = 260;
+export const SHIELD_STRENGTH = 50;
+export const SHIELD_DURATION_MS = 5_000;
+export const SPREAD_PROJECTILE_DAMAGE = 18;
+export const SPREAD_ANGLE_RADIANS = 12 * Math.PI / 180;
+export const HEAL_AMOUNT = 35;
+
 export function createSkillSystem(now = 0, random: () => number = Math.random): SkillSystemState {
   return {
     orbs: new Map(),
@@ -76,6 +83,15 @@ export function applySkillAction(
   player: SkillActionPlayer,
   skillActionSeq: number,
 ): { accepted: boolean; skill: SkillType | null } {
+  const result = acceptSkillAction(player, skillActionSeq);
+  if (result.skill) clearSkillSlot(player);
+  return result;
+}
+
+export function acceptSkillAction(
+  player: SkillActionPlayer,
+  skillActionSeq: number,
+): { accepted: boolean; skill: SkillType | null } {
   if (
     !Number.isSafeInteger(skillActionSeq) ||
     skillActionSeq < 0 ||
@@ -86,7 +102,6 @@ export function applySkillAction(
   }
   player.lastProcessedSkillAction = skillActionSeq;
   const skill = player.skillSlot.charges === 1 ? player.skillSlot.type : null;
-  if (skill) clearSkillSlot(player);
   return { accepted: true, skill };
 }
 

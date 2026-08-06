@@ -21,15 +21,22 @@ import {
   WALLS,
 } from "../shared/constants";
 import { getCharacter, MEDIC_ENERGY_HEAL, type CharacterId } from "../shared/character-catalog";
-import { firstWallHit, moveCircleSafely, sweepCircleCircle } from "../shared/collision";
+import type { SkillType } from "../shared/skill-catalog";
+import { firstWallHit, moveCircleSafely, moveCircleUntilBlocked, sweepCircleCircle } from "../shared/collision";
 import { StaticSpatialIndex } from "../shared/spatial-index";
 import { circleHitsCircle, clamp, distanceSquared, normalize } from "../shared/math";
 import {
   advanceSkillSystem,
-  applySkillAction,
+  acceptSkillAction,
   clearSkillSlot,
   collectSkillOrb,
   createSkillSystem,
+  DASH_DISTANCE,
+  HEAL_AMOUNT,
+  SHIELD_DURATION_MS,
+  SHIELD_STRENGTH,
+  SPREAD_ANGLE_RADIANS,
+  SPREAD_PROJECTILE_DAMAGE,
   type SkillSystemState,
 } from "./skill-system";
 import type {
@@ -56,6 +63,7 @@ export interface WorldPlayer extends PlayerSnapshot {
 
 export interface WorldProjectile extends ProjectileSnapshot {
   expiresAt: number;
+  damage?: number;
 }
 
 export interface GameWorld {
@@ -115,6 +123,8 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
       alive: true,
       respawnAt: null,
       shieldUntil: now + SPAWN_SHIELD_MS,
+      skillShieldHealth: 0,
+      skillShieldUntil: 0,
       lastProcessedInput: 0,
       skillSlot: { type: null, charges: 0 },
       lastProcessedSkillAction: 0,
@@ -186,6 +196,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
   if (isFinished(world)) return;
 
   for (const player of world.players.values()) {
+    if (player.skillShieldUntil <= world.now) player.skillShieldHealth = 0;
     if (!player.alive) {
       if (player.respawnAt !== null && world.now >= player.respawnAt) respawnPlayer(world, player);
       continue;
@@ -220,7 +231,12 @@ export function damagePlayer(
   const victim = world.players.get(victimId);
   if (!victim?.alive || victim.shieldUntil > world.now || amount <= 0 || !Number.isFinite(amount)) return false;
 
-  victim.health = Math.max(0, victim.health - amount);
+  if (victim.skillShieldUntil <= world.now) victim.skillShieldHealth = 0;
+  const absorbed = Math.min(victim.skillShieldHealth, amount);
+  victim.skillShieldHealth -= absorbed;
+  const healthDamage = amount - absorbed;
+  if (healthDamage === 0) return true;
+  victim.health = Math.max(0, victim.health - healthDamage);
   if (victim.health > 0) return true;
 
   victim.alive = false;
@@ -228,6 +244,8 @@ export function damagePlayer(
   victim.vy = 0;
   victim.respawnAt = world.now + RESPAWN_DELAY_MS;
   victim.input = { ...EMPTY_INPUT, seq: victim.lastProcessedInput };
+  victim.skillShieldHealth = 0;
+  victim.skillShieldUntil = 0;
   clearSkillSlot(victim);
 
   const attacker = world.players.get(attackerId);
@@ -263,7 +281,12 @@ export function collectWorldSkillOrb(world: GameWorld, playerId: string, orbId: 
 export function applyWorldSkillAction(world: GameWorld, playerId: string, skillActionSeq: number): boolean {
   if (world.phase === "finished") return false;
   const player = world.players.get(playerId);
-  return player ? applySkillAction(player, skillActionSeq).accepted : false;
+  if (!player) return false;
+  const action = acceptSkillAction(player, skillActionSeq);
+  if (!action.accepted || !action.skill) return action.accepted;
+  const consumed = executeSkill(world, player, action.skill);
+  if (consumed) clearSkillSlot(player);
+  return true;
 }
 
 export function worldToSnapshot(world: GameWorld): GameSnapshot {
@@ -277,10 +300,63 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     holdRemainingMs: world.holdRemainingMs,
     finishedAt: world.finishedAt,
     players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, ...player }) => player),
-    projectiles: [...world.projectiles.values()].map(({ expiresAt: _expiresAt, ...projectile }) => projectile),
+    projectiles: [...world.projectiles.values()].map(({ expiresAt: _expiresAt, damage: _damage, ...projectile }) => projectile),
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
   };
+}
+
+function executeSkill(world: GameWorld, player: WorldPlayer, skill: SkillType): boolean {
+  if (!player.alive) return false;
+  switch (skill) {
+    case "dash":
+      return executeDash(world, player);
+    case "shield":
+      player.skillShieldHealth = SHIELD_STRENGTH;
+      player.skillShieldUntil = world.now + SHIELD_DURATION_MS;
+      return true;
+    case "spread": {
+      const aim = skillAim(player);
+      for (const offset of [-SPREAD_ANGLE_RADIANS, 0, SPREAD_ANGLE_RADIANS]) {
+        spawnProjectile(world, player, Math.atan2(aim.y, aim.x) + offset, SPREAD_PROJECTILE_DAMAGE);
+      }
+      return true;
+    }
+    case "heal":
+      if (player.health >= player.maxHealth) return false;
+      player.health = Math.min(player.maxHealth, player.health + HEAL_AMOUNT);
+      return true;
+  }
+}
+
+function executeDash(world: GameWorld, player: WorldPlayer): boolean {
+  const movementLength = Math.hypot(player.input.moveX, player.input.moveY);
+  const aimLength = Math.hypot(player.input.aimX, player.input.aimY);
+  if (movementLength <= 0.08 && aimLength <= 0.08) return false;
+  const direction = movementLength > 0.08
+    ? normalize({ x: player.input.moveX, y: player.input.moveY })
+    : normalize({ x: player.input.aimX, y: player.input.aimY });
+  const delta = { x: direction.x * DASH_DISTANCE, y: direction.y * DASH_DISTANCE };
+  const next = moveCircleUntilBlocked(
+    player,
+    delta,
+    PLAYER_RADIUS,
+    WALL_INDEX.query(movementBounds(player, delta)),
+    { width: ARENA_WIDTH, height: ARENA_HEIGHT },
+    [...world.players.values()]
+      .filter((candidate) => candidate.id !== player.id && candidate.alive)
+      .map((candidate) => ({ position: candidate, radius: PLAYER_RADIUS })),
+  );
+  player.x = next.x;
+  player.y = next.y;
+  return true;
+}
+
+function skillAim(player: WorldPlayer): Vec2 {
+  const length = Math.hypot(player.input.aimX, player.input.aimY);
+  return length > 0.08
+    ? normalize({ x: player.input.aimX, y: player.input.aimY })
+    : { x: Math.cos(player.angle), y: Math.sin(player.angle) };
 }
 
 function clampFinite(value: number): number {
@@ -311,19 +387,25 @@ function updateAimAndFire(world: GameWorld, player: WorldPlayer): void {
     const aim = normalize({ x: player.input.aimX, y: player.input.aimY });
     player.angle = Math.atan2(aim.y, aim.x);
     if (player.input.firing && world.now >= player.nextFireAt) {
-      const id = `projectile-${world.nextProjectileId++}`;
-      world.projectiles.set(id, {
-        id,
-        ownerId: player.id,
-        x: player.x + aim.x * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
-        y: player.y + aim.y * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
-        vx: aim.x * player.projectileSpeed,
-        vy: aim.y * player.projectileSpeed,
-        expiresAt: world.now + PROJECTILE_LIFETIME_MS,
-      });
+      spawnProjectile(world, player, player.angle, player.damage);
       player.nextFireAt = world.now + player.fireCooldownMs;
     }
   }
+}
+
+function spawnProjectile(world: GameWorld, player: WorldPlayer, angle: number, damage: number): void {
+  const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+  const id = `projectile-${world.nextProjectileId++}`;
+  world.projectiles.set(id, {
+    id,
+    ownerId: player.id,
+    x: player.x + direction.x * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
+    y: player.y + direction.y * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
+    vx: direction.x * player.projectileSpeed,
+    vy: direction.y * player.projectileSpeed,
+    damage,
+    expiresAt: world.now + PROJECTILE_LIFETIME_MS,
+  });
 }
 
 function advanceProjectiles(world: GameWorld, deltaMs: number): void {
@@ -356,7 +438,7 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
     }
     if (targetHit) {
       const attacker = world.players.get(projectile.ownerId);
-      damagePlayer(world, targetHit.player.id, projectile.ownerId, attacker?.damage ?? 0);
+      damagePlayer(world, targetHit.player.id, projectile.ownerId, projectile.damage ?? attacker?.damage ?? 0);
       world.projectiles.delete(projectile.id);
       continue;
     }
@@ -419,6 +501,8 @@ function respawnPlayer(world: GameWorld, player: WorldPlayer): void {
   player.vx = 0;
   player.vy = 0;
   player.health = player.maxHealth;
+  player.skillShieldHealth = 0;
+  player.skillShieldUntil = 0;
   player.alive = true;
   player.respawnAt = null;
   player.shieldUntil = world.now + SPAWN_SHIELD_MS;

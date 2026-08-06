@@ -21,6 +21,7 @@ import { circleHitsCircle, circleHitsRect } from "../src/shared/math";
 import { getCharacter } from "../src/shared/character-catalog";
 import {
   applyPlayerInput,
+  applyWorldSkillAction,
   collectEnergy,
   collectWorldSkillOrb,
   createGameWorld,
@@ -119,6 +120,133 @@ describe("authoritative simulation", () => {
       skillOrbs: expect.any(Array),
       players: expect.arrayContaining([expect.objectContaining({ lastProcessedSkillAction: 0 })]),
     }));
+  });
+
+  it("dashes about 260 units using movement before aim and keeps the charge without direction", () => {
+    const world = createWorld();
+    const player = world.players.get("red")!;
+    const enemy = world.players.get("blue")!;
+    player.x = 300;
+    player.y = 800;
+    enemy.x = 1_500;
+    enemy.y = 1_200;
+    player.input = { seq: 1, moveX: 1, moveY: 0, aimX: 0, aimY: 1, firing: false };
+    player.skillSlot = { type: "dash", charges: 1 };
+
+    expect(applyWorldSkillAction(world, player.id, 1)).toBe(true);
+    expect(player.x).toBeCloseTo(560, 4);
+    expect(player.y).toBeCloseTo(800, 4);
+    expect(player.skillSlot.charges).toBe(0);
+
+    player.input = { ...player.input, moveX: 0, moveY: 0, aimX: 0, aimY: 0 };
+    player.skillSlot = { type: "dash", charges: 1 };
+    expect(applyWorldSkillAction(world, player.id, 2)).toBe(true);
+    expect(player.skillSlot).toEqual({ type: "dash", charges: 1 });
+  });
+
+  it("stops dash continuously at players, walls, and arena bounds", () => {
+    const world = createWorld();
+    const player = world.players.get("red")!;
+    const enemy = world.players.get("blue")!;
+    player.x = 300;
+    player.y = 300;
+    enemy.x = 450;
+    enemy.y = 300;
+    player.input = { seq: 1, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: false };
+    player.skillSlot = { type: "dash", charges: 1 };
+    applyWorldSkillAction(world, player.id, 1);
+    expect(player.x).toBeLessThan(enemy.x - PLAYER_RADIUS * 2);
+
+    player.x = ARENA_WIDTH - 100;
+    player.y = 300;
+    enemy.x = 300;
+    enemy.y = 1_300;
+    player.skillSlot = { type: "dash", charges: 1 };
+    applyWorldSkillAction(world, player.id, 2);
+    expect(player.x).toBe(ARENA_WIDTH - PLAYER_RADIUS);
+  });
+
+  it("absorbs fifty damage with a five-second shield before health", () => {
+    const world = createWorld();
+    const player = world.players.get("red")!;
+    player.shieldUntil = 0;
+    player.skillSlot = { type: "shield", charges: 1 };
+    applyWorldSkillAction(world, player.id, 1);
+
+    damagePlayer(world, player.id, "blue", 30);
+    expect(player.health).toBe(player.maxHealth);
+    expect(player.skillShieldHealth).toBe(20);
+    damagePlayer(world, player.id, "blue", 25);
+    expect(player.health).toBe(player.maxHealth - 5);
+    expect(player.skillShieldHealth).toBe(0);
+
+    player.skillSlot = { type: "shield", charges: 1 };
+    applyWorldSkillAction(world, player.id, 2);
+    world.now += 5_001;
+    damagePlayer(world, player.id, "blue", 10);
+    expect(player.health).toBe(player.maxHealth - 15);
+    expect(player.skillShieldHealth).toBe(0);
+  });
+
+  it("fires three wall-safe spread projectiles at minus twelve, zero, and plus twelve degrees", () => {
+    const world = createWorld();
+    const player = world.players.get("red")!;
+    player.input = { seq: 1, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: false };
+    player.skillSlot = { type: "spread", charges: 1 };
+    applyWorldSkillAction(world, player.id, 1);
+
+    const projectiles = [...world.projectiles.values()].sort((left, right) => left.vy - right.vy);
+    expect(projectiles).toHaveLength(3);
+    expect(projectiles.map((projectile) => Math.atan2(projectile.vy, projectile.vx) * 180 / Math.PI)).toEqual([
+      expect.closeTo(-12, 4),
+      expect.closeTo(0, 4),
+      expect.closeTo(12, 4),
+    ]);
+    expect(projectiles.every((projectile) => projectile.damage === 18)).toBe(true);
+  });
+
+  it("applies eighteen spread damage to a player before a later obstacle but never through a nearer wall", () => {
+    const openWorld = createWorld();
+    const shooter = openWorld.players.get("red")!;
+    const target = openWorld.players.get("blue")!;
+    shooter.x = 300;
+    shooter.y = 800;
+    target.x = 700;
+    target.y = 800;
+    target.shieldUntil = 0;
+    shooter.input = { seq: 1, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: false };
+    shooter.skillSlot = { type: "spread", charges: 1 };
+    applyWorldSkillAction(openWorld, shooter.id, 1);
+    stepWorld(openWorld, 700);
+    expect(target.health).toBe(target.maxHealth - 18);
+
+    const blockedWorld = createWorld();
+    const blockedShooter = blockedWorld.players.get("red")!;
+    const blockedTarget = blockedWorld.players.get("blue")!;
+    blockedShooter.x = 1_100;
+    blockedShooter.y = 650;
+    blockedTarget.x = 1_800;
+    blockedTarget.y = 650;
+    blockedTarget.shieldUntil = 0;
+    blockedShooter.input = { seq: 1, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: false };
+    blockedShooter.skillSlot = { type: "spread", charges: 1 };
+    applyWorldSkillAction(blockedWorld, blockedShooter.id, 1);
+    stepWorld(blockedWorld, 1_200);
+    expect(blockedTarget.health).toBe(blockedTarget.maxHealth);
+  });
+
+  it("heals thirty-five without exceeding max health and keeps the charge at full health", () => {
+    const world = createWorld();
+    const player = world.players.get("red")!;
+    player.health = player.maxHealth - 20;
+    player.skillSlot = { type: "heal", charges: 1 };
+    applyWorldSkillAction(world, player.id, 1);
+    expect(player.health).toBe(player.maxHealth);
+    expect(player.skillSlot.charges).toBe(0);
+
+    player.skillSlot = { type: "heal", charges: 1 };
+    applyWorldSkillAction(world, player.id, 2);
+    expect(player.skillSlot).toEqual({ type: "heal", charges: 1 });
   });
 
   it("starts a thirty-second hold for the unique leader at fifteen points", () => {

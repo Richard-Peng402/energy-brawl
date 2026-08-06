@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { firstWallHit, moveCircleSafely, sweepCircleCircle, sweepCircleRect } from "../src/shared/collision";
+import { firstWallHit, moveCircleSafely, moveCircleUntilBlocked, sweepCircleCircle, sweepCircleRect } from "../src/shared/collision";
 import { circleHitsRect } from "../src/shared/math";
 import type { Rect } from "../src/shared/protocol";
 
@@ -93,5 +93,23 @@ describe("continuous collision primitives", () => {
 
     expect(hit?.time).toBeGreaterThan(0);
     expect(hit?.time).toBeLessThan(1);
+  });
+
+  it("stops a swept dash at the first wall, player, or arena boundary", () => {
+    const wall = { x: 180, y: 0, width: 20, height: 300 };
+    const obstacle = { x: 130, y: 100 };
+    const result = moveCircleUntilBlocked(
+      { x: 30, y: 100 },
+      { x: 260, y: 0 },
+      10,
+      [wall],
+      { width: 300, height: 200 },
+      [{ position: obstacle, radius: 10 }],
+    );
+
+    expect(result.x).toBeLessThan(110);
+    expect(result.y).toBeCloseTo(100);
+    expect(moveCircleUntilBlocked({ x: 30, y: 100 }, { x: 260, y: 0 }, 10, [wall], { width: 300, height: 200 }).x).toBeLessThan(170);
+    expect(moveCircleUntilBlocked({ x: 250, y: 100 }, { x: 260, y: 0 }, 10, [], { width: 300, height: 200 })).toEqual({ x: 290, y: 100 });
   });
 });
