@@ -1077,9 +1077,9 @@ button:disabled {
 }
 
 .host-seat {
-  min-height: 68px;
+  min-height: 78px;
   display: grid;
-  grid-template-columns: 34px 12px minmax(100px, 1fr) 100px 44px;
+  grid-template-columns: 34px 12px minmax(110px, 0.7fr) minmax(240px, 1fr) auto;
   align-items: center;
   gap: 13px;
   padding: 0 20px;
@@ -1110,6 +1110,46 @@ button:disabled {
 .host-seat strong {
   color: #f2c14e;
   text-align: right;
+}
+
+.host-player-name {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.host-player-name small {
+  color: #8f9ca2;
+  font-size: 11px;
+}
+
+.host-player-stats {
+  color: #a5b0b5;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.host-player-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.host-player-actions button {
+  border: 1px solid #526068;
+  border-radius: 3px;
+  padding: 6px 7px;
+  background: #222a30;
+  color: #d9e2e6;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.host-player-actions button:hover {
+  border-color: #31d0aa;
+  color: #ffffff;
 }
 
 .seat-index {
@@ -1324,6 +1364,23 @@ button:disabled {
 
   .host-main {
     grid-template-columns: 1fr;
+  }
+
+  .host-seat {
+    grid-template-columns: 26px 10px minmax(72px, 0.7fr) 1fr;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .host-player-stats {
+    grid-column: 3 / -1;
+    grid-row: 2;
+  }
+
+  .host-player-actions {
+    grid-column: 3 / -1;
+    justify-content: flex-start;
+    grid-row: 3;
   }
 }
 

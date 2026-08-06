@@ -21,6 +21,7 @@ import {
   applyPlayerInput,
   applyWorldSkillAction,
   createGameWorld,
+  forceWorldWinner,
   stepWorld,
   worldToSnapshot,
   type GameWorld,
@@ -45,6 +46,7 @@ export class GameRoom {
   private readonly nextBotThinkAt = new Map<string, number>();
   private readonly pendingInputs = new Map<string, PlayerInput>();
   private readonly pendingSkillActions = new Map<string, UseSkillPayload>();
+  private readonly kickedSocketIds: string[] = [];
   private hostAdmin: HostAdminService | null = null;
   private world: GameWorld | null = null;
   private clockMs = 0;
@@ -57,6 +59,10 @@ export class GameRoom {
 
   gameWorld(): GameWorld | null {
     return this.world;
+  }
+
+  consumeKickedSocketIds(): string[] {
+    return this.kickedSocketIds.splice(0);
   }
 
   joinHuman(socketId: string, payload: JoinPayload): Ack<JoinResult> {
@@ -177,6 +183,7 @@ export class GameRoom {
   resetToLobby(): Ack {
     this.world = null;
     this.autoResetAt = null;
+    this.kickedSocketIds.splice(0);
     this.nextBotThinkAt.clear();
     this.pendingInputs.clear();
     this.pendingSkillActions.clear();
@@ -251,7 +258,8 @@ export class GameRoom {
       return lifecycleChanged;
     }
 
-    this.hostAdmin?.drain(this.world);
+    const wasFinished = this.worldIsFinished();
+    this.hostAdmin?.drain(this.world, (command) => this.applyHostAdminCommand(command));
 
     for (const [playerId, input] of this.pendingInputs) applyPlayerInput(this.world, playerId, input);
     this.pendingInputs.clear();
@@ -267,7 +275,6 @@ export class GameRoom {
       if (decision.useSkill) applyWorldSkillAction(this.world, player.id, player.lastProcessedSkillAction + 1);
       this.nextBotThinkAt.set(player.id, this.clockMs + 300 + Math.random() * 150);
     }
-    const wasFinished = this.worldIsFinished();
     stepWorld(this.world, deltaMs);
     if (this.worldIsFinished() && this.autoResetAt === null) {
       this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
@@ -320,6 +327,47 @@ export class GameRoom {
 
   private worldIsFinished(): boolean {
     return this.world?.phase === "finished";
+  }
+
+  private applyHostAdminCommand(command: Exclude<import("../shared/protocol").HostAdminCommand, { type: "setStat" }>): boolean {
+    if (command.type === "kick") return this.kickPlayer(command.playerId);
+    if (!this.world) return false;
+    this.world.now = Math.max(this.world.now, this.clockMs);
+    return forceWorldWinner(this.world, command.playerId);
+  }
+
+  private kickPlayer(playerId: string): boolean {
+    const seat = this.seats.get(playerId);
+    const player = this.world?.players.get(playerId);
+    if (!seat || !player) return false;
+
+    if (seat.socketId) {
+      this.socketPlayers.delete(seat.socketId);
+      this.kickedSocketIds.push(seat.socketId);
+    }
+    this.pendingInputs.delete(playerId);
+    this.pendingSkillActions.delete(playerId);
+    seat.socketId = null;
+    seat.reconnectToken = null;
+    seat.connected = false;
+    seat.ready = true;
+    seat.disconnectedAt = null;
+    seat.isBot = true;
+    player.connected = false;
+    player.isBot = true;
+    player.input = {
+      seq: player.lastProcessedInput,
+      moveX: 0,
+      moveY: 0,
+      aimX: Math.cos(player.angle),
+      aimY: Math.sin(player.angle),
+      firing: false,
+    };
+    player.vx = 0;
+    player.vy = 0;
+    clearSkillSlot(player);
+    this.nextBotThinkAt.set(playerId, this.clockMs);
+    return true;
   }
 
   private seatForSocket(socketId: string): RoomSeat | undefined {

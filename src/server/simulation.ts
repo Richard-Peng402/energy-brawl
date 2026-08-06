@@ -680,3 +680,9 @@ function finishMatch(world: GameWorld, winnerIds: string[]): void {
     player.vy = 0;
   }
 }
+
+export function forceWorldWinner(world: GameWorld, playerId: string): boolean {
+  if (world.phase === "finished" || !world.players.has(playerId)) return false;
+  finishMatch(world, [playerId]);
+  return true;
+}

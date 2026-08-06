@@ -1,4 +1,4 @@
-import type { GamePhase, GameSnapshot, RoomSnapshot, ServerInfo } from "../shared/protocol";
+import type { AdminStat, GamePhase, GameSnapshot, RoomSnapshot, ServerInfo } from "../shared/protocol";
 import { GameNetworkClient } from "./network";
 
 export class HostApp {
@@ -18,6 +18,23 @@ export class HostApp {
     this.find("#host-start").addEventListener("click", () => void this.command("start"));
     this.find("#host-end").addEventListener("click", () => void this.command("end"));
     this.find("#host-reset").addEventListener("click", () => void this.command("reset"));
+    this.find("#host-roster").addEventListener("click", (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-admin-action]");
+      if (!button) return;
+      const playerId = button.dataset.playerId;
+      const action = button.dataset.adminAction;
+      if (!playerId || !action) return;
+      if (action === "kick" && window.confirm("确认踢出该玩家？本局将由 AI 接管。")) {
+        void this.admin({ type: "kick", playerId });
+      } else if (action === "forceWinner" && window.confirm("确认强制该玩家获胜并结束本局？")) {
+        void this.admin({ type: "forceWinner", playerId });
+      } else if (action === "setStat") {
+        const stat = window.prompt("输入要修改的字段：health / maxHealth / damage / score / moveSpeed / fireCooldownMs", "health") as AdminStat | null;
+        if (!stat || !["health", "maxHealth", "damage", "score", "moveSpeed", "fireCooldownMs"].includes(stat)) return;
+        const value = Number(window.prompt(`输入 ${stat} 的新值（服务器会检查安全范围）`, ""));
+        if (Number.isFinite(value)) void this.admin({ type: "setStat", playerId, stat, value });
+      }
+    });
   }
 
   private async loadInfo(): Promise<void> {
@@ -34,6 +51,12 @@ export class HostApp {
   private async command(command: "start" | "end" | "reset"): Promise<void> {
     const result = await this.network.hostCommand(this.token, command);
     this.message = result.ok ? "命令已执行" : result.error ?? "命令执行失败";
+    this.render();
+  }
+
+  private async admin(command: Parameters<GameNetworkClient["hostAdminCommand"]>[1]): Promise<void> {
+    const result = await this.network.hostAdminCommand(this.token, command);
+    this.message = result.ok ? "房主命令已排队" : result.error ?? "房主命令执行失败";
     this.render();
   }
 
@@ -55,15 +78,16 @@ export class HostApp {
     }
 
     const players = presentation.players;
+    const phase = presentation.phase;
+    const adminEnabled = this.token.length > 0 && (phase === "playing" || phase === "overtime");
     this.find("#host-roster").innerHTML = Array.from({ length: 6 }, (_, index) => players[index])
       .map((player, index) =>
         player
-          ? `<div class="host-seat"><span class="seat-index">${index + 1}</span><i style="--player-color:${player.color}"></i><b>${escapeHtml(player.nickname)}</b><span>${player.isBot ? "AI" : player.ready ? "已准备" : player.connected ? "未准备" : "离线"}</span><strong>${player.score}</strong></div>`
+          ? `<div class="host-seat"><span class="seat-index">${index + 1}</span><i style="--player-color:${player.color}"></i><div class="host-player-name"><b>${escapeHtml(player.nickname)}</b><small>${player.isBot ? "AI" : player.connected ? "在线" : "离线"}</small></div><span class="host-player-stats">生命 ${player.health ?? "—"}/${player.maxHealth ?? "—"} · 伤害 ${player.damage ?? "—"} · 积分 ${player.score} · 移速 ${player.moveSpeed ?? "—"} · 射击 ${player.fireCooldownMs ?? "—"}ms</span><div class="host-player-actions">${adminEnabled ? `<button type="button" data-admin-action="setStat" data-player-id="${player.id}">改数值</button><button type="button" data-admin-action="kick" data-player-id="${player.id}">踢出</button><button type="button" data-admin-action="forceWinner" data-player-id="${player.id}">强制获胜</button>` : ""}</div></div>`
           : `<div class="host-seat is-empty"><span class="seat-index">${index + 1}</span><i></i><b>空位</b><span>等待玩家</span><strong>—</strong></div>`,
       )
       .join("");
 
-    const phase = presentation.phase;
     const hasToken = this.token.length > 0;
     this.find<HTMLButtonElement>("#host-start").disabled = !hasToken || !room?.canStart || phase !== "lobby";
     this.find<HTMLButtonElement>("#host-end").disabled = !hasToken || (phase !== "playing" && phase !== "overtime");
@@ -80,24 +104,17 @@ export class HostApp {
 export function resolveHostPresentation(
   room: RoomSnapshot | null,
   game: GameSnapshot | null,
-): { phase: GamePhase; players: RoomSnapshot["players"] } {
+): { phase: GamePhase; players: HostPlayer[] } {
   if (game) {
     return {
       phase: game.phase,
-      players: game.players.map(({ id, nickname, characterId, color, isBot, connected, ready, score }) => ({
-        id,
-        nickname,
-        characterId,
-        color,
-        isBot,
-        connected,
-        ready,
-        score,
-      })),
+      players: game.players,
     };
   }
   return { phase: room?.phase ?? "lobby", players: room?.players ?? [] };
 }
+
+type HostPlayer = RoomSnapshot["players"][number] & Partial<Pick<GameSnapshot["players"][number], "health" | "maxHealth" | "damage" | "moveSpeed" | "fireCooldownMs">>;
 
 function hostTemplate(): string {
   return `<main class="host-shell">

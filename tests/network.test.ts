@@ -307,6 +307,41 @@ describe("game network", () => {
     network.advance(SERVER_TICK_MS);
     expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.score).toBe(9);
   });
+
+  it("disconnects a kicked socket after the fixed simulation step and hands its seat to AI", async () => {
+    const { client, network, room } = await createHarness();
+    const joined = await emitAck(client, "join", { nickname: "Kick Target", characterId: "blaze" });
+    await emitAck(client, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    const disconnected = new Promise<string>((resolve) => client.once("disconnect", (reason) => resolve(reason)));
+
+    const accepted = await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "kick", playerId: joined.data!.playerId },
+    });
+    expect(accepted.ok).toBe(true);
+    network.advance(SERVER_TICK_MS);
+
+    await expect(disconnected).resolves.toBe("io server disconnect");
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)).toMatchObject({ isBot: true, connected: false });
+  });
+
+  it("broadcasts a forced winner transition", async () => {
+    const { client, network, room } = await createHarness();
+    const joined = await emitAck(client, "join", { nickname: "Forced Winner", characterId: "blaze" });
+    await emitAck(client, "setReady", true);
+    await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" });
+    const transition = new Promise<Parameters<ServerToClientEvents["gameState"]>[0]>((resolve) => client.once("gameState", resolve));
+    const accepted = await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "forceWinner", playerId: joined.data!.playerId },
+    });
+    expect(accepted.ok).toBe(true);
+    network.advance(SERVER_TICK_MS);
+
+    await expect(transition).resolves.toMatchObject({ phase: "finished", winnerIds: [joined.data!.playerId] });
+    expect(room.gameSnapshot()?.phase).toBe("finished");
+  });
 });
 
 function emitAck(client: TestClient, event: "join", payload: JoinPayload): Promise<Ack<JoinResult>>;

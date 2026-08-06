@@ -6,6 +6,7 @@ import type {
   ClientToServerEvents,
   GameSnapshot,
   HostCommand,
+  HostAdminCommand,
   JoinPayload,
   JoinResult,
   PerformanceHint,
@@ -119,6 +120,10 @@ export class GameNetworkClient {
 
   async hostCommand(token: string, command: HostCommand): Promise<Ack> {
     return new Promise((resolve) => this.socket.emit("hostCommand", { token, command }, resolve));
+  }
+
+  async hostAdminCommand(token: string, command: HostAdminCommand): Promise<Ack> {
+    return new Promise((resolve) => this.socket.emit("hostAdminCommand", { token, command }, resolve));
   }
 
   dispose(): void {

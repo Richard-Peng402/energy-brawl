@@ -4,11 +4,44 @@ import { CHARACTER_CATALOG, type CharacterId } from "../src/shared/character-cat
 import { LOBBY_RETURN_DELAY_MS, RECONNECT_WINDOW_MS, SKILL_ORB_SPAWN_MIN_MS } from "../src/shared/constants";
 import { GameRoom } from "../src/server/room";
 import { collectWorldSkillOrb, type GameWorld } from "../src/server/simulation";
+import { HostAdminService } from "../src/server/host-admin";
 
 const join = (room: GameRoom, socketId: string, nickname: string, characterId: CharacterId = "blaze") =>
   room.joinHuman(socketId, { nickname, characterId });
 
 describe("game room", () => {
+  it("kicks a human into an AI seat and invalidates its reconnect token for the current match", () => {
+    const room = new GameRoom();
+    const joined = join(room, "socket-1", "Target");
+    room.setReady("socket-1", true);
+    room.startMatch();
+    const service = new HostAdminService("secret");
+    room.attachHostAdmin(service);
+    expect(service.enqueue({ remoteAddress: "127.0.0.1", token: "secret", command: { type: "kick", playerId: joined.data!.playerId } }, room.gameWorld()).ok).toBe(true);
+
+    room.tick(16);
+
+    const player = room.gameSnapshot()!.players.find((candidate) => candidate.id === joined.data!.playerId)!;
+    expect(player).toMatchObject({ isBot: true, connected: false, skillSlot: { type: null, charges: 0 } });
+    expect(room.reconnectHuman("socket-2", joined.data!.reconnectToken).ok).toBe(false);
+    expect(room.consumeKickedSocketIds()).toEqual(["socket-1"]);
+    expect(room.consumeKickedSocketIds()).toEqual([]);
+  });
+
+  it("forces a selected player to win through the normal finished transition", () => {
+    const room = new GameRoom();
+    const first = join(room, "socket-1", "Winner");
+    room.setReady("socket-1", true);
+    room.startMatch();
+    const service = new HostAdminService("secret");
+    room.attachHostAdmin(service);
+    expect(service.enqueue({ remoteAddress: "::1", token: "secret", command: { type: "forceWinner", playerId: first.data!.playerId } }, room.gameWorld()).ok).toBe(true);
+
+    expect(room.tick(16)).toBe(true);
+    expect(room.gameSnapshot()).toMatchObject({ phase: "finished", winnerIds: [first.data!.playerId], finishedAt: 16 });
+    expect(room.tick(LOBBY_RETURN_DELAY_MS)).toBe(true);
+    expect(room.snapshot().phase).toBe("lobby");
+  });
   it("queues monotonic skill actions until the simulation tick", () => {
     const room = new GameRoom();
     const joined = join(room, "socket-1", "Player");
