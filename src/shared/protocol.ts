@@ -57,6 +57,10 @@ export interface PlayerSnapshot extends Vec2 {
   lastProcessedSkillAction: number;
 }
 
+export type AdminStat = "health" | "maxHealth" | "damage" | "score" | "moveSpeed" | "fireCooldownMs";
+
+export type AdminStats = Pick<PlayerSnapshot, AdminStat>;
+
 export interface ProjectileSnapshot extends Vec2 {
   id: string;
   ownerId: string;
@@ -85,7 +89,10 @@ export interface UseSkillPayload {
 export interface RoomSnapshot {
   phase: GamePhase;
   canStart: boolean;
-  players: Array<Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready" | "score">>;
+  pendingWinnerId: string | null;
+  players: Array<
+    Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready"> & AdminStats
+  >;
 }
 
 export interface GameSnapshot {
@@ -124,8 +131,6 @@ export interface JoinResult {
 }
 
 export type HostCommand = "start" | "end" | "reset";
-
-export type AdminStat = "health" | "maxHealth" | "damage" | "score" | "moveSpeed" | "fireCooldownMs";
 
 export type HostAdminCommand =
   | { type: "setStat"; playerId: string; stat: AdminStat; value: number }

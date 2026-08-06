@@ -40,6 +40,34 @@ function createWorld() {
 const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
 
 describe("authoritative simulation", () => {
+  it("applies host lobby stat presets when creating a match", () => {
+    const world = createGameWorld([
+      {
+        id: "preset-player",
+        nickname: "预设玩家",
+        characterId: "blaze",
+        isBot: false,
+        stats: {
+          health: 180,
+          maxHealth: 150,
+          damage: 80,
+          score: 9,
+          moveSpeed: 400,
+          fireCooldownMs: 180,
+        },
+      },
+    ]);
+
+    expect(world.players.get("preset-player")).toMatchObject({
+      health: 180,
+      maxHealth: 180,
+      damage: 80,
+      score: 9,
+      moveSpeed: 400,
+      fireCooldownMs: 180,
+    });
+  });
+
   it("starts each match with two visible skill orbs", () => {
     const world = createWorld();
 

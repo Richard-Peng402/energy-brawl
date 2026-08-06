@@ -53,6 +53,7 @@ export class GameRoom {
   private autoResetAt: number | null = null;
   private adminStateChanged = false;
   private nextPlayerNumber = 1;
+  private pendingWinnerId: string | null = null;
 
   attachHostAdmin(service: HostAdminService): void {
     this.hostAdmin = service;
@@ -293,20 +294,30 @@ export class GameRoom {
   snapshot(): RoomSnapshot {
     const players = this.world
       ? worldToSnapshot(this.world).players
-      : [...this.seats.values()].map((seat) => ({
-          id: seat.id,
-          nickname: seat.nickname,
-          characterId: seat.characterId,
-          color: getCharacter(seat.characterId).color,
-          isBot: seat.isBot,
-          connected: seat.connected,
-          ready: seat.ready,
-          score: 0,
-        }));
+      : [...this.seats.values()].map((seat) => {
+          const character = getCharacter(seat.characterId);
+          const maxHealth = Math.max(seat.stats?.maxHealth ?? character.maxHealth, seat.stats?.health ?? 0);
+          return {
+            id: seat.id,
+            nickname: seat.nickname,
+            characterId: seat.characterId,
+            color: character.color,
+            isBot: seat.isBot,
+            connected: seat.connected,
+            ready: seat.ready,
+            health: Math.min(seat.stats?.health ?? maxHealth, maxHealth),
+            maxHealth,
+            damage: seat.stats?.damage ?? character.damage,
+            score: seat.stats?.score ?? 0,
+            moveSpeed: seat.stats?.moveSpeed ?? character.moveSpeed,
+            fireCooldownMs: seat.stats?.fireCooldownMs ?? character.fireCooldownMs,
+          };
+        });
     return {
       phase: this.world?.phase ?? "lobby",
       canStart: this.canStart(),
-      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, score }) => ({
+      pendingWinnerId: this.pendingWinnerId,
+      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, health, maxHealth, damage, score, moveSpeed, fireCooldownMs }) => ({
         id,
         nickname,
         characterId,
@@ -314,7 +325,12 @@ export class GameRoom {
         isBot,
         connected,
         ready,
+        health,
+        maxHealth,
+        damage,
         score,
+        moveSpeed,
+        fireCooldownMs,
       })),
     };
   }

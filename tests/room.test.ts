@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CHARACTER_CATALOG, type CharacterId } from "../src/shared/character-catalog";
+import { CHARACTER_CATALOG, getCharacter, type CharacterId } from "../src/shared/character-catalog";
 import { LOBBY_RETURN_DELAY_MS, RECONNECT_WINDOW_MS, SKILL_ORB_SPAWN_MIN_MS } from "../src/shared/constants";
 import { GameRoom } from "../src/server/room";
 import { collectWorldSkillOrb, type GameWorld } from "../src/server/simulation";
@@ -10,6 +10,28 @@ const join = (room: GameRoom, socketId: string, nickname: string, characterId: C
   room.joinHuman(socketId, { nickname, characterId });
 
 describe("game room", () => {
+  it("exposes editable character stats while players are still in the lobby", () => {
+    const room = new GameRoom();
+    const joined = join(room, "socket-preview", "大厅预览", "fortress");
+    const fortress = getCharacter("fortress");
+
+    expect(room.snapshot()).toMatchObject({
+      phase: "lobby",
+      pendingWinnerId: null,
+      players: [
+        {
+          id: joined.data!.playerId,
+          health: fortress.maxHealth,
+          maxHealth: fortress.maxHealth,
+          damage: fortress.damage,
+          score: 0,
+          moveSpeed: fortress.moveSpeed,
+          fireCooldownMs: fortress.fireCooldownMs,
+        },
+      ],
+    });
+  });
+
   it("kicks a human into an AI seat and invalidates its reconnect token for the current match", () => {
     const room = new GameRoom();
     const joined = join(room, "socket-1", "Target");

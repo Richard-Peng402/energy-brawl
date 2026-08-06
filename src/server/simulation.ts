@@ -41,6 +41,7 @@ import {
   type SkillSystemState,
 } from "./skill-system";
 import type {
+  AdminStats,
   EnergySnapshot,
   GamePhase,
   GameSnapshot,
@@ -55,6 +56,7 @@ export interface PlayerSeed {
   nickname: string;
   characterId: CharacterId;
   isBot: boolean;
+  stats?: Partial<AdminStats>;
 }
 
 export interface WorldPlayer extends PlayerSnapshot {
@@ -102,8 +104,13 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
   seeds.forEach((seed, index) => {
     const character = getCharacter(seed.characterId);
     const spawn = SPAWN_POINTS[index % SPAWN_POINTS.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+    const maxHealth = Math.max(seed.stats?.maxHealth ?? character.maxHealth, seed.stats?.health ?? 0);
+    const health = Math.min(seed.stats?.health ?? maxHealth, maxHealth);
     players.set(seed.id, {
-      ...seed,
+      id: seed.id,
+      nickname: seed.nickname,
+      characterId: seed.characterId,
+      isBot: seed.isBot,
       color: character.color,
       connected: !seed.isBot,
       ready: true,
@@ -112,13 +119,13 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
       vx: 0,
       vy: 0,
       angle: 0,
-      health: character.maxHealth,
-      maxHealth: character.maxHealth,
-      damage: character.damage,
-      moveSpeed: character.moveSpeed,
-      fireCooldownMs: character.fireCooldownMs,
+      health,
+      maxHealth,
+      damage: seed.stats?.damage ?? character.damage,
+      moveSpeed: seed.stats?.moveSpeed ?? character.moveSpeed,
+      fireCooldownMs: seed.stats?.fireCooldownMs ?? character.fireCooldownMs,
       projectileSpeed: character.projectileSpeed,
-      score: 0,
+      score: seed.stats?.score ?? 0,
       kills: 0,
       energyCollected: 0,
       alive: true,

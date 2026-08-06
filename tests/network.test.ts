@@ -58,9 +58,10 @@ describe("game network", () => {
     const room = {
       phase: "lobby" as const,
       canStart: false,
+      pendingWinnerId: null,
       players: [
-        { id: "human", nickname: "真人", characterId: "blaze" as const, color: "#f00", isBot: false, connected: true, ready: false, score: 0 },
-        { id: "bot", nickname: "AI", characterId: "medic" as const, color: "#0f0", isBot: true, connected: true, ready: true, score: 0 },
+        { id: "human", nickname: "真人", characterId: "blaze" as const, color: "#f00", isBot: false, connected: true, ready: false, health: 94, maxHealth: 94, damage: 27, moveSpeed: 265, fireCooldownMs: 450, score: 0 },
+        { id: "bot", nickname: "AI", characterId: "medic" as const, color: "#0f0", isBot: true, connected: true, ready: true, health: 104, maxHealth: 104, damage: 23, moveSpeed: 250, fireCooldownMs: 480, score: 0 },
       ],
     };
 
