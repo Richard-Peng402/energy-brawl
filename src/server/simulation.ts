@@ -1,6 +1,8 @@
 import {
   ARENA_HEIGHT,
   ARENA_WIDTH,
+  COMBAT_REGEN_DELAY_MS,
+  COMBAT_REGEN_PER_SECOND,
   ENERGY_RADIUS,
   ENERGY_RESPAWN_MS,
   ENERGY_SCORE,
@@ -62,6 +64,8 @@ export interface PlayerSeed {
 export interface WorldPlayer extends PlayerSnapshot {
   input: PlayerInput;
   nextFireAt: number;
+  lastCombatAt: number;
+  regenAccumulatorMs: number;
 }
 
 export interface WorldProjectile extends ProjectileSnapshot {
@@ -138,6 +142,8 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
       lastProcessedSkillAction: 0,
       input: { ...EMPTY_INPUT },
       nextFireAt: now,
+      lastCombatAt: now,
+      regenAccumulatorMs: 0,
     });
   });
 
@@ -217,6 +223,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
   resolvePlayerSeparation(world);
   advanceProjectiles(world, simulationDelta);
   if (isFinished(world)) return;
+  advanceCombatRegeneration(world, simulationDelta);
   collectTouchedEnergy(world);
   if (isFinished(world)) return;
   replenishEnergy(world);
@@ -240,6 +247,10 @@ export function damagePlayer(
   const victim = world.players.get(victimId);
   if (!victim?.alive || victim.shieldUntil > world.now || amount <= 0 || !Number.isFinite(amount)) return false;
 
+  const attacker = world.players.get(attackerId);
+  markCombat(victim, world.now);
+  if (attacker && attacker.id !== victim.id) markCombat(attacker, world.now);
+
   if (victim.skillShieldUntil <= world.now) victim.skillShieldHealth = 0;
   const absorbed = Math.min(victim.skillShieldHealth, amount);
   victim.skillShieldHealth -= absorbed;
@@ -257,7 +268,6 @@ export function damagePlayer(
   victim.skillShieldUntil = 0;
   clearSkillSlot(victim);
 
-  const attacker = world.players.get(attackerId);
   if (attacker && attacker.id !== victim.id) {
     attacker.score += KILL_SCORE + (world.holderId === victim.id ? HOLDER_KILL_BONUS : 0);
     attacker.kills += 1;
@@ -312,7 +322,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     holderId: world.holderId,
     holdRemainingMs: world.holdRemainingMs,
     finishedAt: world.finishedAt,
-    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, ...player }) => player),
+    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, ...player }) => player),
     projectiles: [...world.projectiles.values()].map(({ expiresAt: _expiresAt, damage: _damage, ...projectile }) => projectile),
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
@@ -520,6 +530,29 @@ function respawnPlayer(world: GameWorld, player: WorldPlayer): void {
   player.respawnAt = null;
   player.shieldUntil = world.now + SPAWN_SHIELD_MS;
   player.nextFireAt = world.now;
+  player.lastCombatAt = world.now;
+  player.regenAccumulatorMs = 0;
+}
+
+function markCombat(player: WorldPlayer, now: number): void {
+  player.lastCombatAt = now;
+  player.regenAccumulatorMs = 0;
+}
+
+function advanceCombatRegeneration(world: GameWorld, deltaMs: number): void {
+  const pointIntervalMs = 1_000 / COMBAT_REGEN_PER_SECOND;
+  for (const player of world.players.values()) {
+    if (!player.alive || player.health >= player.maxHealth) {
+      player.regenAccumulatorMs = 0;
+      continue;
+    }
+    if (world.now - player.lastCombatAt < COMBAT_REGEN_DELAY_MS) continue;
+    player.regenAccumulatorMs += deltaMs;
+    const points = Math.floor(player.regenAccumulatorMs / pointIntervalMs);
+    if (points <= 0) continue;
+    player.regenAccumulatorMs -= points * pointIntervalMs;
+    player.health = Math.min(player.maxHealth, player.health + points);
+  }
 }
 
 function chooseSafeSpawn(world: GameWorld, playerId: string): Vec2 {

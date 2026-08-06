@@ -135,6 +135,33 @@ describe("authoritative simulation", () => {
     expect(medic.health).toBe(medic.maxHealth);
   });
 
+  it("regenerates eight health per second only after five seconds out of combat", () => {
+    const world = createWorld();
+    stepWorld(world, SPAWN_SHIELD_MS + 1);
+    const attacker = world.players.get("red")!;
+    const victim = world.players.get("blue")!;
+    attacker.health -= 20;
+
+    damagePlayer(world, victim.id, attacker.id, 40);
+    const attackerAfterCombat = attacker.health;
+    const victimAfterCombat = victim.health;
+    stepWorld(world, 4_999);
+    expect(attacker.health).toBe(attackerAfterCombat);
+    expect(victim.health).toBe(victimAfterCombat);
+
+    stepWorld(world, 1);
+    expect(victim.health).toBe(victimAfterCombat);
+    stepWorld(world, 1_000);
+    expect(attacker.health).toBe(attackerAfterCombat + 8);
+    expect(victim.health).toBe(victimAfterCombat + 8);
+
+    damagePlayer(world, victim.id, attacker.id, 1);
+    const resetHealth = victim.health;
+    stepWorld(world, 4_999);
+    expect(victim.health).toBe(resetHealth);
+  });
+
+
   it("replaces a held skill without scoring and clears the slot on death", () => {
     const world = createWorld();
     const player = world.players.get("red")!;

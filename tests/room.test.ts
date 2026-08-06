@@ -34,6 +34,19 @@ describe("game room", () => {
     expect(room.gameSnapshot()).toMatchObject({ phase: "finished", winnerIds: [second.data!.playerId] });
   });
 
+  it("restarts the out-of-combat timer when the host lowers current health", () => {
+    const room = new GameRoom();
+    const joined = join(room, "socket-regen-admin", "回血目标", "blaze");
+    room.setReady("socket-regen-admin", true);
+    room.startMatch();
+    room.tick(10_000);
+
+    expect(room.applyHostAdminCommand({ type: "setStat", playerId: joined.data!.playerId, stat: "health", value: 50 })).toEqual({ ok: true });
+    room.tick(1_000);
+
+    expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)?.health).toBe(50);
+  });
+
   it("exposes editable character stats while players are still in the lobby", () => {
     const room = new GameRoom();
     const joined = join(room, "socket-preview", "大厅预览", "fortress");

@@ -433,6 +433,7 @@ export class GameRoom {
   private applyWorldStat(playerId: string, stat: AdminStat, value: number): Ack {
     const player = this.world?.players.get(playerId);
     if (!player || !this.world) return { ok: false, error: "目标玩家不存在" };
+    const previousHealth = player.health;
     switch (stat) {
       case "health":
         if (value > player.maxHealth) player.maxHealth = value;
@@ -449,6 +450,10 @@ export class GameRoom {
         break;
       case "moveSpeed": player.moveSpeed = value; break;
       case "fireCooldownMs": player.fireCooldownMs = value; break;
+    }
+    if (player.health < previousHealth) {
+      player.lastCombatAt = this.world.now;
+      player.regenAccumulatorMs = 0;
     }
     return { ok: true };
   }

@@ -6,6 +6,7 @@ import { CHARACTER_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { GameRenderer } from "./game-scene";
 import { buildCharacterSelection, GameNetworkClient } from "./network";
 import { MobileViewport } from "./mobile-viewport";
+import { skillUseBlockReason } from "./skill-use";
 import { TouchRouter } from "./touch-router";
 import { VirtualStick } from "./virtual-stick";
 
@@ -215,7 +216,7 @@ export class MobileApp {
     const leaders = [...snapshot.players].sort((a, b) => b.score - a.score || b.kills - a.kills);
     this.find("#own-score").textContent = `${own?.score ?? 0}`;
     this.find<HTMLElement>("#health-fill").style.width = `${own ? (own.health / own.maxHealth) * 100 : 0}%`;
-    this.find("#health-value").textContent = own?.alive ? `${own.health}` : "0";
+    this.find("#health-value").textContent = own?.alive ? `${Math.ceil(own.health)}` : "0";
     this.find("#target-score").textContent = `${TARGET_SCORE}`;
     const holder = snapshot.holderId ? snapshot.players.find((player) => player.id === snapshot.holderId) : null;
     this.find("#match-clock").textContent = holder && snapshot.holdRemainingMs !== null
@@ -332,8 +333,17 @@ export class MobileApp {
 
   private readonly useSkill = (): void => {
     const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
-    if (!this.acceptingInput || own?.skillSlot.charges !== 1 || !own.skillSlot.type) {
-      this.showToast("技能槽为空");
+    if (!this.acceptingInput) {
+      this.showToast("暂时无法使用技能");
+      return;
+    }
+    if (!own) {
+      this.showToast("等待玩家状态");
+      return;
+    }
+    const blockReason = skillUseBlockReason(own);
+    if (blockReason) {
+      this.showToast(blockReason);
       return;
     }
     this.skillActionSequence = Math.max(this.skillActionSequence, own.lastProcessedSkillAction) + 1;

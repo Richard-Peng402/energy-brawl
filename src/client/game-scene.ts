@@ -34,6 +34,7 @@ interface PlayerView {
   attackUntil: number;
   hitUntil: number;
   lastDashEffectAt: number;
+  lastHealEffectAt: number;
   visualState: CharacterVisualState;
 }
 
@@ -347,7 +348,8 @@ class ArenaScene extends Phaser.Scene {
       if (player.health < view.lastHealth && player.alive) {
         view.hitUntil = now + 180;
         this.playCombatEffect("hit", view.container.x, view.container.y, 0xff5a5f);
-      } else if (player.health > view.lastHealth && player.alive) {
+      } else if (player.health > view.lastHealth && player.alive && now - view.lastHealEffectAt >= 500) {
+        view.lastHealEffectAt = now;
         this.playCombatEffect("heal", view.container.x, view.container.y, 0x66ffd1);
       }
       if (!view.wasAlive && player.alive) this.playCombatEffect("respawn", view.container.x, view.container.y, Phaser.Display.Color.HexStringToColor(player.color).color);
@@ -398,6 +400,7 @@ class ArenaScene extends Phaser.Scene {
       attackUntil: 0,
       hitUntil: 0,
       lastDashEffectAt: 0,
+      lastHealEffectAt: 0,
       visualState: "idle",
     };
     this.playerViews.set(player.id, view);
