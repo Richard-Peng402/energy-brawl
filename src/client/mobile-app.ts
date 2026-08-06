@@ -8,6 +8,7 @@ import { didPickUpLocalSkill } from "./combat-feedback";
 import { GameRenderer } from "./game-scene";
 import { buildCharacterSelection, GameNetworkClient, isCharacterSelectionDisabled } from "./network";
 import { MobileViewport } from "./mobile-viewport";
+import { gameLeaderboardRevision, roomUiRevision } from "./render-throttle";
 import { skillUseBlockReason } from "./skill-use";
 import { TouchRouter } from "./touch-router";
 import { VirtualStick } from "./virtual-stick";
@@ -33,6 +34,9 @@ export class MobileApp {
   private hintWindowAt = 0;
   private frameIntervals: number[] = [];
   private slowFrameWindows = 0;
+  private lastRoomUiRevision = "";
+  private lastLeaderboardRevision = "";
+  private lastResultsRevision = "";
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = mobileTemplate();
@@ -137,8 +141,12 @@ export class MobileApp {
 
   private render(): void {
     this.renderConnection();
-    this.renderColors();
-    this.renderRoster();
+    const nextRoomUiRevision = roomUiRevision(this.network.room);
+    if (nextRoomUiRevision !== this.lastRoomUiRevision) {
+      this.lastRoomUiRevision = nextRoomUiRevision;
+      this.renderColors();
+      this.renderRoster();
+    }
 
     if (!this.network.playerSessionReady) {
       this.renderer?.resetLocalInputs();
@@ -166,6 +174,8 @@ export class MobileApp {
         this.renderer.destroy();
         this.renderer = null;
       }
+      this.lastLeaderboardRevision = "";
+      this.lastResultsRevision = "";
     }
 
     if (this.network.notice) this.showToast(this.network.notice);
@@ -243,14 +253,18 @@ export class MobileApp {
     this.find("#match-clock").textContent = holder && snapshot.holdRemainingMs !== null
       ? `${holder.nickname} ${Math.ceil(snapshot.holdRemainingMs / 1_000)}s`
       : snapshot.phase === "overtime" ? "加时" : formatTime(snapshot.remainingMs);
-    this.find("#leaderboard").innerHTML = leaders
-      .slice(0, 4)
-      .map(
-        (player, index) => `<div class="leader-row${player.id === this.network.playerId ? " is-you" : ""}">
-          <span>${index + 1}</span><i style="--player-color:${player.color}"></i><b>${escapeHtml(player.nickname)}</b><strong>${player.score}</strong>
-        </div>`,
-      )
-      .join("");
+    const leaderboardRevision = gameLeaderboardRevision(snapshot, this.network.playerId);
+    if (leaderboardRevision !== this.lastLeaderboardRevision) {
+      this.lastLeaderboardRevision = leaderboardRevision;
+      this.find("#leaderboard").innerHTML = leaders
+        .slice(0, 4)
+        .map(
+          (player, index) => `<div class="leader-row${player.id === this.network.playerId ? " is-you" : ""}">
+            <span>${index + 1}</span><i style="--player-color:${player.color}"></i><b>${escapeHtml(player.nickname)}</b><strong>${player.score}</strong>
+          </div>`,
+        )
+        .join("");
+    }
     const respawn = this.find("#respawn-state");
     const remaining = own?.respawnAt ? Math.max(0, own.respawnAt - snapshot.serverTime) : 0;
     respawn.textContent = own && !own.alive ? `${Math.ceil(remaining / 1_000)} 秒后重返战场` : "";
@@ -291,15 +305,19 @@ export class MobileApp {
     if (!finished) return;
     const ranking = [...snapshot.players].sort((a, b) => b.score - a.score || b.kills - a.kills);
     const winner = ranking[0];
-    this.find("#result-title").textContent = winner?.id === this.network.playerId ? "你赢了" : `${winner?.nickname ?? "本局"} 获胜`;
-    this.find("#result-list").innerHTML = ranking
-      .map(
-        (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}">
-          <span class="result-rank">${index + 1}</span><i style="--player-color:${player.color}"></i>
-          <b>${escapeHtml(player.nickname)}</b><span>${player.kills} 击败</span><span>${player.energyCollected} 能量</span><strong>${player.score}</strong>
-        </div>`,
-      )
-      .join("");
+    const resultsRevision = `${gameLeaderboardRevision(snapshot, this.network.playerId)}|${snapshot.finishedAt ?? snapshot.serverTime}|${snapshot.winnerIds.join(",")}`;
+    if (resultsRevision !== this.lastResultsRevision) {
+      this.lastResultsRevision = resultsRevision;
+      this.find("#result-title").textContent = winner?.id === this.network.playerId ? "你赢了" : `${winner?.nickname ?? "本局"} 获胜`;
+      this.find("#result-list").innerHTML = ranking
+        .map(
+          (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}">
+            <span class="result-rank">${index + 1}</span><i style="--player-color:${player.color}"></i>
+            <b>${escapeHtml(player.nickname)}</b><span>${player.kills} 击败</span><span>${player.energyCollected} 能量</span><strong>${player.score}</strong>
+          </div>`,
+        )
+        .join("");
+    }
     const countdown = Math.max(0, (snapshot.finishedAt ?? snapshot.serverTime) + LOBBY_RETURN_DELAY_MS - snapshot.serverTime);
     this.find("#return-countdown").textContent = `${Math.ceil(countdown / 1_000)}s 后自动回大厅`;
   }
