@@ -20,7 +20,7 @@ import {
   type GameNetwork,
 } from "../src/server/network";
 import { GameRoom } from "../src/server/room";
-import { buildCharacterSelection } from "../src/client/network";
+import { buildCharacterSelection, isCharacterSelectionDisabled } from "../src/client/network";
 
 type TestClient = ClientSocket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -54,6 +54,16 @@ async function createHarness(): Promise<{ client: TestClient; network: GameNetwo
 }
 
 describe("game network", () => {
+  it("unlocks alternative characters between matches until the player is ready", () => {
+    const waitingSeat = { characterId: "blaze" as const, ready: false };
+    const readySeat = { characterId: "blaze" as const, ready: true };
+
+    expect(isCharacterSelectionDisabled(false, waitingSeat, "medic")).toBe(false);
+    expect(isCharacterSelectionDisabled(false, readySeat, "medic")).toBe(true);
+    expect(isCharacterSelectionDisabled(false, readySeat, "blaze")).toBe(false);
+    expect(isCharacterSelectionDisabled(true, waitingSeat, "medic")).toBe(true);
+  });
+
   it("locks characters used by other humans but keeps AI choices available with full details", () => {
     const room = {
       phase: "lobby" as const,
@@ -101,6 +111,20 @@ describe("game network", () => {
 
     expect(rejected).toMatchObject({ ok: false });
     expect(accepted).toMatchObject({ ok: true, data: { playerId: expect.any(String) } });
+  });
+
+  it("allows a joined player to change character before readying up", async () => {
+    const { client, room } = await createHarness();
+    await emitAck(client, "join", { nickname: "换角玩家", characterId: "blaze" });
+
+    const changed = await emitChangeCharacter(client, "fortress");
+    expect(changed).toEqual({ ok: true });
+    expect(room.snapshot().players[0]).toMatchObject({ characterId: "fortress" });
+
+    await emitAck(client, "setReady", true);
+    const locked = await emitChangeCharacter(client, "medic");
+    expect(locked.ok).toBe(false);
+    expect(room.snapshot().players[0]?.characterId).toBe("fortress");
   });
 
   it("requires the host token before starting a match", async () => {
@@ -417,4 +441,16 @@ function emitAck(
     acknowledge: (result: Ack<JoinResult> | Ack) => void,
   ) => void;
   return new Promise((resolve) => emit(event, payload, resolve));
+}
+
+function emitChangeCharacter(client: TestClient, characterId: JoinPayload["characterId"]): Promise<Ack> {
+  const emit = client.emit.bind(client) as unknown as (
+    eventName: string,
+    eventPayload: unknown,
+    acknowledge: (result: Ack) => void,
+  ) => void;
+  return Promise.race([
+    new Promise<Ack>((resolve) => emit("changeCharacter", characterId, resolve)),
+    new Promise<Ack>((resolve) => setTimeout(() => resolve({ ok: false, error: "ack timeout" }), 100)),
+  ]);
 }

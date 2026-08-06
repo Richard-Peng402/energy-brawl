@@ -37,6 +37,14 @@ export function buildCharacterSelection(
   }));
 }
 
+export function isCharacterSelectionDisabled(
+  unavailable: boolean,
+  ownSeat: Pick<RoomSnapshot["players"][number], "characterId" | "ready"> | undefined,
+  characterId: CharacterId,
+): boolean {
+  return unavailable || Boolean(ownSeat?.ready && ownSeat.characterId !== characterId);
+}
+
 const TOKEN_KEY = "energy-brawl.reconnect-token";
 const PLAYER_KEY = "energy-brawl.player-id";
 
@@ -97,6 +105,10 @@ export class GameNetworkClient {
 
   async setReady(ready: boolean): Promise<Ack> {
     return new Promise((resolve) => this.socket.emit("setReady", ready, resolve));
+  }
+
+  async changeCharacter(characterId: CharacterId): Promise<Ack> {
+    return new Promise((resolve) => this.socket.emit("changeCharacter", characterId, resolve));
   }
 
   async returnToLobby(): Promise<Ack> {

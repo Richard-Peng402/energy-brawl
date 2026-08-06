@@ -139,6 +139,7 @@ export type HostAdminCommand =
 
 export interface ClientToServerEvents {
   join: (payload: JoinPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
+  changeCharacter: (characterId: CharacterId, acknowledge: (result: Ack) => void) => void;
   reconnectPlayer: (payload: ReconnectPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
   setReady: (ready: boolean, acknowledge: (result: Ack) => void) => void;
   returnToLobby: (acknowledge: (result: Ack) => void) => void;

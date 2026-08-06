@@ -6,7 +6,7 @@ import {
   RECONNECT_WINDOW_MS,
   SKILL_ACTION_MAX_JUMP,
 } from "../shared/constants";
-import { CHARACTER_CATALOG, getCharacter, isCharacterId } from "../shared/character-catalog";
+import { CHARACTER_CATALOG, getCharacter, isCharacterId, type CharacterId } from "../shared/character-catalog";
 import type {
   Ack,
   AdminStat,
@@ -157,6 +157,21 @@ export class GameRoom {
       player.vy = 0;
     }
     return { ok: true, data: { playerId: seat.id, reconnectToken: seat.reconnectToken } };
+  }
+
+  changeCharacter(socketId: string, characterId: CharacterId): Ack {
+    if (this.world) return { ok: false, error: "对局开始后无法更换角色" };
+    const seat = this.seatForSocket(socketId);
+    if (!seat?.connected || seat.isBot) return { ok: false, error: "尚未加入房间" };
+    if (seat.ready) return { ok: false, error: "请先取消准备再更换角色" };
+    if (!isCharacterId(characterId)) return { ok: false, error: "请选择有效角色" };
+    if ([...this.seats.values()].some((candidate) => candidate.id !== seat.id && candidate.characterId === characterId)) {
+      return { ok: false, error: "这个角色已被使用" };
+    }
+
+    seat.characterId = characterId;
+    seat.stats = undefined;
+    return { ok: true };
   }
 
   setReady(socketId: string, ready: boolean): Ack {

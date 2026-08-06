@@ -69,6 +69,25 @@ describe("game room", () => {
     });
   });
 
+  it("allows a seated human to switch to another character before readying up", () => {
+    const room = new GameRoom();
+    const joined = join(room, "socket-switch", "换角玩家", "blaze");
+    const fortress = getCharacter("fortress");
+
+    expect(room.changeCharacter("socket-switch", "fortress")).toEqual({ ok: true });
+    expect(room.snapshot().players[0]).toMatchObject({
+      id: joined.data!.playerId,
+      characterId: "fortress",
+      health: fortress.maxHealth,
+      damage: fortress.damage,
+      moveSpeed: fortress.moveSpeed,
+    });
+
+    expect(room.setReady("socket-switch", true)).toEqual({ ok: true });
+    expect(room.changeCharacter("socket-switch", "medic")).toMatchObject({ ok: false });
+    expect(room.snapshot().players[0]?.characterId).toBe("fortress");
+  });
+
   it("kicks a human into an AI seat and invalidates its reconnect token for the current match", () => {
     const room = new GameRoom();
     const joined = join(room, "socket-1", "Target");

@@ -6,7 +6,7 @@ import { CHARACTER_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
 import { didPickUpLocalSkill } from "./combat-feedback";
 import { GameRenderer } from "./game-scene";
-import { buildCharacterSelection, GameNetworkClient } from "./network";
+import { buildCharacterSelection, GameNetworkClient, isCharacterSelectionDisabled } from "./network";
 import { MobileViewport } from "./mobile-viewport";
 import { skillUseBlockReason } from "./skill-use";
 import { TouchRouter } from "./touch-router";
@@ -71,8 +71,16 @@ export class MobileApp {
     this.find("#color-list").addEventListener("click", (event) => {
       const target = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-character-id]");
       if (!target || target.disabled) return;
-      this.selectedCharacterId = (target.dataset.characterId as CharacterId | undefined) ?? CHARACTER_CATALOG[0]!.id;
-      this.renderColors();
+      const characterId = (target.dataset.characterId as CharacterId | undefined) ?? CHARACTER_CATALOG[0]!.id;
+      const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
+      if (!ownSeat) {
+        this.selectedCharacterId = characterId;
+        this.renderColors();
+        return;
+      }
+      void this.network.changeCharacter(characterId).then((result) => {
+        if (!result.ok) this.showToast(result.error ?? "无法更换角色");
+      });
     });
 
     this.find("#ready-button").addEventListener("click", async () => {
@@ -174,7 +182,7 @@ export class MobileApp {
     if (ownSeat) this.selectedCharacterId = ownSeat.characterId;
     const cards = buildCharacterSelection(this.network.room, this.network.playerId, this.selectedCharacterId);
     this.find("#color-list").innerHTML = cards.map((character) => {
-      const unavailable = character.unavailable || Boolean(ownSeat && ownSeat.characterId !== character.id);
+      const unavailable = isCharacterSelectionDisabled(character.unavailable, ownSeat, character.id);
       return `<button class="color-swatch character-card${character.selected ? " is-selected" : ""}" type="button" data-character-id="${character.id}" style="--swatch:${character.color}" aria-label="选择${character.name}" aria-pressed="${character.selected}" ${unavailable ? "disabled" : ""}>
         <span class="character-portrait"><img src="${CHARACTER_ASSETS[character.id].portrait}" data-character-fallback="${CHARACTER_ASSETS[character.id].fallback}" alt="" /></span>
         <span class="character-card-copy"><strong>${character.name}</strong><small>${character.role}</small></span>
@@ -405,7 +413,7 @@ function mobileTemplate(): string {
         </div>
         <div class="lobby-workspace">
           <section class="character-panel">
-            <div class="section-heading"><span>选择角色</span><small>每名真人角色唯一 · AI 不锁定</small></div>
+            <div class="section-heading"><span>选择角色</span><small>准备前可更换 · 每名真人角色唯一 · AI 不锁定</small></div>
             <div id="color-list" class="color-list"></div>
             <div id="character-detail" class="character-detail"></div>
           </section>

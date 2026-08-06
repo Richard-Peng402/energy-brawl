@@ -88,6 +88,14 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
       if (result.ok) broadcastRoom();
     });
 
+    socket.on("changeCharacter", (characterId, acknowledge) => {
+      const result = isCharacterId(characterId)
+        ? room.changeCharacter(socket.id, characterId)
+        : invalid("请选择有效角色");
+      sendAcknowledgement(acknowledge, result);
+      if (result.ok) broadcastRoom();
+    });
+
     socket.on("reconnectPlayer", (payload, acknowledge) => {
       const result = payload && typeof payload.token === "string"
         ? room.reconnectHuman(socket.id, payload.token)
