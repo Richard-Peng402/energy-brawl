@@ -201,6 +201,17 @@ describe("authoritative simulation", () => {
     expect(world.killFeed.at(-1)).toMatchObject({ killerId: red.id, victimId: blue.id, streak: 1 });
   });
 
+  it.each(["solo", "team3v3", "team2v2v2"] as const)("preserves personal killstreak events in %s", (mode) => {
+    const world = createGameWorld([
+      { id: "killer", nickname: "击杀者", characterId: "blaze", isBot: false, teamId: mode === "solo" ? null : "red" },
+      { id: "victim", nickname: "目标", characterId: "medic", isBot: false, teamId: mode === "solo" ? null : "blue" },
+    ], 0, mode);
+    stepWorld(world, SPAWN_SHIELD_MS + 1);
+    expect(damagePlayer(world, "victim", "killer", 999)).toBe(true);
+    expect(world.killFeed.at(-1)).toMatchObject({ killerId: "killer", victimId: "victim", streak: 1 });
+    expect(world.players.get("killer")).toMatchObject({ kills: 1, killStreak: 1 });
+  });
+
   it("uses each character's dynamic movement, firing, projectile and respawn stats", () => {
     const world = createWorld();
     const attacker = world.players.get("red")!;

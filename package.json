@@ -10,9 +10,11 @@
     "build": "vite build",
     "server": "tsx src/server/index.ts",
     "assets:v3": "node scripts/import-v3-assets.mjs",
+    "assets:v4": "node scripts/validate-v4-assets.mjs",
     "audio:killstreak": "node scripts/generate-killstreak-audio.mjs",
     "load-test": "tsx scripts/load-test.ts",
     "load-test:v3": "tsx scripts/v3-load-test.ts",
+    "load-test:v4": "tsx scripts/v4-load-test.ts",
     "test": "vitest",
     "typecheck": "tsc --noEmit"
   },
