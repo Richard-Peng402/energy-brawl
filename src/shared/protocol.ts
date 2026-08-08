@@ -1,6 +1,7 @@
 import type { CharacterId } from "./character-catalog";
 import type { MatchMode, TeamId } from "./mode-catalog";
 import type { SkillType } from "./skill-catalog";
+import type { ExclusiveSkillId } from "./exclusive-skill-catalog";
 
 export interface Vec2 {
   x: number;
@@ -60,6 +61,7 @@ export interface PlayerSnapshot extends Vec2 {
   teamId?: TeamId | null;
   exclusiveSkillCooldownMs?: number;
   exclusiveSkillReadyAt?: number;
+  exclusiveSkillState?: { skillId: ExclusiveSkillId; startedAt: number; expiresAt: number; anchor?: Vec2; usedDash?: boolean } | null;
 }
 
 export type AdminStat =

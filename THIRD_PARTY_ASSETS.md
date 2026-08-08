@@ -1,5 +1,9 @@
 # 素材来源与许可证
 
+## v4 专属技能特效
+
+`public/assets/v4/fx/skills/*.svg` 为项目自制矢量特效，采用亮核、角色色辉光和粗范围线条；来源、作者、许可证与输出路径记录在 `public/assets/v4/manifest.json`。后续引入网上素材时，必须先核实 CC0/CC-BY/CC-BY-SA 并补充原始 URL，不使用商业游戏素材。
+
 本文件只描述素材，不改变代码许可证。项目代码采用 MIT，见根目录 [LICENSE](LICENSE)。所有运行时素材统一存放在 `public/assets/v3/`，其完整输出路径和来源记录在 `public/assets/v3/manifest.json`；新增素材前应补充来源、作者、许可证和修改说明，并通过素材完整性测试。
 
 ## Tatermand：Top-down Sci-fi Shooter Characters 2.0

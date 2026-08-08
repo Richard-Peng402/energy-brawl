@@ -1,0 +1,13 @@
+{
+  "version": "v4.0",
+  "generatedBy": "project-authored-svg-effects",
+  "maxTextureDimension": 512,
+  "entries": [
+    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/blaze.svg"] },
+    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/medic.svg"] },
+    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/fortress.svg"] },
+    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/arc.svg"] },
+    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/phase.svg"] },
+    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/runner.svg"] }
+  ]
+}

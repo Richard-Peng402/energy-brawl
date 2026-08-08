@@ -258,10 +258,14 @@ export class MobileApp {
   private renderHud(snapshot: GameSnapshot): void {
     const own = snapshot.players.find((player) => player.id === this.network.playerId);
     const leaders = [...snapshot.players].sort((a, b) => b.score - a.score || b.kills - a.kills);
-    this.find("#own-score").textContent = `${own?.score ?? 0}`;
+    const ownTeamScore = own?.teamId ? snapshot.teamScores?.find((team) => team.teamId === own.teamId) : undefined;
+    this.find("#own-score").textContent = `${ownTeamScore?.score ?? own?.score ?? 0}`;
     this.find<HTMLElement>("#health-fill").style.width = `${own ? (own.health / own.maxHealth) * 100 : 0}%`;
     this.find("#health-value").textContent = own?.alive ? `${Math.ceil(own.health)}` : "0";
-    this.find("#target-score").textContent = `${TARGET_SCORE}`;
+    this.find("#target-score").textContent = `${ownTeamScore?.targetScore ?? TARGET_SCORE}`;
+    this.find("#team-score").textContent = snapshot.matchMode === "solo"
+      ? "个人战"
+      : (snapshot.teamScores ?? []).map((team) => `${team.teamId === "red" ? "红" : team.teamId === "blue" ? "蓝" : "金"} ${team.score}/${team.targetScore}`).join(" · ");
     const holder = snapshot.holderId ? snapshot.players.find((player) => player.id === snapshot.holderId) : null;
     this.find("#match-clock").textContent = holder && snapshot.holdRemainingMs !== null
       ? `${holder.nickname} ${Math.ceil(snapshot.holdRemainingMs / 1_000)}s`
@@ -352,7 +356,9 @@ export class MobileApp {
     const resultsRevision = `${gameLeaderboardRevision(snapshot, this.network.playerId)}|${snapshot.finishedAt ?? snapshot.serverTime}|${snapshot.winnerIds.join(",")}`;
     if (resultsRevision !== this.lastResultsRevision) {
       this.lastResultsRevision = resultsRevision;
-      this.find("#result-title").textContent = winner?.id === this.network.playerId ? "你赢了" : `${winner?.nickname ?? "本局"} 获胜`;
+      const ownWon = snapshot.winnerIds.includes(this.network.playerId ?? "");
+      const winningTeam = snapshot.matchMode !== "solo" ? winner?.teamId : null;
+      this.find("#result-title").textContent = ownWon ? "你赢了" : winningTeam ? `${winningTeam === "red" ? "红队" : winningTeam === "blue" ? "蓝队" : "金队"}获胜` : `${winner?.nickname ?? "本局"} 获胜`;
       this.find("#result-list").innerHTML = ranking
         .map(
           (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}">
@@ -512,6 +518,7 @@ function mobileTemplate(): string {
             <div class="score-line"><span>积分</span><strong id="own-score">0</strong><small>/ <span id="target-score">15</span></small></div>
           </div>
           <div id="match-clock" class="match-clock">5:00</div>
+          <div id="team-score" class="team-score">个人战</div>
           <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
           <div id="leaderboard" class="leaderboard"></div>
            <button class="sound-button arena-sound" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>

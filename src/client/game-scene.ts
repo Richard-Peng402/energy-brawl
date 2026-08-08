@@ -153,6 +153,7 @@ class ArenaScene extends Phaser.Scene {
   private readonly projectileViews = new Map<string, MovingView>();
   private readonly energyViews = new Map<string, Phaser.GameObjects.Sprite>();
   private readonly skillOrbViews = new Map<string, Phaser.GameObjects.Container>();
+  private readonly exclusiveEffectRevisions = new Map<string, string>();
   private readonly snapshotBuffer = new SnapshotBuffer<GameSnapshot>();
   private readonly inputReconciler = new InputReconciler();
   private snapshot: GameSnapshot | null = null;
@@ -190,6 +191,7 @@ class ArenaScene extends Phaser.Scene {
     this.load.image("fx-impact-spark", PROJECTILE_FX_ASSETS.spark);
     this.load.image("fx-impact-smoke", PROJECTILE_FX_ASSETS.smoke);
     for (const type of SKILL_TYPES) this.load.svg(`skill-${type}`, SKILL_ICON_ASSETS[type], { width: 64, height: 64 });
+    for (const character of CHARACTER_CATALOG) this.load.svg(`exclusive-fx:${character.id}`, `/assets/v4/fx/skills/${character.id}.svg`, { width: 256, height: 256 });
     for (const [kind, asset] of Object.entries(WEAPON_ASSETS)) this.load.image(`weapon:${kind}`, asset);
     for (const character of CHARACTER_CATALOG) {
       for (const state of CHARACTER_RENDER_STATES) {
@@ -431,12 +433,42 @@ class ArenaScene extends Phaser.Scene {
       view.lastHealth = player.health;
       view.wasAlive = player.alive;
       this.updatePlayerVisual(view, player, now);
+      this.syncExclusiveSkillEffect(player);
     }
 
     if (localPlayerRespawned) this.updateCamera();
 
     this.syncEnergy(snapshot);
     this.syncSkillOrbs(snapshot);
+  }
+
+  private syncExclusiveSkillEffect(player: PlayerSnapshot): void {
+    const state = player.exclusiveSkillState;
+    if (!state) { this.exclusiveEffectRevisions.delete(player.id); return; }
+    const revision = `${state.skillId}:${state.startedAt}`;
+    if (this.exclusiveEffectRevisions.get(player.id) === revision) return;
+    this.exclusiveEffectRevisions.set(player.id, revision);
+    const color = Phaser.Display.Color.HexStringToColor(player.color).color;
+    const sprite = this.add.image(player.x, player.y, `exclusive-fx:${player.characterId}`).setDisplaySize(210, 210).setDepth(6).setAlpha(0.9);
+    const graphics = this.add.graphics().setDepth(7);
+    graphics.lineStyle(state.skillId === "mobile-bulwark" ? 12 : 8, color, 0.88);
+    graphics.fillStyle(color, 0.2);
+    if (state.skillId === "pulse-heal") {
+      graphics.fillCircle(player.x, player.y, 54);
+      graphics.strokeCircle(player.x, player.y, 280);
+    } else if (state.skillId === "mobile-bulwark") {
+      graphics.beginPath(); graphics.arc(player.x, player.y, 150, player.angle - 0.72, player.angle + 0.72); graphics.strokePath();
+    } else if (state.skillId === "capacitor-overload") {
+      graphics.strokeCircle(player.x, player.y, 68); graphics.strokeCircle(player.x, player.y, 92);
+    } else if (state.skillId === "afterimage-run") {
+      graphics.fillEllipse(player.x - Math.cos(player.angle) * 70, player.y - Math.sin(player.angle) * 70, 120, 52);
+    } else {
+      const origin = state.anchor ?? { x: player.x - Math.cos(player.angle) * 180, y: player.y - Math.sin(player.angle) * 180 };
+      graphics.beginPath(); graphics.moveTo(origin.x, origin.y); graphics.lineTo(player.x, player.y); graphics.strokePath();
+      graphics.fillCircle(origin.x, origin.y, 22); graphics.fillCircle(player.x, player.y, 18);
+    }
+    this.tweens.add({ targets: graphics, alpha: 0, duration: state.skillId === "pulse-heal" ? 520 : 900, ease: "Sine.Out", onComplete: () => graphics.destroy() });
+    this.tweens.add({ targets: sprite, alpha: 0, scale: 1.45, duration: state.skillId === "pulse-heal" ? 520 : 900, ease: "Sine.Out", onComplete: () => sprite.destroy() });
   }
 
   private createPlayerView(player: PlayerSnapshot): PlayerView {

@@ -34,9 +34,13 @@ export function applyExclusiveSkill(player: ExclusiveSkillPlayer, now: number, d
   player.exclusiveSkillReadyAt = now + clamp(cooldown, 1_000, 60_000);
 
   const target = isTeleport(definition.id) ? safeTarget(player, aim, definition.id === "phase-shift" ? 420 : 360) : origin;
-  const state: ExclusiveRuntimeState | null = definition.durationMs > 0 || definition.id === "breach"
-    ? { skillId: definition.id, startedAt: now, expiresAt: now + definition.durationMs, anchor: definition.id === "breach" ? origin : undefined, usedDash: false }
-    : null;
+  const state: ExclusiveRuntimeState = {
+    skillId: definition.id,
+    startedAt: now,
+    expiresAt: now + Math.max(300, definition.durationMs),
+    anchor: definition.id === "breach" ? origin : undefined,
+    usedDash: false,
+  };
   player.exclusiveSkillState = state;
   if (definition.id === "breach") {
     player.x = target.x; player.y = target.y;
