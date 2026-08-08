@@ -40,6 +40,9 @@ export const SKILL_ORB_SPAWN_MIN_MS = 4_000;
 export const SKILL_ORB_SPAWN_MAX_MS = 7_000;
 export const SKILL_ORB_SAFE_DISTANCE = 170;
 export const SKILL_ACTION_MAX_JUMP = 1_024;
+export const DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS = 10_000;
+export const MIN_EXCLUSIVE_SKILL_COOLDOWN_MS = 1_000;
+export const MAX_EXCLUSIVE_SKILL_COOLDOWN_MS = 60_000;
 
 export const PLAYER_COLORS = [
   "#ff5a5f",

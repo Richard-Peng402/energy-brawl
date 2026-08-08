@@ -1,4 +1,5 @@
 import type { CharacterId } from "./character-catalog";
+import type { MatchMode, TeamId } from "./mode-catalog";
 import type { SkillType } from "./skill-catalog";
 
 export interface Vec2 {
@@ -55,6 +56,9 @@ export interface PlayerSnapshot extends Vec2 {
   lastProcessedInput: number;
   skillSlot: SkillSlotSnapshot;
   lastProcessedSkillAction: number;
+  teamId?: TeamId | null;
+  exclusiveSkillCooldownMs?: number;
+  exclusiveSkillReadyAt?: number;
 }
 
 export type AdminStat =
@@ -93,6 +97,8 @@ export interface RoomSnapshot {
   phase: GamePhase;
   canStart: boolean;
   pendingWinnerId: string | null;
+  matchMode?: MatchMode;
+  teamScores?: TeamScoreSnapshot[];
   players: Array<
     Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready"> & AdminStats
   >;
@@ -112,6 +118,27 @@ export interface GameSnapshot {
   energy: EnergySnapshot[];
   skillOrbs: SkillOrbSnapshot[];
   killFeed?: KillFeedEvent[];
+  matchMode?: MatchMode;
+  teamScores?: TeamScoreSnapshot[];
+}
+
+export interface TeamScoreSnapshot {
+  teamId: TeamId;
+  score: number;
+  targetScore: number;
+}
+
+export type ExclusiveSkillEventStage = "telegraph" | "cast" | "impact" | "end";
+
+export interface ExclusiveSkillEvent {
+  eventSeq: number;
+  serverTime: number;
+  playerId: string;
+  skillId: CharacterId;
+  stage: ExclusiveSkillEventStage;
+  origin: Vec2;
+  target: Vec2;
+  result: "applied" | "rejected";
 }
 
 export interface KillFeedEvent {
@@ -165,6 +192,7 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   roomState: (snapshot: RoomSnapshot) => void;
   gameState: (snapshot: GameSnapshot | null) => void;
+  skillEvent: (event: ExclusiveSkillEvent) => void;
   notice: (message: string) => void;
 }
 

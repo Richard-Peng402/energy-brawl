@@ -1,0 +1,27 @@
+export const MATCH_MODES = ["solo", "team3v3", "team2v2v2"] as const;
+export type MatchMode = typeof MATCH_MODES[number];
+
+export const TEAM_IDS = ["red", "blue", "gold"] as const;
+export type TeamId = typeof TEAM_IDS[number];
+
+export interface ModeDefinition {
+  id: MatchMode;
+  name: string;
+  teamCount: 0 | 2 | 3;
+  teamSize: 1 | 2 | 3;
+  targetScore: 20 | 40 | 60;
+}
+
+export const MODE_CATALOG: Readonly<Record<MatchMode, ModeDefinition>> = {
+  solo: { id: "solo", name: "个人战", teamCount: 0, teamSize: 1, targetScore: 20 },
+  team3v3: { id: "team3v3", name: "3v3", teamCount: 2, teamSize: 3, targetScore: 60 },
+  team2v2v2: { id: "team2v2v2", name: "2v2v2", teamCount: 3, teamSize: 2, targetScore: 40 },
+};
+
+export function getModeDefinition(mode: MatchMode): ModeDefinition {
+  return MODE_CATALOG[mode];
+}
+
+export function isMatchMode(value: unknown): value is MatchMode {
+  return typeof value === "string" && MATCH_MODES.includes(value as MatchMode);
+}
