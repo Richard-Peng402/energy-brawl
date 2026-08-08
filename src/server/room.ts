@@ -18,11 +18,13 @@ import type {
   JoinResult,
   PlayerInput,
   RoomSnapshot,
+  UseExclusiveSkillPayload,
   UseSkillPayload,
 } from "../shared/protocol";
 import { chooseBotDecision } from "./bot";
 import {
   applyPlayerInput,
+  applyWorldExclusiveSkill,
   applyWorldSkillAction,
   createGameWorld,
   forceWorldTeamWinner,
@@ -53,6 +55,7 @@ export class GameRoom {
   private readonly nextBotThinkAt = new Map<string, number>();
   private readonly pendingInputs = new Map<string, PlayerInput>();
   private readonly pendingSkillActions = new Map<string, UseSkillPayload>();
+  private readonly pendingExclusiveSkillActions = new Map<string, UseExclusiveSkillPayload>();
   private readonly kickedSocketIds: string[] = [];
   private world: GameWorld | null = null;
   private clockMs = 0;
@@ -248,6 +251,7 @@ export class GameRoom {
     this.autoResetAt = null;
     this.pendingInputs.clear();
     this.pendingSkillActions.clear();
+    this.pendingExclusiveSkillActions.clear();
     for (const seat of this.seats.values()) {
       const player = this.world.players.get(seat.id);
       if (!player) continue;
@@ -348,6 +352,17 @@ export class GameRoom {
     return true;
   }
 
+  handleExclusiveSkillAction(socketId: string, payload: UseExclusiveSkillPayload): boolean {
+    const seat = this.seatForSocket(socketId);
+    if (!seat || !seat.connected || seat.isBot || !this.world || this.world.phase === "finished") return false;
+    if (!Number.isSafeInteger(payload.skillActionSeq) || payload.skillActionSeq < 0 || !Number.isFinite(payload.directionX) || !Number.isFinite(payload.directionY)) return false;
+    const player = this.world.players.get(seat.id);
+    const queued = this.pendingExclusiveSkillActions.get(seat.id);
+    if (!player || payload.skillActionSeq <= player.lastProcessedSkillAction || (queued && payload.skillActionSeq <= queued.skillActionSeq)) return false;
+    this.pendingExclusiveSkillActions.set(seat.id, { ...payload });
+    return true;
+  }
+
   tick(deltaMs: number): boolean {
     if (!Number.isFinite(deltaMs) || deltaMs <= 0) return false;
     this.clockMs += deltaMs;
@@ -370,6 +385,14 @@ export class GameRoom {
       applyWorldSkillAction(this.world, playerId, action.skillActionSeq);
     }
     this.pendingSkillActions.clear();
+    for (const [playerId, action] of this.pendingExclusiveSkillActions) {
+      const player = this.world.players.get(playerId);
+      if (player) {
+        player.lastProcessedSkillAction = action.skillActionSeq;
+        applyWorldExclusiveSkill(this.world, playerId, { x: action.directionX, y: action.directionY });
+      }
+    }
+    this.pendingExclusiveSkillActions.clear();
 
     for (const player of this.world.players.values()) {
       if (!player.isBot || this.clockMs < (this.nextBotThinkAt.get(player.id) ?? 0)) continue;

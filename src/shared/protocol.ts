@@ -93,6 +93,12 @@ export interface UseSkillPayload {
   skillActionSeq: number;
 }
 
+export interface UseExclusiveSkillPayload {
+  skillActionSeq: number;
+  directionX: number;
+  directionY: number;
+}
+
 export interface RoomSnapshot {
   phase: GamePhase;
   canStart: boolean;
@@ -189,6 +195,7 @@ export interface ClientToServerEvents {
   performanceHint: (hint: PerformanceHint) => void;
   playerInput: (input: PlayerInput) => void;
   useSkill: (payload: UseSkillPayload) => void;
+  useExclusiveSkill: (payload: UseExclusiveSkillPayload) => void;
   hostCommand: (payload: { token: string; command: HostCommand }, acknowledge: (result: Ack) => void) => void;
   hostAdminCommand: (payload: { token: string; command: HostAdminCommand }, acknowledge: (result: Ack) => void) => void;
 }

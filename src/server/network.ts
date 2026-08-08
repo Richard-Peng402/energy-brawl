@@ -15,6 +15,7 @@ import type {
   PerformanceHint,
   PlayerInput,
   ServerToClientEvents,
+  UseExclusiveSkillPayload,
   UseSkillPayload,
 } from "../shared/protocol";
 import { isCharacterId } from "../shared/character-catalog";
@@ -137,6 +138,10 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
 
     socket.on("useSkill", (payload) => {
       if (isUseSkillPayload(payload)) room.handleSkillAction(socket.id, payload);
+    });
+
+    socket.on("useExclusiveSkill", (payload) => {
+      if (isUseExclusiveSkillPayload(payload)) room.handleExclusiveSkillAction(socket.id, payload);
     });
 
     socket.on("hostCommand", (payload, acknowledge) => {
@@ -281,6 +286,12 @@ function isUseSkillPayload(payload: unknown): payload is UseSkillPayload {
   if (!payload || typeof payload !== "object") return false;
   const candidate = payload as Partial<UseSkillPayload>;
   return Number.isSafeInteger(candidate.skillActionSeq) && candidate.skillActionSeq! >= 0;
+}
+
+function isUseExclusiveSkillPayload(payload: unknown): payload is UseExclusiveSkillPayload {
+  if (!payload || typeof payload !== "object") return false;
+  const candidate = payload as Partial<UseExclusiveSkillPayload>;
+  return Number.isSafeInteger(candidate.skillActionSeq) && candidate.skillActionSeq! >= 0 && Number.isFinite(candidate.directionX) && Number.isFinite(candidate.directionY);
 }
 
 function isPerformanceHint(hint: unknown): hint is PerformanceHint {
