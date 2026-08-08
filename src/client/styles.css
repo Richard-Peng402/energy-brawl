@@ -1888,6 +1888,9 @@ button:disabled {
   position: relative;
   overflow: hidden;
   isolation: isolate;
+  --preview-color: #4da3ff;
+  --preview-accent: #b6e3ff;
+  --preview-duration: 6000ms;
   transition: background-color 420ms ease;
 }
 
@@ -1915,11 +1918,11 @@ button:disabled {
 }
 
 .lobby-intro.is-transitioning {
-  animation: lobby-background-shift 6s cubic-bezier(.45, 0, .2, 1) both;
+  animation: lobby-background-shift var(--preview-duration) cubic-bezier(.45, 0, .2, 1) both;
 }
 
 .lobby-intro.is-transitioning::after {
-  animation: lobby-impact-wave 6s ease-out both;
+  animation: lobby-impact-wave var(--preview-duration) ease-out both;
 }
 
 .lobby-intro-copy {
@@ -1943,17 +1946,25 @@ button:disabled {
 
 .lobby-intro.has-character .lobby-character-preview { opacity: 1; }
 
+/* Palette hooks keep each reveal recognizable while sharing one timeline. */
+.lobby-character-preview.is-blaze { --preview-color: #ff5a5f; --preview-accent: #ffb86b; }
+.lobby-character-preview.is-medic { --preview-color: #31d0aa; --preview-accent: #9dffe3; }
+.lobby-character-preview.is-fortress { --preview-color: #4da3ff; --preview-accent: #b6e3ff; }
+.lobby-character-preview.is-arc { --preview-color: #ffd166; --preview-accent: #fff0a6; }
+.lobby-character-preview.is-phase { --preview-color: #c77dff; --preview-accent: #e8c7ff; }
+.lobby-character-preview.is-runner { --preview-color: #ff8c42; --preview-accent: #ffd0a3; }
+
 .preview-energy-field {
   position: absolute;
   inset: -20%;
   opacity: 0;
-  background: radial-gradient(circle at 50% 50%, rgb(92 211 255 / 32%) 0 14%, transparent 15% 34%, rgb(47 155 255 / 25%) 34.5% 35%, transparent 36% 58%, rgb(73 192 255 / 18%) 58.5% 59%, transparent 60%), repeating-conic-gradient(from 20deg at 50% 50%, transparent 0 7deg, rgb(128 226 255 / 23%) 7.5deg 8deg, transparent 8.5deg 17deg);
+  background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--preview-accent) 48%, transparent) 0 14%, transparent 15% 34%, color-mix(in srgb, var(--preview-color) 42%, transparent) 34.5% 35%, transparent 36% 58%, color-mix(in srgb, var(--preview-accent) 28%, transparent) 58.5% 59%, transparent 60%), repeating-conic-gradient(from 20deg at 50% 50%, transparent 0 7deg, color-mix(in srgb, var(--preview-accent) 42%, transparent) 7.5deg 8deg, transparent 8.5deg 17deg);
   clip-path: circle(0 at 50% 50%);
   mix-blend-mode: screen;
 }
 
 .lobby-intro.is-transitioning .preview-energy-field {
-  animation: preview-energy-expand 6s ease-out both;
+  animation: preview-energy-expand var(--preview-duration) ease-out both;
 }
 
 .preview-impact {
@@ -1963,16 +1974,16 @@ button:disabled {
   top: 43%;
   width: 42%;
   aspect-ratio: 1;
-  border: 3px solid color-mix(in srgb, var(--preview-color) 72%, #dff8ff);
+  border: 3px solid color-mix(in srgb, var(--preview-accent) 72%, #dff8ff);
   border-radius: 50%;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.2);
-  box-shadow: 0 0 24px color-mix(in srgb, var(--preview-color) 72%, transparent), inset 0 0 20px color-mix(in srgb, var(--preview-color) 42%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--preview-accent) 72%, transparent), inset 0 0 20px color-mix(in srgb, var(--preview-color) 42%, transparent);
   pointer-events: none;
 }
 
 .lobby-intro.is-transitioning .preview-impact {
-  animation: preview-impact-burst 6s ease-out both;
+  animation: preview-impact-burst var(--preview-duration) ease-out both;
 }
 
 .lobby-character-preview > img {
@@ -1990,7 +2001,7 @@ button:disabled {
 }
 
 .lobby-intro.is-transitioning .lobby-character-preview > img {
-  animation: preview-character-assemble 6s steps(12, end) both;
+  animation: preview-character-assemble var(--preview-duration) steps(12, end) both;
 }
 
 .preview-character-title {
@@ -2011,14 +2022,14 @@ button:disabled {
 .preview-character-title span { font-size: clamp(16px, 1.8vw, 26px); font-weight: 900; }
 
 .lobby-intro.is-transitioning .preview-character-title {
-  animation: preview-title-enter 6s ease both;
+  animation: preview-title-enter var(--preview-duration) ease both;
 }
 
 @keyframes lobby-background-shift {
-  0%, 16.66% { background-color: #ff5a5f; }
-  28% { background-color: #db5268; }
-  42% { background-color: #0873ec; }
-  100% { background-color: #0873ec; }
+  0%, 16.66% { background-color: color-mix(in srgb, var(--preview-color) 16%, #ff5a5f); }
+  28% { background-color: color-mix(in srgb, var(--preview-color) 38%, #db5268); }
+  42% { background-color: color-mix(in srgb, var(--preview-color) 78%, #0873ec); }
+  100% { background-color: color-mix(in srgb, var(--preview-color) 86%, #07131f); }
 }
 
 @keyframes lobby-impact-wave {

@@ -29,6 +29,7 @@ import { skillUseBlockReason } from "./skill-use";
 import { moveTouchControl, touchControlStyle, type MovableTouchControl } from "./touch-control-layout";
 import { TouchRouter } from "./touch-router";
 import { VirtualStick } from "./virtual-stick";
+import { CHARACTER_PREVIEW_CLASSES, getCharacterPreviewMotion } from "./character-preview";
 
 const NAME_KEY = "energy-brawl.nickname";
 
@@ -502,7 +503,19 @@ export class MobileApp {
     }
     if (this.lastLobbyPreviewCharacterId === character.id) return;
     this.lastLobbyPreviewCharacterId = character.id;
-    preview.innerHTML = `<div class="preview-energy-field" style="--preview-color:${character.color}"></div><div class="preview-impact" style="--preview-color:${character.color}"></div><img src="${CHARACTER_SELECTION_ASSETS[character.id]}" data-character-fallback="${CHARACTER_ASSETS[character.id].fallback}" alt="${character.name}正面像素立绘" /><div class="preview-character-title"><strong>${character.name}</strong><span>${character.role}</span></div>`;
+    const motion = getCharacterPreviewMotion(character.id);
+    for (const className of CHARACTER_PREVIEW_CLASSES) {
+      preview.classList.remove(className);
+      intro.classList.remove(className);
+    }
+    preview.classList.add(motion.cssClass);
+    intro.classList.add(motion.cssClass);
+    for (const element of [preview, intro]) {
+      element.style.setProperty("--preview-color", motion.primaryColor);
+      element.style.setProperty("--preview-accent", motion.accentColor);
+      element.style.setProperty("--preview-duration", `${motion.durationMs}ms`);
+    }
+    preview.innerHTML = `<div class="preview-energy-field"></div><div class="preview-impact"></div><img src="${CHARACTER_SELECTION_ASSETS[character.id]}" data-character-fallback="${CHARACTER_ASSETS[character.id].fallback}" alt="${character.name}正面像素立绘" /><div class="preview-character-title"><strong>${character.name}</strong><span>${character.role}</span></div>`;
     const image = preview.querySelector<HTMLImageElement>("[data-character-fallback]");
     image?.addEventListener("error", () => {
       const fallback = image.dataset.characterFallback;

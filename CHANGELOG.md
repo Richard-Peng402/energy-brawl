@@ -2,6 +2,10 @@
 
 ## [4.1.1] - 2026-08-09
 
+### Preview motion
+
+- All six characters now use the complete six-second energy spread, pixel assembly, scale-and-bounce, and impact-wave transition while the right-side dossier stays fixed.
+
 ### Added
 
 - 角色选择界面新增 6 秒横屏转场：左侧预览区依次完成蓝色能量扩散、像素角色组装、放大回弹和标题淡入。
