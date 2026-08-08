@@ -26,6 +26,7 @@ import {
   collectWorldSkillOrb,
   createGameWorld,
   damagePlayer,
+  refreshWorldScoreState,
   stepWorld,
   worldToSnapshot,
 } from "../src/server/simulation";
@@ -41,6 +42,79 @@ function createWorld() {
 const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
 
 describe("authoritative simulation", () => {
+  it("scales team targets and awards kill points to the killer's team", () => {
+    const world = createGameWorld([
+      { id: "red-1", nickname: "红一", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "red-2", nickname: "红二", characterId: "medic", isBot: false, teamId: "red" },
+      { id: "blue-1", nickname: "蓝一", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    stepWorld(world, SPAWN_SHIELD_MS + 1);
+    expect(damagePlayer(world, "blue-1", "red-1", 999)).toBe(true);
+    expect(world.teamScores.get("red")).toBe(KILL_SCORE);
+    expect(worldToSnapshot(world).teamScores).toEqual(expect.arrayContaining([
+      { teamId: "red", score: KILL_SCORE, targetScore: 60 },
+      { teamId: "blue", score: 0, targetScore: 60 },
+    ]));
+  });
+
+  it("ignores friendly damage and lets friendly projectiles pass through teammates", () => {
+    const world = createGameWorld([
+      { id: "owner", nickname: "攻击者", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "ally", nickname: "队友", characterId: "medic", isBot: false, teamId: "red" },
+      { id: "enemy", nickname: "敌人", characterId: "fortress", isBot: false, teamId: "blue" },
+    ]);
+    const ally = world.players.get("ally")!;
+    const enemy = world.players.get("enemy")!;
+    ally.x = 160; ally.y = 100; ally.shieldUntil = 0;
+    enemy.x = 300; enemy.y = 100; enemy.shieldUntil = 0;
+    const owner = world.players.get("owner")!;
+    owner.x = 100; owner.y = 100; owner.shieldUntil = 0;
+    expect(damagePlayer(world, "ally", "owner", 20)).toBe(false);
+    expect(ally.health).toBe(ally.maxHealth);
+    world.projectiles.set("friendly-test", {
+      id: "friendly-test", ownerId: "owner", x: 100, y: 100, vx: 10_000, vy: 0,
+      distanceTraveled: 0, damage: 20,
+    });
+    stepWorld(world, 30);
+    expect(ally.health).toBe(ally.maxHealth);
+    expect(enemy.health).toBeLessThan(enemy.maxHealth);
+  });
+
+  it("uses team leaders for target holds and awards victory to the whole team", () => {
+    const world = createGameWorld([
+      { id: "red-1", nickname: "红一", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "red-2", nickname: "红二", characterId: "medic", isBot: false, teamId: "red" },
+      { id: "blue-1", nickname: "蓝一", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    world.teamScores.set("red", 60);
+    world.teamScores.set("blue", 59);
+
+    refreshWorldScoreState(world, "red-1");
+    expect(world.holderId).toBe("red-1");
+    expect(world.holdRemainingMs).toBe(HOLD_DURATION_MS);
+    stepWorld(world, HOLD_DURATION_MS);
+
+    expect(world.phase).toBe("finished");
+    expect(world.winnerIds).toEqual(["red-1", "red-2"]);
+  });
+
+  it("ends team overtime when any member of a tied leading team scores", () => {
+    const world = createGameWorld([
+      { id: "red-1", nickname: "红一", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "red-2", nickname: "红二", characterId: "medic", isBot: false, teamId: "red" },
+      { id: "blue-1", nickname: "蓝一", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    world.teamScores.set("red", 10);
+    world.teamScores.set("blue", 10);
+    stepWorld(world, MATCH_DURATION_MS);
+    expect(world.phase).toBe("overtime");
+
+    const energyId = world.energy.keys().next().value!;
+    expect(collectEnergy(world, "red-2", energyId)).toBe(true);
+    expect(world.phase).toBe("finished");
+    expect(world.winnerIds).toEqual(["red-1", "red-2"]);
+  });
+
   it("uses twenty points as the final v3 target score", () => {
     expect(TARGET_SCORE).toBe(20);
   });

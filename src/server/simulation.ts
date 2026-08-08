@@ -264,6 +264,9 @@ export function damagePlayer(
   if (!victim?.alive || victim.shieldUntil > world.now || amount <= 0 || !Number.isFinite(amount)) return false;
 
   const attacker = world.players.get(attackerId);
+  if (attacker && attacker.id !== victim.id && attacker.teamId !== null && attacker.teamId === victim.teamId) {
+    return false;
+  }
   markCombat(victim, world.now);
   if (attacker && attacker.id !== victim.id) markCombat(attacker, world.now);
 
@@ -295,7 +298,7 @@ export function damagePlayer(
       streak: attacker.killStreak,
     });
     if (world.killFeed.length > 6) world.killFeed.splice(0, world.killFeed.length - 6);
-    attacker.score += KILL_SCORE + (world.holderId === victim.id ? HOLDER_KILL_BONUS : 0);
+    addPlayerScore(world, attacker, KILL_SCORE + (world.holderId === victim.id ? HOLDER_KILL_BONUS : 0));
     attacker.kills += 1;
     handleScoreChange(world, attacker.id);
   }
@@ -307,7 +310,7 @@ export function collectEnergy(world: GameWorld, playerId: string, energyId: stri
   const player = world.players.get(playerId);
   if (!player?.alive || !world.energy.delete(energyId)) return false;
 
-  player.score += ENERGY_SCORE;
+  addPlayerScore(world, player, ENERGY_SCORE);
   player.energyCollected += 1;
   if (player.characterId === "medic") {
     player.health = Math.min(player.maxHealth, player.health + MEDIC_ENERGY_HEAL);
@@ -486,6 +489,8 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
     let targetHit: { player: WorldPlayer; time: number } | null = null;
     for (const player of world.players.values()) {
       if (player.id === projectile.ownerId || !player.alive) continue;
+      const owner = world.players.get(projectile.ownerId);
+      if (owner && owner.teamId !== null && owner.teamId === player.teamId) continue;
       const hit = sweepCircleCircle(projectile, delta, PROJECTILE_RADIUS, player, PLAYER_RADIUS);
       if (hit && (!targetHit || hit.time < targetHit.time)) targetHit = { player, time: hit.time };
     }
@@ -694,8 +699,14 @@ function safePlayerPosition(world: GameWorld, player: WorldPlayer, delta: Vec2):
 }
 
 function finishNormalTime(world: GameWorld): void {
-  const highestScore = Math.max(...[...world.players.values()].map((player) => player.score));
-  const leaders = [...world.players.values()].filter((player) => player.score === highestScore).map((player) => player.id);
+  const leaders = world.matchMode === "solo" ? leadingSoloPlayerIds(world) : leadingTeamPlayerIds(world);
+  if (world.matchMode !== "solo") {
+    const leadingTeams = leadingTeamIds(world);
+    if (leadingTeams.length === 1) {
+      finishMatch(world, playerIdsForTeam(world, leadingTeams[0]!));
+      return;
+    }
+  }
   if (leaders.length === 1) {
     finishMatch(world, leaders);
     return;
@@ -709,18 +720,53 @@ function finishNormalTime(world: GameWorld): void {
 function handleScoreChange(world: GameWorld, scorerId: string): void {
   if (world.phase === "finished") return;
   if (world.phase === "overtime" && world.overtimePlayerIds.includes(scorerId)) {
-    finishMatch(world, [scorerId]);
+    const scorer = world.players.get(scorerId);
+    finishMatch(world, world.matchMode !== "solo" && scorer?.teamId ? playerIdsForTeam(world, scorer.teamId) : [scorerId]);
     return;
   }
   if (world.phase === "playing") refreshHolder(world);
 }
 
+function addPlayerScore(world: GameWorld, player: WorldPlayer, amount: number): void {
+  player.score += amount;
+  if (player.teamId != null) world.teamScores.set(player.teamId, (world.teamScores.get(player.teamId) ?? 0) + amount);
+}
+
+function leadingSoloPlayerIds(world: GameWorld): string[] {
+  const highestScore = Math.max(...[...world.players.values()].map((player) => player.score));
+  return [...world.players.values()].filter((player) => player.score === highestScore).map((player) => player.id);
+}
+
+function leadingTeamIds(world: GameWorld): TeamId[] {
+  const highestScore = Math.max(...world.teamScores.values());
+  return [...world.teamScores].filter(([, score]) => score === highestScore).map(([teamId]) => teamId);
+}
+
+function leadingTeamPlayerIds(world: GameWorld): string[] {
+  const teams = new Set(leadingTeamIds(world));
+  return [...world.players.values()].filter((player) => player.teamId != null && teams.has(player.teamId)).map((player) => player.id);
+}
+
+function playerIdsForTeam(world: GameWorld, teamId: TeamId): string[] {
+  return [...world.players.values()].filter((player) => player.teamId === teamId).map((player) => player.id);
+}
+
 function refreshHolder(world: GameWorld): void {
   const players = [...world.players.values()];
-  const highestScore = Math.max(...players.map((player) => player.score));
-  const leaders = players.filter((player) => player.score === highestScore);
-  const leader = leaders.length === 1 ? leaders[0] : null;
-  if (!leader || leader.score < TARGET_SCORE) {
+  const leader = world.matchMode === "solo"
+    ? (() => {
+        const leaderIds = leadingSoloPlayerIds(world);
+        return leaderIds.length === 1 ? world.players.get(leaderIds[0]!) ?? null : null;
+      })()
+    : (() => {
+        const teams = leadingTeamIds(world);
+        if (teams.length !== 1) return null;
+        return players
+          .filter((player) => player.teamId === teams[0])
+          .sort((left, right) => left.id.localeCompare(right.id))[0] ?? null;
+      })();
+  const leaderScore = world.matchMode === "solo" ? leader?.score ?? 0 : leader?.teamId ? world.teamScores.get(leader.teamId) ?? 0 : 0;
+  if (!leader || leaderScore < (world.matchMode === "solo" ? TARGET_SCORE : getModeDefinition(world.matchMode).targetScore)) {
     world.holderId = null;
     world.holdRemainingMs = null;
     return;
@@ -740,7 +786,10 @@ function advanceHold(world: GameWorld, deltaMs: number): void {
   if (world.holderId !== previousHolderId || world.holdRemainingMs === null) return;
 
   world.holdRemainingMs = Math.max(0, world.holdRemainingMs - deltaMs);
-  if (world.holdRemainingMs === 0) finishMatch(world, [world.holderId]);
+  if (world.holdRemainingMs === 0) {
+    const holder = world.players.get(world.holderId);
+    finishMatch(world, world.matchMode !== "solo" && holder?.teamId ? playerIdsForTeam(world, holder.teamId) : [world.holderId]);
+  }
 }
 
 function isFinished(world: GameWorld): boolean {
