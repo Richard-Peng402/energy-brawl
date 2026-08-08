@@ -51,6 +51,18 @@ export const CHARACTER_ASSETS: Record<CharacterId, Record<CharacterAssetState, s
   runner: character("runner"),
 };
 
+// Lobby portraits are deliberately pinned to a readable front-facing frame.
+// Some user-provided portrait crops show the character from behind, while the
+// corresponding `up` direction frame is the front-facing view in the source sheet.
+export const CHARACTER_SELECTION_ASSETS: Readonly<Record<CharacterId, string>> = {
+  blaze: path("characters/blaze/portrait.png"),
+  medic: path("characters/medic/directions/up.png"),
+  fortress: path("characters/fortress/portrait.png"),
+  arc: path("characters/arc/directions/up.png"),
+  phase: path("characters/phase/portrait.png"),
+  runner: path("characters/runner/directions/up.png"),
+};
+
 const directionalCharacter = (id: CharacterId): Record<CharacterDirection, string> => Object.fromEntries(
   CHARACTER_DIRECTIONS.map((direction) => [direction, path(`characters/${id}/directions/${direction}.png`)]),
 ) as Record<CharacterDirection, string>;

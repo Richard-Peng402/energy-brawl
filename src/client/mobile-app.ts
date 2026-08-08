@@ -3,7 +3,7 @@ import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import { getExclusiveSkill } from "../shared/exclusive-skill-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
-import { CHARACTER_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
+import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
 import { didPickUpLocalSkill, selectLatestKillFeedback } from "./combat-feedback";
 import { GameRenderer } from "./game-scene";
@@ -42,6 +42,8 @@ export class MobileApp {
   private readonly audio = new CombatAudio(window.localStorage);
   private renderer: GameRenderer | null = null;
   private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
+  private hasSelectedCharacter = false;
+  private lastLobbyPreviewCharacterId: CharacterId | null = null;
   private inputSequence = 0;
   private skillActionSequence = 0;
   private exclusiveSkillActionSequence = 0;
@@ -110,10 +112,12 @@ export class MobileApp {
       const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
       if (!ownSeat) {
         this.selectedCharacterId = characterId;
+        this.hasSelectedCharacter = true;
         this.renderColors();
         return;
       }
       void this.network.changeCharacter(characterId).then((result) => {
+        if (result.ok) this.hasSelectedCharacter = true;
         if (!result.ok) this.showToast(result.error ?? "无法更换角色");
       });
     });
@@ -465,7 +469,7 @@ export class MobileApp {
     this.find("#color-list").innerHTML = cards.map((character) => {
       const unavailable = isCharacterSelectionDisabled(character.unavailable, ownSeat, character.id);
       return `<button class="color-swatch character-card${character.selected ? " is-selected" : ""}" type="button" data-character-id="${character.id}" style="--swatch:${character.color}" aria-label="选择${character.name}" aria-pressed="${character.selected}" ${unavailable ? "disabled" : ""}>
-        <span class="character-portrait"><img src="${CHARACTER_ASSETS[character.id].portrait}" data-character-fallback="${CHARACTER_ASSETS[character.id].fallback}" alt="" /></span>
+        <span class="character-portrait"><img src="${CHARACTER_SELECTION_ASSETS[character.id]}" data-character-fallback="${CHARACTER_ASSETS[character.id].fallback}" alt="${character.name}正面立绘" /></span>
         <span class="character-card-copy"><strong>${character.name}</strong><small>${character.role}</small></span>
         ${character.unavailable ? '<span class="character-lock">已占用</span>' : ""}
       </button>`;
@@ -482,6 +486,35 @@ export class MobileApp {
     this.find("#character-detail").innerHTML = `<div class="character-detail-heading"><div><strong>${selected.name}</strong><span>${selected.role}</span></div><p><b>${selected.passiveName}</b> · ${selected.passiveDescription}</p><p><b>${exclusiveSkill.name}</b> · ${exclusiveSkill.description}（冷却 ${exclusiveSkill.cooldownMs / 1_000} 秒）</p></div>
       <div class="character-traits"><span class="trait-good">优势 ${selected.advantage}</span><span class="trait-cost">代价 ${selected.tradeoff}</span></div>
       <div class="character-stats" aria-label="${selected.name}精确数值"><span>生命 <b>${selected.maxHealth}</b></span><span>伤害 <b>${selected.damage}</b></span><span>移速 <b>${selected.moveSpeed}</b></span><span>射速 <b>${selected.fireCooldownMs}ms</b></span><span>弹速 <b>${selected.projectileSpeed}</b></span></div>`;
+    this.renderLobbyCharacterPreview(selected);
+  }
+
+  private renderLobbyCharacterPreview(character: (typeof CHARACTER_CATALOG)[number]): void {
+    const preview = this.find("#lobby-character-preview");
+    const intro = this.find("#lobby-screen .lobby-intro");
+    const introCopy = this.find("#lobby-intro-copy");
+    if (!this.hasSelectedCharacter) {
+      intro.classList.remove("has-character", "is-transitioning");
+      preview.innerHTML = "";
+      preview.setAttribute("aria-hidden", "true");
+      this.lastLobbyPreviewCharacterId = null;
+      return;
+    }
+    if (this.lastLobbyPreviewCharacterId === character.id) return;
+    this.lastLobbyPreviewCharacterId = character.id;
+    preview.innerHTML = `<div class="preview-energy-field" style="--preview-color:${character.color}"></div><div class="preview-impact" style="--preview-color:${character.color}"></div><img src="${CHARACTER_SELECTION_ASSETS[character.id]}" data-character-fallback="${CHARACTER_ASSETS[character.id].fallback}" alt="${character.name}正面像素立绘" /><div class="preview-character-title"><strong>${character.name}</strong><span>${character.role}</span></div>`;
+    const image = preview.querySelector<HTMLImageElement>("[data-character-fallback]");
+    image?.addEventListener("error", () => {
+      const fallback = image.dataset.characterFallback;
+      if (fallback && image.src !== new URL(fallback, window.location.href).href) image.src = fallback;
+      else image.hidden = true;
+    }, { once: true });
+    preview.setAttribute("aria-hidden", "false");
+    intro.classList.remove("has-character", "is-transitioning");
+    introCopy.classList.remove("is-fading-out");
+    void intro.offsetWidth;
+    intro.classList.add("has-character", "is-transitioning");
+    introCopy.classList.add("is-fading-out");
   }
 
   private renderRoster(): void {
@@ -819,9 +852,10 @@ function mobileTemplate(): string {
 
       <section id="lobby-screen" class="lobby-screen">
         <div class="lobby-intro">
-          <span class="eyebrow">LAN ARENA · 6 PLAYERS</span>
+          <div id="lobby-character-preview" class="lobby-character-preview" aria-hidden="true"></div>
+          <div id="lobby-intro-copy" class="lobby-intro-copy"><span class="eyebrow">LAN ARENA · 6 PLAYERS</span>
           <h1>能量乱斗</h1>
-          <p id="lobby-status">正在连接房间</p>
+          <p id="lobby-status">正在连接房间</p></div>
         </div>
         <div class="lobby-workspace">
           <section class="character-panel">
