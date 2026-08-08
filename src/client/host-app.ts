@@ -1,4 +1,5 @@
-import type { AdminStat, GamePhase, GameSnapshot, RoomSnapshot, ServerInfo } from "../shared/protocol";
+import type { MatchMode } from "../shared/mode-catalog";
+import type { AdminStat, GamePhase, GameSnapshot, RoomSnapshot, ServerInfo, TeamScoreSnapshot } from "../shared/protocol";
 import { GameNetworkClient } from "./network";
 
 export class HostApp {
@@ -7,6 +8,7 @@ export class HostApp {
   private info: ServerInfo | null = null;
   private message = "";
   private editingPlayerId: string | null = null;
+  private selectedSwapPlayerId: string | null = null;
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = hostTemplate();
@@ -19,6 +21,28 @@ export class HostApp {
     this.find("#host-start").addEventListener("click", () => void this.command("start"));
     this.find("#host-end").addEventListener("click", () => void this.command("end"));
     this.find("#host-reset").addEventListener("click", () => void this.command("reset"));
+    this.find<HTMLSelectElement>("#host-mode").addEventListener("change", (event) => {
+      void this.admin({ type: "setMode", mode: (event.target as HTMLSelectElement).value as MatchMode });
+    });
+    this.find("#host-team-controls").addEventListener("click", (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-team-action]");
+      if (!button) return;
+      if (button.dataset.teamAction === "forceWinner" && button.dataset.teamId) {
+        void this.admin({ type: "forceTeamWinner", teamId: button.dataset.teamId as "red" | "blue" | "gold" });
+        return;
+      }
+      const playerId = button.dataset.playerId;
+      if (!playerId) return;
+      if (!this.selectedSwapPlayerId) {
+        this.selectedSwapPlayerId = playerId;
+        this.message = "已选择第一名玩家，请选择另一队玩家";
+        this.render();
+        return;
+      }
+      const firstPlayerId = this.selectedSwapPlayerId;
+      this.selectedSwapPlayerId = null;
+      void this.admin({ type: "swapTeams", firstPlayerId, secondPlayerId: playerId });
+    });
     this.find("#host-roster").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-admin-action]");
       if (!button) return;
@@ -108,6 +132,16 @@ export class HostApp {
     const phase = presentation.phase;
     const adminEnabled = canUseHostAdmin(phase, this.token);
     const pendingWinnerId = room?.pendingWinnerId ?? null;
+    const lobbyRulesEnabled = canEditLobbyRules(phase, this.token);
+    const modeSelect = this.find<HTMLSelectElement>("#host-mode");
+    modeSelect.value = presentation.matchMode;
+    modeSelect.disabled = !lobbyRulesEnabled;
+    this.find("#host-team-controls").innerHTML = presentation.matchMode === "solo"
+      ? ""
+      : presentation.teamScores.map((team) => {
+          const members = players.filter((player) => player.teamId === team.teamId);
+          return `<div class="host-team-card"><b>${teamName(team.teamId)} ${team.score}/${team.targetScore}</b><div>${members.map((player) => `<button type="button" data-team-action="swap" data-player-id="${player.id}" ${lobbyRulesEnabled ? "" : "disabled"}>${escapeHtml(player.nickname)}</button>`).join("")}</div><button type="button" data-team-action="forceWinner" data-team-id="${team.teamId}" ${adminEnabled ? "" : "disabled"}>强制本队获胜</button></div>`;
+        }).join("");
     this.find("#host-roster").innerHTML = Array.from({ length: 6 }, (_, index) => players[index])
       .map((player, index) =>
         player
@@ -137,18 +171,28 @@ export class HostApp {
 export function resolveHostPresentation(
   room: RoomSnapshot | null,
   game: GameSnapshot | null,
-): { phase: GamePhase; players: HostPlayer[] } {
+): { phase: GamePhase; players: HostPlayer[]; matchMode: MatchMode; teamScores: TeamScoreSnapshot[] } {
   if (game) {
     return {
       phase: game.phase,
       players: game.players,
+      matchMode: game.matchMode ?? room?.matchMode ?? "solo",
+      teamScores: game.teamScores ?? room?.teamScores ?? [],
     };
   }
-  return { phase: room?.phase ?? "lobby", players: room?.players ?? [] };
+  return { phase: room?.phase ?? "lobby", players: room?.players ?? [], matchMode: room?.matchMode ?? "solo", teamScores: room?.teamScores ?? [] };
 }
 
 export function canUseHostAdmin(phase: GamePhase, token: string): boolean {
   return token.length > 0 && phase !== "finished";
+}
+
+export function canEditLobbyRules(phase: GamePhase, token: string): boolean {
+  return token.length > 0 && phase === "lobby";
+}
+
+function teamName(teamId: TeamScoreSnapshot["teamId"]): string {
+  return teamId === "red" ? "红队" : teamId === "blue" ? "蓝队" : "金队";
 }
 
 type HostPlayer = RoomSnapshot["players"][number] & Partial<Pick<GameSnapshot["players"][number], "health" | "maxHealth" | "damage" | "moveSpeed" | "fireCooldownMs">>;
@@ -161,6 +205,7 @@ function hostTemplate(): string {
     </header>
     <section class="host-status-band">
       <div><span>房间状态</span><strong id="host-phase">大厅</strong></div>
+      <label class="host-mode-control">模式<select id="host-mode"><option value="solo">个人战</option><option value="team3v3">3v3</option><option value="team2v2v2">2v2v2</option></select></label>
       <div><span>真人玩家</span><strong id="host-count">0 / 6</strong></div>
       <div class="host-actions">
         <button id="host-start" class="primary-button" type="button" disabled>开始对局</button>
@@ -177,13 +222,14 @@ function hostTemplate(): string {
       <div class="host-roster-panel">
         <div class="section-heading"><span>六席状态</span><small id="host-message"></small></div>
         <div id="host-roster" class="host-roster"></div>
+        <div id="host-team-controls" class="host-team-controls"></div>
       </div>
     </section>
     <dialog id="stat-editor" class="stat-editor">
       <form id="stat-form" method="dialog">
         <span class="eyebrow">HOST OVERRIDE</span>
         <h2>修改 <b id="stat-player-name"></b></h2>
-        <label>属性<select id="stat-field"><option value="health">当前生命</option><option value="maxHealth">最大生命</option><option value="damage">伤害</option><option value="score">积分</option><option value="moveSpeed">移动速度</option><option value="fireCooldownMs">射击间隔（毫秒）</option><option value="projectileSpeed">子弹飞行速度</option><option value="kills">击杀数</option><option value="energyCollected">能量收集数</option></select></label>
+        <label>属性<select id="stat-field"><option value="health">当前生命</option><option value="maxHealth">最大生命</option><option value="damage">伤害</option><option value="score">积分</option><option value="moveSpeed">移动速度</option><option value="fireCooldownMs">射击间隔（毫秒）</option><option value="projectileSpeed">子弹飞行速度</option><option value="kills">击杀数</option><option value="energyCollected">能量收集数</option><option value="exclusiveSkillCooldownMs">专属技能冷却（毫秒）</option></select></label>
         <label>新数值<input id="stat-value" type="number" inputmode="numeric" required /></label>
         <p>提交后服务器会立即应用，并同步所有客户端。</p>
         <div><button id="stat-cancel" type="button">取消</button><button class="primary-button" type="submit">应用修改</button></div>

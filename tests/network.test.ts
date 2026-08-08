@@ -54,6 +54,41 @@ async function createHarness(): Promise<{ client: TestClient; network: GameNetwo
 }
 
 describe("game network", () => {
+  it("applies and broadcasts host lobby mode, team, cooldown, and team-winner commands", async () => {
+    const { client, room } = await createHarness();
+    const first = await emitAck(client, "join", { nickname: "红方", characterId: "blaze" });
+    const modeState = new Promise<Parameters<ServerToClientEvents["roomState"]>[0]>((resolve) => client.once("roomState", resolve));
+    expect(await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "setMode", mode: "team3v3" },
+    })).toEqual({ ok: true });
+    await expect(modeState).resolves.toMatchObject({ matchMode: "team3v3" });
+
+    const second = room.joinHuman("manual-blue", { nickname: "蓝方", characterId: "medic" });
+    const before = new Map(room.snapshot().players.map((player) => [player.id, player.teamId]));
+    expect(await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "swapTeams", firstPlayerId: first.data!.playerId, secondPlayerId: second.data!.playerId },
+    })).toEqual({ ok: true });
+    expect(room.snapshot().players.find((player) => player.id === first.data!.playerId)?.teamId).toBe(before.get(second.data!.playerId));
+
+    expect(await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "setStat", playerId: first.data!.playerId, stat: "exclusiveSkillCooldownMs", value: 5_000 },
+    })).toEqual({ ok: true });
+    expect(room.snapshot().players.find((player) => player.id === first.data!.playerId)?.exclusiveSkillCooldownMs).toBe(5_000);
+
+    const redIds = room.snapshot().players.filter((player) => player.teamId === "red").map((player) => player.id);
+    expect(await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "forceTeamWinner", teamId: "red" },
+    })).toEqual({ ok: true });
+    room.setReady("manual-blue", true);
+    await emitAck(client, "setReady", true);
+    expect(await emitAck(client, "hostCommand", { token: "test-host-token", command: "start" })).toEqual({ ok: true });
+    expect(room.gameSnapshot()).toMatchObject({ phase: "finished", winnerIds: expect.arrayContaining(redIds) });
+  });
+
   it("unlocks alternative characters between matches until the player is ready", () => {
     const waitingSeat = { characterId: "blaze" as const, ready: false };
     const readySeat = { characterId: "blaze" as const, ready: true };

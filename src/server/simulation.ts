@@ -3,6 +3,7 @@ import {
   ARENA_WIDTH,
   COMBAT_REGEN_DELAY_MS,
   COMBAT_REGEN_PER_SECOND,
+  DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS,
   ENERGY_RADIUS,
   ENERGY_RESPAWN_MS,
   ENERGY_SCORE,
@@ -154,6 +155,8 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
       regenAccumulatorMs: 0,
       killStreak: 0,
       teamId: seed.teamId ?? null,
+      exclusiveSkillCooldownMs: seed.stats?.exclusiveSkillCooldownMs ?? DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS,
+      exclusiveSkillReadyAt: now,
     });
   });
 
@@ -811,5 +814,13 @@ function finishMatch(world: GameWorld, winnerIds: string[]): void {
 export function forceWorldWinner(world: GameWorld, playerId: string): boolean {
   if (world.phase === "finished" || !world.players.has(playerId)) return false;
   finishMatch(world, [playerId]);
+  return true;
+}
+
+export function forceWorldTeamWinner(world: GameWorld, teamId: TeamId): boolean {
+  if (world.phase === "finished") return false;
+  const winnerIds = playerIdsForTeam(world, teamId);
+  if (winnerIds.length === 0) return false;
+  finishMatch(world, winnerIds);
   return true;
 }

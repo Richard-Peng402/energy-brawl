@@ -33,11 +33,26 @@ describe("secure host admin authorization", () => {
       { type: "setStat", playerId: "player-1", stat: "projectileSpeed", value: 1_500 },
       { type: "setStat", playerId: "player-1", stat: "kills", value: 30 },
       { type: "setStat", playerId: "player-1", stat: "energyCollected", value: 99 },
+      { type: "setStat", playerId: "player-1", stat: "exclusiveSkillCooldownMs", value: 10_000 },
     ];
 
     for (const command of commands) {
       expect(service.authorize({ remoteAddress: "::1", token: "secret", command }, "playing", true)).toEqual({ ok: true });
     }
+  });
+
+  it("authorizes lobby mode and team commands without requiring a player target", () => {
+    const service = new HostAdminService("secret");
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setMode", mode: "team3v3" } }, "lobby", false)).toEqual({ ok: true });
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "swapTeams", firstPlayerId: "p1", secondPlayerId: "p2" } }, "lobby", false)).toEqual({ ok: true });
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setMode", mode: "solo" } }, "playing", false).ok).toBe(false);
+  });
+
+  it("validates exclusive cooldown and forced team winners", () => {
+    const service = new HostAdminService("secret");
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setStat", playerId: "p1", stat: "exclusiveSkillCooldownMs", value: 999 } }, "lobby", true).ok).toBe(false);
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setStat", playerId: "p1", stat: "exclusiveSkillCooldownMs", value: 60_001 } }, "lobby", true).ok).toBe(false);
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "forceTeamWinner", teamId: "red" } }, "lobby", false)).toEqual({ ok: true });
   });
 
   it("records applied and rejected results while retaining only the latest two hundred logs", () => {

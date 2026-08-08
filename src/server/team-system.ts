@@ -19,10 +19,32 @@ export function assignBalancedTeams<T extends TeamAssignableSeat>(seats: T[], mo
     return seats;
   }
 
+  const teamSize = getModeDefinition(mode).teamSize;
+  const counts = new Map<TeamId, number>(teamIds.map((teamId) => [teamId, 0]));
+  const usedCharacters = new Map<TeamId, Set<CharacterId>>(teamIds.map((teamId) => [teamId, new Set()]));
   const ordered = [...seats.filter((seat) => !seat.isBot), ...seats.filter((seat) => seat.isBot)];
-  ordered.forEach((seat, index) => {
-    seat.teamId = teamIds[index % teamIds.length] ?? null;
-  });
+
+  for (const seat of ordered) {
+    if (seat.teamId === null || !teamIds.includes(seat.teamId) || (counts.get(seat.teamId) ?? 0) >= teamSize) {
+      seat.teamId = null;
+      continue;
+    }
+    counts.set(seat.teamId, (counts.get(seat.teamId) ?? 0) + 1);
+    usedCharacters.get(seat.teamId)?.add(seat.characterId);
+  }
+
+  for (const seat of ordered) {
+    if (seat.teamId !== null) continue;
+    const available = teamIds.filter((teamId) => (counts.get(teamId) ?? 0) < teamSize);
+    const roleSafe = available.filter((teamId) => !usedCharacters.get(teamId)?.has(seat.characterId));
+    const candidates = roleSafe.length > 0 ? roleSafe : available;
+    const teamId = candidates.sort((left, right) => (counts.get(left) ?? 0) - (counts.get(right) ?? 0) || teamIds.indexOf(left) - teamIds.indexOf(right))[0] ?? null;
+    seat.teamId = teamId;
+    if (teamId) {
+      counts.set(teamId, (counts.get(teamId) ?? 0) + 1);
+      usedCharacters.get(teamId)?.add(seat.characterId);
+    }
+  }
   return seats;
 }
 

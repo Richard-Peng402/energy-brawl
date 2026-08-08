@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS,
   LOBBY_RETURN_DELAY_MS,
   MAX_PLAYERS,
   RECONNECT_WINDOW_MS,
@@ -24,6 +25,7 @@ import {
   applyPlayerInput,
   applyWorldSkillAction,
   createGameWorld,
+  forceWorldTeamWinner,
   forceWorldWinner,
   refreshWorldScoreState,
   stepWorld,
@@ -57,12 +59,14 @@ export class GameRoom {
   private autoResetAt: number | null = null;
   private nextPlayerNumber = 1;
   private pendingWinnerId: string | null = null;
+  private pendingWinnerTeamId: TeamId | null = null;
   private matchMode: MatchMode = "solo";
 
   setMatchMode(mode: MatchMode): Ack {
     if (this.world) return { ok: false, error: "对局开始后无法切换模式" };
     if (!isMatchMode(mode)) return { ok: false, error: "模式无效" };
     this.matchMode = mode;
+    this.pendingWinnerTeamId = null;
     assignBalancedTeams([...this.seats.values()], mode);
     return { ok: true };
   }
@@ -92,8 +96,23 @@ export class GameRoom {
   }
 
   applyHostAdminCommand(command: HostAdminCommand): Ack {
-    if (!this.hasPlayer(command.playerId)) return { ok: false, error: "目标玩家不存在" };
     if (this.world?.phase === "finished") return { ok: false, error: "当前阶段不可执行" };
+
+    if (command.type === "setMode") return this.setMatchMode(command.mode);
+    if (command.type === "swapTeams") return this.swapPlayerTeams(command.firstPlayerId, command.secondPlayerId);
+    if (command.type === "forceTeamWinner") {
+      if (this.matchMode === "solo") return { ok: false, error: "个人战没有团队胜者" };
+      if (this.world) {
+        if (!forceWorldTeamWinner(this.world, command.teamId)) return { ok: false, error: "强制团队获胜失败" };
+        this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
+      } else {
+        if (![...this.seats.values()].some((seat) => seat.teamId === command.teamId)) return { ok: false, error: "目标队伍不存在" };
+        this.pendingWinnerTeamId = command.teamId;
+        this.pendingWinnerId = null;
+      }
+      return { ok: true };
+    }
+    if (!this.hasPlayer(command.playerId)) return { ok: false, error: "目标玩家不存在" };
 
     if (command.type === "setStat") {
       return this.world
@@ -110,6 +129,7 @@ export class GameRoom {
       return { ok: true };
     }
     this.pendingWinnerId = command.playerId;
+    this.pendingWinnerTeamId = null;
     return { ok: true };
   }
 
@@ -235,8 +255,12 @@ export class GameRoom {
       player.ready = seat.ready || seat.isBot;
     }
     const pendingWinnerId = this.pendingWinnerId;
+    const pendingWinnerTeamId = this.pendingWinnerTeamId;
     this.pendingWinnerId = null;
+    this.pendingWinnerTeamId = null;
     if (pendingWinnerId && forceWorldWinner(this.world, pendingWinnerId)) {
+      this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
+    } else if (pendingWinnerTeamId && forceWorldTeamWinner(this.world, pendingWinnerTeamId)) {
       this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
     }
     return { ok: true };
@@ -385,12 +409,14 @@ export class GameRoom {
             projectileSpeed: seat.stats?.projectileSpeed ?? character.projectileSpeed,
             kills: seat.stats?.kills ?? 0,
             energyCollected: seat.stats?.energyCollected ?? 0,
+            exclusiveSkillCooldownMs: seat.stats?.exclusiveSkillCooldownMs ?? DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS,
           };
         });
     return {
       phase: this.world?.phase ?? "lobby",
       canStart: this.canStart(),
       pendingWinnerId: this.pendingWinnerId,
+      pendingWinnerTeamId: this.pendingWinnerTeamId,
       matchMode: this.matchMode,
       teamScores: this.world
         ? worldToSnapshot(this.world).teamScores
@@ -399,7 +425,7 @@ export class GameRoom {
             score: 0,
             targetScore: getModeDefinition(this.matchMode).targetScore,
           })),
-      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, teamId, health, maxHealth, damage, score, moveSpeed, fireCooldownMs, projectileSpeed, kills, energyCollected }) => ({
+      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, teamId, health, maxHealth, damage, score, moveSpeed, fireCooldownMs, projectileSpeed, kills, energyCollected, exclusiveSkillCooldownMs }) => ({
         id,
         nickname,
         characterId,
@@ -416,6 +442,7 @@ export class GameRoom {
         projectileSpeed,
         kills,
         energyCollected,
+        exclusiveSkillCooldownMs,
         teamId: teamId ?? null,
       })),
     };
@@ -492,6 +519,7 @@ export class GameRoom {
       projectileSpeed: seat.stats?.projectileSpeed ?? character.projectileSpeed,
       kills: seat.stats?.kills ?? 0,
       energyCollected: seat.stats?.energyCollected ?? 0,
+      exclusiveSkillCooldownMs: seat.stats?.exclusiveSkillCooldownMs ?? DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS,
     };
     if (stat === "health" && value > stats.maxHealth) stats.maxHealth = value;
     stats[stat] = value;
@@ -523,6 +551,7 @@ export class GameRoom {
       case "projectileSpeed": player.projectileSpeed = value; break;
       case "kills": player.kills = value; break;
       case "energyCollected": player.energyCollected = value; break;
+      case "exclusiveSkillCooldownMs": player.exclusiveSkillCooldownMs = value; break;
     }
     if (player.health < previousHealth) {
       player.lastCombatAt = this.world.now;

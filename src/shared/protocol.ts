@@ -64,7 +64,7 @@ export interface PlayerSnapshot extends Vec2 {
 export type AdminStat =
   | "health" | "maxHealth" | "damage" | "score"
   | "moveSpeed" | "fireCooldownMs" | "projectileSpeed"
-  | "kills" | "energyCollected";
+  | "kills" | "energyCollected" | "exclusiveSkillCooldownMs";
 
 export type AdminStats = Pick<PlayerSnapshot, AdminStat>;
 
@@ -97,6 +97,7 @@ export interface RoomSnapshot {
   phase: GamePhase;
   canStart: boolean;
   pendingWinnerId: string | null;
+  pendingWinnerTeamId?: TeamId | null;
   matchMode?: MatchMode;
   teamScores?: TeamScoreSnapshot[];
   players: Array<
@@ -174,7 +175,10 @@ export type HostCommand = "start" | "end" | "reset";
 export type HostAdminCommand =
   | { type: "setStat"; playerId: string; stat: AdminStat; value: number }
   | { type: "kick"; playerId: string }
-  | { type: "forceWinner"; playerId: string };
+  | { type: "forceWinner"; playerId: string }
+  | { type: "setMode"; mode: MatchMode }
+  | { type: "swapTeams"; firstPlayerId: string; secondPlayerId: string }
+  | { type: "forceTeamWinner"; teamId: TeamId };
 
 export interface ClientToServerEvents {
   join: (payload: JoinPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;

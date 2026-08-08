@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
+import { MAX_EXCLUSIVE_SKILL_COOLDOWN_MS, MIN_EXCLUSIVE_SKILL_COOLDOWN_MS } from "../shared/constants";
+import { isMatchMode, TEAM_IDS } from "../shared/mode-catalog";
 import type { Ack, AdminStat, GamePhase, HostAdminCommand } from "../shared/protocol";
 
 export interface HostAdminRequest {
@@ -26,6 +28,7 @@ const STAT_RANGES: Readonly<Record<AdminStat, readonly [number, number]>> = {
   projectileSpeed: [100, 2_000],
   kills: [0, 99],
   energyCollected: [0, 999],
+  exclusiveSkillCooldownMs: [MIN_EXCLUSIVE_SKILL_COOLDOWN_MS, MAX_EXCLUSIVE_SKILL_COOLDOWN_MS],
 };
 
 export class HostAdminService {
@@ -60,6 +63,18 @@ export class HostAdminService {
     if (!safeTokenEqual(request.token, this.token)) return "房主权限无效";
     if (phase === "finished") return "当前阶段不可执行";
     if (!request.command || typeof request.command !== "object") return "命令格式无效";
+    if (request.command.type === "setMode") {
+      if (phase !== "lobby") return "只能在大厅修改模式";
+      return isMatchMode(request.command.mode) ? null : "模式无效";
+    }
+    if (request.command.type === "swapTeams") {
+      if (phase !== "lobby") return "只能在大厅调整队伍";
+      if (typeof request.command.firstPlayerId !== "string" || typeof request.command.secondPlayerId !== "string" || request.command.firstPlayerId === request.command.secondPlayerId) return "队伍交换目标无效";
+      return null;
+    }
+    if (request.command.type === "forceTeamWinner") {
+      return TEAM_IDS.includes(request.command.teamId) ? null : "目标队伍无效";
+    }
     if (typeof request.command.playerId !== "string" || !playerExists) return "目标玩家不存在";
     if (request.command.type === "setStat") {
       if (!(request.command.stat in STAT_RANGES) || !Number.isFinite(request.command.value)) return "数值命令无效";

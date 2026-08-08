@@ -18,6 +18,7 @@ import type {
   UseSkillPayload,
 } from "../shared/protocol";
 import { isCharacterId } from "../shared/character-catalog";
+import { isMatchMode, TEAM_IDS } from "../shared/mode-catalog";
 import { GameRoom } from "./room";
 import { FixedStepAccumulator } from "./fixed-loop";
 import { RollingMetric } from "./performance";
@@ -157,7 +158,8 @@ export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostTo
         return;
       }
       const request = { remoteAddress: socket.handshake.address, token: payload.token, command: payload.command };
-      const authorization = hostAdmin.authorize(request, room.snapshot().phase, room.hasPlayer(payload.command.playerId));
+      const playerExists = "playerId" in payload.command && room.hasPlayer(payload.command.playerId);
+      const authorization = hostAdmin.authorize(request, room.snapshot().phase, playerExists);
       const result = authorization.ok ? room.applyHostAdminCommand(payload.command) : authorization;
       if (authorization.ok) hostAdmin.recordResult(payload.command, result);
       sendAcknowledgement(acknowledge, result);
@@ -264,11 +266,14 @@ function isPlayerInput(input: unknown): input is PlayerInput {
 
 function isHostAdminCommand(command: unknown): command is HostAdminCommand {
   if (!command || typeof command !== "object") return false;
-  const candidate = command as Partial<HostAdminCommand> & { stat?: unknown; value?: unknown };
+  const candidate = command as Record<string, unknown>;
+  if (candidate.type === "setMode") return isMatchMode(candidate.mode);
+  if (candidate.type === "swapTeams") return typeof candidate.firstPlayerId === "string" && typeof candidate.secondPlayerId === "string";
+  if (candidate.type === "forceTeamWinner") return TEAM_IDS.includes(candidate.teamId as never);
   if (typeof candidate.playerId !== "string") return false;
   if (candidate.type === "kick" || candidate.type === "forceWinner") return true;
   return candidate.type === "setStat" &&
-    ["health", "maxHealth", "damage", "score", "moveSpeed", "fireCooldownMs", "projectileSpeed", "kills", "energyCollected"].includes(String(candidate.stat)) &&
+    ["health", "maxHealth", "damage", "score", "moveSpeed", "fireCooldownMs", "projectileSpeed", "kills", "energyCollected", "exclusiveSkillCooldownMs"].includes(String(candidate.stat)) &&
     Number.isFinite(candidate.value);
 }
 

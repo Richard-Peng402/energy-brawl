@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GameSnapshot, RoomSnapshot } from "../src/shared/protocol";
-import { canUseHostAdmin, resolveHostPresentation } from "../src/client/host-app";
+import { canEditLobbyRules, canUseHostAdmin, resolveHostPresentation } from "../src/client/host-app";
 
 describe("host presentation state", () => {
   it("enables host admin tools in the lobby but not after a match finishes", () => {
@@ -65,5 +65,19 @@ describe("host presentation state", () => {
 
     expect(presentation.phase).toBe("finished");
     expect(presentation.players[0]?.score).toBe(15);
+  });
+
+  it("exposes confirmed mode and team scores while locking lobby rules after start", () => {
+    const room: RoomSnapshot = {
+      phase: "lobby", canStart: false, pendingWinnerId: null, matchMode: "team3v3",
+      teamScores: [{ teamId: "red", score: 0, targetScore: 60 }], players: [],
+    };
+    expect(resolveHostPresentation(room, null)).toMatchObject({
+      matchMode: "team3v3",
+      teamScores: [{ teamId: "red", score: 0, targetScore: 60 }],
+    });
+    expect(canEditLobbyRules("lobby", "secret")).toBe(true);
+    expect(canEditLobbyRules("playing", "secret")).toBe(false);
+    expect(canEditLobbyRules("lobby", "")).toBe(false);
   });
 });
