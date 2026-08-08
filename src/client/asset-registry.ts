@@ -4,15 +4,25 @@ import type { CharacterId } from "../shared/character-catalog";
 
 export const APPROVED_ASSET_SOURCES = [
   "local://user-provided-character-art",
+  "local://user-provided-weapon-art",
+  "local://user-provided-killstreak-audio",
+  "local://energy-brawl-project-assets",
   "https://opengameart.org/content/top-down-sci-fi-shooter-characters-20",
   "https://opengameart.org/content/top-down-sci-fi-shooter-pack",
   "https://opengameart.org/content/top-down-sci-fi-shooter-some-random-guys-terrain-texture",
   "https://kenney.nl/assets/top-down-shooter",
+  "https://kenney.nl/assets/sci-fi-rts",
+  "https://kenney.nl/assets/particle-pack",
 ] as const;
 
 export const USER_PROVIDED_CHARACTER_ASSET_SOURCE = "local://user-provided-character-art";
+export const USER_PROVIDED_WEAPON_ASSET_SOURCE = "local://user-provided-weapon-art";
 
 export type CharacterAssetState = "portrait" | "idle" | "move" | "attack" | "hit" | "death" | "fallback";
+export const CHARACTER_DIRECTIONS = [
+  "right", "down-right", "down", "down-left", "left", "up-left", "up", "up-right",
+] as const;
+export type CharacterDirection = typeof CHARACTER_DIRECTIONS[number];
 export type AssetManifestEntry = {
   source: string;
   author: string;
@@ -41,11 +51,29 @@ export const CHARACTER_ASSETS: Record<CharacterId, Record<CharacterAssetState, s
   runner: character("runner"),
 };
 
+const directionalCharacter = (id: CharacterId): Record<CharacterDirection, string> => Object.fromEntries(
+  CHARACTER_DIRECTIONS.map((direction) => [direction, path(`characters/${id}/directions/${direction}.png`)]),
+) as Record<CharacterDirection, string>;
+
+export const CHARACTER_DIRECTION_ASSETS: Record<CharacterId, Record<CharacterDirection, string>> = {
+  blaze: directionalCharacter("blaze"),
+  medic: directionalCharacter("medic"),
+  fortress: directionalCharacter("fortress"),
+  arc: directionalCharacter("arc"),
+  phase: directionalCharacter("phase"),
+  runner: directionalCharacter("runner"),
+};
+
 export const ARENA_ASSETS = {
   floor: path("arena/floor.png"),
   wall: path("arena/wall.png"),
   decal: path("arena/decal.png"),
   light: path("arena/light.png"),
+  sigil: path("arena/sigil.svg"),
+} as const;
+
+export const PICKUP_ASSETS = {
+  energyCore: path("pickups/energy-core.svg"),
 } as const;
 
 export const SKILL_ICON_ASSETS = {
@@ -53,6 +81,22 @@ export const SKILL_ICON_ASSETS = {
   shield: path("skills/shield.svg"),
   spread: path("skills/spread.svg"),
   heal: path("skills/heal.svg"),
+} as const;
+
+export const PROJECTILE_FX_ASSETS = {
+  core: path("fx/projectiles/projectile-core.png"),
+  trace: path("fx/projectiles/projectile-trace.png"),
+  muzzle: path("fx/projectiles/muzzle-flare.png"),
+  impact: path("fx/projectiles/impact-burst.png"),
+  spark: path("fx/projectiles/impact-spark.png"),
+  smoke: path("fx/projectiles/impact-smoke.png"),
+} as const;
+
+export const WEAPON_ASSETS = {
+  "cyan-heavy": path("weapons/cyan-heavy.png"),
+  "violet-rifle": path("weapons/violet-rifle.png"),
+  "white-tech": path("weapons/white-tech.png"),
+  "ember-cannon": path("weapons/ember-cannon.png"),
 } as const;
 
 export const ASSET_MANIFEST = manifest.entries as AssetManifestEntry[];

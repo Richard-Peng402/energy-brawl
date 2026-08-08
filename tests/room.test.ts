@@ -17,10 +17,16 @@ describe("game room", () => {
 
     expect(apply({ type: "setStat", playerId: first.data!.playerId, stat: "health", value: 180 })).toEqual({ ok: true });
     expect(apply({ type: "setStat", playerId: first.data!.playerId, stat: "damage", value: 80 })).toEqual({ ok: true });
+    expect(apply({ type: "setStat", playerId: first.data!.playerId, stat: "projectileSpeed", value: 1_200 })).toEqual({ ok: true });
+    expect(apply({ type: "setStat", playerId: first.data!.playerId, stat: "kills", value: 8 })).toEqual({ ok: true });
+    expect(apply({ type: "setStat", playerId: first.data!.playerId, stat: "energyCollected", value: 12 })).toEqual({ ok: true });
     expect(room.snapshot().players.find((player) => player.id === first.data!.playerId)).toMatchObject({
       health: 180,
       maxHealth: 180,
       damage: 80,
+      projectileSpeed: 1_200,
+      kills: 8,
+      energyCollected: 12,
     });
 
     expect(apply({ type: "kick", playerId: first.data!.playerId })).toEqual({ ok: true });
@@ -64,6 +70,9 @@ describe("game room", () => {
           score: 0,
           moveSpeed: fortress.moveSpeed,
           fireCooldownMs: fortress.fireCooldownMs,
+          projectileSpeed: fortress.projectileSpeed,
+          kills: 0,
+          energyCollected: 0,
         },
       ],
     });

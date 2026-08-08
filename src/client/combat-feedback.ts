@@ -1,5 +1,5 @@
 import type { SkillType } from "../shared/skill-catalog";
-import type { Vec2 } from "../shared/protocol";
+import type { KillFeedEvent, Vec2 } from "../shared/protocol";
 import type { CombatEffectKind } from "./effect-pool";
 
 export const PROJECTILE_VIEW_CAPACITY = 256;
@@ -26,8 +26,19 @@ export interface TrailMemory extends Vec2 {
 
 const TRAIL_DISTANCE = 14;
 
-export function trailIntervalMs(lowPerformance: boolean): number {
-  return lowPerformance ? 67 : 34;
+export function trailIntervalMs(_lowPerformance: boolean): number {
+  return 34;
+}
+
+export function shouldShowProjectileTrace(_lowPerformance: boolean): boolean {
+  return true;
+}
+
+export function shouldRenderProjectileImageEffect(
+  kind: "muzzle" | "trail" | "impact" | "spark" | "smoke",
+  lowPerformance: boolean,
+): boolean {
+  return !lowPerformance || (kind !== "spark" && kind !== "smoke");
 }
 
 export function projectileAngle(velocity: Vec2): number {
@@ -49,4 +60,20 @@ export function didPickUpLocalSkill(
   next: SkillType | null,
 ): boolean {
   return previous === null && next !== null;
+}
+
+export function selectLatestKillFeedback(
+  feed: readonly KillFeedEvent[],
+  localPlayerId: string | null,
+  previousEventId: string,
+  serverTime: number,
+): { event: KillFeedEvent | null; streakToPlay: number | null } {
+  const event = feed.at(-1) ?? null;
+  if (!event) return { event: null, streakToPlay: null };
+  const age = serverTime - event.at;
+  const isNewRecentLocalKill = event.id !== previousEventId
+    && event.killerId === localPlayerId
+    && age >= 0
+    && age <= 2_000;
+  return { event, streakToPlay: isNewRecentLocalKill ? event.streak : null };
 }

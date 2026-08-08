@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateAimGuide } from "../src/client/aim-guide";
+import { AIM_GUIDE_LINE_WIDTH, calculateAimGuide } from "../src/client/aim-guide";
 
 describe("aim guide", () => {
+  it("uses a precise straight indicator instead of a broad aiming corridor", () => {
+    expect(AIM_GUIDE_LINE_WIDTH).toBeLessThanOrEqual(8);
+    expect(AIM_GUIDE_LINE_WIDTH).toBeGreaterThanOrEqual(5);
+  });
   it("reaches maximum range without a wall", () => {
     const guide = calculateAimGuide({ x: 100, y: 100 }, { x: 1, y: 0 }, 500, []);
     expect(guide).toMatchObject({ end: { x: 600, y: 100 }, length: 500, visible: true });

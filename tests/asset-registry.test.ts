@@ -5,7 +5,12 @@ import {
   ARENA_ASSETS,
   ASSET_MANIFEST,
   CHARACTER_ASSETS,
+  CHARACTER_DIRECTION_ASSETS,
+  CHARACTER_DIRECTIONS,
   INITIAL_LOBBY_COMPRESSED_BYTES,
+  PICKUP_ASSETS,
+  PROJECTILE_FX_ASSETS,
+  WEAPON_ASSETS,
   SKILL_ICON_ASSETS,
   validateAssetManifest,
 } from "../src/client/asset-registry";
@@ -23,11 +28,21 @@ describe("v3 asset registry", () => {
       expect(assets.idle).toMatch(/\/combat\.png$/);
       expect(assets.move).toBe(assets.idle);
       expect(assets.attack).toBe(assets.idle);
+      expect(Object.keys(CHARACTER_DIRECTION_ASSETS[characterId])).toEqual(CHARACTER_DIRECTIONS);
+      for (const direction of CHARACTER_DIRECTIONS) {
+        expect(CHARACTER_DIRECTION_ASSETS[characterId][direction]).toBe(
+          `/assets/v3/characters/${characterId}/directions/${direction}.png`,
+        );
+      }
     }
 
-    expect(Object.keys(ARENA_ASSETS)).toEqual(["floor", "wall", "decal", "light"]);
+    expect(Object.keys(ARENA_ASSETS)).toEqual(["floor", "wall", "decal", "light", "sigil"]);
+    expect(PICKUP_ASSETS.energyCore).toBe("/assets/v3/pickups/energy-core.svg");
     expect(Object.keys(SKILL_ICON_ASSETS)).toEqual(["dash", "shield", "spread", "heal"]);
-    for (const path of [...Object.values(ARENA_ASSETS), ...Object.values(SKILL_ICON_ASSETS)]) {
+    expect(Object.keys(PROJECTILE_FX_ASSETS)).toEqual(["core", "trace", "muzzle", "impact", "spark", "smoke"]);
+    expect(Object.keys(WEAPON_ASSETS)).toEqual(["cyan-heavy", "violet-rifle", "white-tech", "ember-cannon"]);
+    for (const weapon of Object.values(WEAPON_ASSETS)) expect(weapon).toMatch(/^\/assets\/v3\/weapons\/.+\.png$/);
+    for (const path of [...Object.values(ARENA_ASSETS), ...Object.values(PICKUP_ASSETS), ...Object.values(SKILL_ICON_ASSETS), ...Object.values(PROJECTILE_FX_ASSETS)]) {
       expect(path).toMatch(/^\/assets\/v3\//);
     }
   });
@@ -47,7 +62,13 @@ describe("v3 asset registry", () => {
       expect(entry.outputFiles.length).toBeGreaterThan(0);
     }
     expect(ASSET_MANIFEST.flatMap((entry) => entry.outputFiles).filter((path) => path.endsWith("/combat.png"))).toHaveLength(6);
+    expect(ASSET_MANIFEST.flatMap((entry) => entry.outputFiles).filter((path) => path.includes("/directions/"))).toHaveLength(48);
+    expect(ASSET_MANIFEST.flatMap((entry) => entry.outputFiles).filter((path) => path.includes("/weapons/"))).toHaveLength(4);
+    expect(ASSET_MANIFEST.some((entry) => entry.source === "Particle Pack" && entry.license === "CC0 1.0")).toBe(true);
+    expect(ASSET_MANIFEST.some((entry) => entry.source === "Sci-Fi RTS" && entry.license === "CC0 1.0")).toBe(true);
+    expect(ASSET_MANIFEST.some((entry) => entry.source === "Top-down Sci-fi Shooter Terrain Texture" && entry.license === "CC-BY-SA 3.0")).toBe(true);
     expect(ASSET_MANIFEST.some((entry) => entry.source === "User-provided character art")).toBe(true);
+    expect(ASSET_MANIFEST.some((entry) => entry.source === "User-provided weapon art" && entry.sourceUrl === "local://user-provided-weapon-art")).toBe(true);
   });
 
   it("rejects assets with unknown provenance", () => {

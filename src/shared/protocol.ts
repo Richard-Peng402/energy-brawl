@@ -57,7 +57,10 @@ export interface PlayerSnapshot extends Vec2 {
   lastProcessedSkillAction: number;
 }
 
-export type AdminStat = "health" | "maxHealth" | "damage" | "score" | "moveSpeed" | "fireCooldownMs";
+export type AdminStat =
+  | "health" | "maxHealth" | "damage" | "score"
+  | "moveSpeed" | "fireCooldownMs" | "projectileSpeed"
+  | "kills" | "energyCollected";
 
 export type AdminStats = Pick<PlayerSnapshot, AdminStat>;
 
@@ -108,6 +111,15 @@ export interface GameSnapshot {
   projectiles: ProjectileSnapshot[];
   energy: EnergySnapshot[];
   skillOrbs: SkillOrbSnapshot[];
+  killFeed?: KillFeedEvent[];
+}
+
+export interface KillFeedEvent {
+  id: string;
+  at: number;
+  killerId: string;
+  victimId: string;
+  streak: number;
 }
 
 export interface JoinPayload {

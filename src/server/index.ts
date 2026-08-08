@@ -8,10 +8,13 @@ import express from "express";
 import QRCode from "qrcode";
 
 import type { ServerInfo } from "../shared/protocol";
+import { getLanAddresses } from "./lan-address";
 import { attachGameNetwork } from "./network";
+import { listenOnAvailablePort } from "./port";
 import { GameRoom } from "./room";
 
-const PORT = Number.parseInt(process.env.PORT ?? "3000", 10);
+const preferredPort = Number.parseInt(process.env.PORT ?? "3000", 10);
+let port = preferredPort;
 const app = express();
 const httpServer = createServer(app);
 const room = new GameRoom();
@@ -24,11 +27,11 @@ app.use(express.json({ limit: "32kb" }));
 app.use(express.static(clientDirectory));
 
 app.get("/api/info", async (_request, response) => {
-  const joinUrls = getLanAddresses(PORT);
+  const joinUrls = getLanAddresses(port, networkInterfaces());
   const qrDataUrls = await Promise.all(joinUrls.map((url) => QRCode.toDataURL(url, { margin: 1, width: 320 })));
   const info: ServerInfo = {
     name: "能量乱斗",
-    version: "0.1.0",
+    version: "3.4.0",
     joinUrls,
     qrDataUrls,
     room: room.snapshot(),
@@ -44,10 +47,12 @@ app.get(["/", "/host"], (_request, response) => {
   });
 });
 
-httpServer.listen(PORT, "0.0.0.0", () => {
-  const joinUrls = getLanAddresses(PORT);
-  const hostUrl = `http://127.0.0.1:${PORT}/host?token=${hostToken}`;
+port = await listenOnAvailablePort(httpServer, preferredPort, "0.0.0.0");
+{
+  const joinUrls = getLanAddresses(port, networkInterfaces());
+  const hostUrl = `http://127.0.0.1:${port}/host?token=${hostToken}`;
   console.log("\n能量乱斗服务器已启动");
+  if (port !== preferredPort) console.log(`端口 ${preferredPort} 已被占用，已自动改用 ${port}`);
   console.log(`主机控制台: ${hostUrl}`);
   for (const url of joinUrls) console.log(`手机加入: ${url}`);
   console.log("按 Ctrl+C 停止服务器\n");
@@ -59,7 +64,7 @@ httpServer.listen(PORT, "0.0.0.0", () => {
     });
     opener.unref();
   }
-});
+}
 
 async function shutdown(): Promise<void> {
   await network.close();
@@ -69,23 +74,3 @@ async function shutdown(): Promise<void> {
 
 process.once("SIGINT", () => void shutdown());
 process.once("SIGTERM", () => void shutdown());
-
-function getLanAddresses(port: number): string[] {
-  const addresses = new Set<string>();
-  for (const entries of Object.values(networkInterfaces())) {
-    for (const entry of entries ?? []) {
-      if (entry.family === "IPv4" && !entry.internal && isPrivateAddress(entry.address)) {
-        addresses.add(`http://${entry.address}:${port}/`);
-      }
-    }
-  }
-  return addresses.size > 0 ? [...addresses] : [`http://127.0.0.1:${port}/`];
-}
-
-function isPrivateAddress(address: string): boolean {
-  return (
-    address.startsWith("10.") ||
-    address.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(address)
-  );
-}

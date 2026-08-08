@@ -21,6 +21,9 @@ const room = (score = 0): RoomSnapshot => ({
     score,
     moveSpeed: 265,
     fireCooldownMs: 450,
+    projectileSpeed: 620,
+    kills: 0,
+    energyCollected: 0,
   }],
 });
 

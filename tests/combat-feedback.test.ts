@@ -5,6 +5,8 @@ import {
   effectCapacity,
   PROJECTILE_VIEW_CAPACITY,
   projectileAngle,
+  shouldRenderProjectileImageEffect,
+  shouldShowProjectileTrace,
   shouldEmitProjectileTrail,
   trailIntervalMs,
 } from "../src/client/combat-feedback";
@@ -22,9 +24,13 @@ describe("v3.3 projectile feedback", () => {
     expect(shouldEmitProjectileTrail(memory, { x: 120, y: 100 }, 1_050, false)).toBe(true);
   });
 
-  it("halves trail sampling frequency in reduced mode", () => {
+  it("keeps projectile trails visually consistent in reduced mode", () => {
     expect(trailIntervalMs(false)).toBe(34);
-    expect(trailIntervalMs(true)).toBe(67);
+    expect(trailIntervalMs(true)).toBe(34);
+    expect(shouldShowProjectileTrace(false)).toBe(true);
+    expect(shouldShowProjectileTrace(true)).toBe(true);
+    expect(shouldRenderProjectileImageEffect("trail", true)).toBe(true);
+    expect(shouldRenderProjectileImageEffect("spark", true)).toBe(false);
   });
 
   it("recognizes only an observed empty-to-filled skill transition", () => {

@@ -4,7 +4,7 @@ import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
-import { didPickUpLocalSkill } from "./combat-feedback";
+import { didPickUpLocalSkill, selectLatestKillFeedback } from "./combat-feedback";
 import { GameRenderer } from "./game-scene";
 import { buildCharacterSelection, GameNetworkClient, isCharacterSelectionDisabled } from "./network";
 import { MobileViewport } from "./mobile-viewport";
@@ -36,6 +36,7 @@ export class MobileApp {
   private slowFrameWindows = 0;
   private lastRoomUiRevision = "";
   private lastLeaderboardRevision = "";
+  private lastKillFeedRevision = "";
   private lastResultsRevision = "";
 
   constructor(private readonly root: HTMLElement) {
@@ -110,7 +111,9 @@ export class MobileApp {
         this.syncSoundButtons();
       });
     }
-    this.root.addEventListener("pointerdown", () => { void this.audio.unlock(); }, { once: true });
+    // iOS Safari can suspend AudioContext again after backgrounding or an interruption;
+    // retry unlock on every gesture so the next touch restores combat audio.
+    this.root.addEventListener("pointerdown", () => { void this.audio.unlock(); });
     this.syncSoundButtons();
   }
 
@@ -175,6 +178,7 @@ export class MobileApp {
         this.renderer = null;
       }
       this.lastLeaderboardRevision = "";
+      this.lastKillFeedRevision = "";
       this.lastResultsRevision = "";
     }
 
@@ -264,6 +268,25 @@ export class MobileApp {
           </div>`,
         )
         .join("");
+    }
+    const killFeedback = selectLatestKillFeedback(
+      snapshot.killFeed ?? [],
+      this.network.playerId,
+      this.lastKillFeedRevision,
+      snapshot.serverTime,
+    );
+    const killFeedRevision = killFeedback.event?.id ?? "";
+    if (killFeedRevision !== this.lastKillFeedRevision) {
+      this.lastKillFeedRevision = killFeedRevision;
+      if (killFeedback.streakToPlay !== null) this.audio.playKillStreak(killFeedback.streakToPlay);
+      const event = killFeedback.event;
+      this.find("#kill-feed").innerHTML = event ? (() => {
+        const killer = snapshot.players.find((player) => player.id === event.killerId);
+        const victim = snapshot.players.find((player) => player.id === event.victimId);
+        if (!killer || !victim) return "";
+        const local = killer.id === this.network.playerId || victim.id === this.network.playerId;
+        return `<div class="kill-feed-row${local ? " is-local" : ""}"><i style="--killer-color:${killer.color}"></i><b>${escapeHtml(killer.nickname)}</b><span>击败</span><b>${escapeHtml(victim.nickname)}</b><i style="--killer-color:${victim.color}"></i></div>`;
+      })() : "";
     }
     const respawn = this.find("#respawn-state");
     const remaining = own?.respawnAt ? Math.max(0, own.respawnAt - snapshot.serverTime) : 0;
@@ -456,6 +479,7 @@ function mobileTemplate(): string {
             <div class="score-line"><span>积分</span><strong id="own-score">0</strong><small>/ <span id="target-score">15</span></small></div>
           </div>
           <div id="match-clock" class="match-clock">5:00</div>
+          <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
           <div id="leaderboard" class="leaderboard"></div>
            <button class="sound-button arena-sound" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>
           <div id="respawn-state" class="respawn-state is-hidden"></div>

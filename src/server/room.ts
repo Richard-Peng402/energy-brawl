@@ -345,13 +345,16 @@ export class GameRoom {
             score: seat.stats?.score ?? 0,
             moveSpeed: seat.stats?.moveSpeed ?? character.moveSpeed,
             fireCooldownMs: seat.stats?.fireCooldownMs ?? character.fireCooldownMs,
+            projectileSpeed: seat.stats?.projectileSpeed ?? character.projectileSpeed,
+            kills: seat.stats?.kills ?? 0,
+            energyCollected: seat.stats?.energyCollected ?? 0,
           };
         });
     return {
       phase: this.world?.phase ?? "lobby",
       canStart: this.canStart(),
       pendingWinnerId: this.pendingWinnerId,
-      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, health, maxHealth, damage, score, moveSpeed, fireCooldownMs }) => ({
+      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, health, maxHealth, damage, score, moveSpeed, fireCooldownMs, projectileSpeed, kills, energyCollected }) => ({
         id,
         nickname,
         characterId,
@@ -365,6 +368,9 @@ export class GameRoom {
         score,
         moveSpeed,
         fireCooldownMs,
+        projectileSpeed,
+        kills,
+        energyCollected,
       })),
     };
   }
@@ -437,6 +443,9 @@ export class GameRoom {
       score: seat.stats?.score ?? 0,
       moveSpeed: seat.stats?.moveSpeed ?? character.moveSpeed,
       fireCooldownMs: seat.stats?.fireCooldownMs ?? character.fireCooldownMs,
+      projectileSpeed: seat.stats?.projectileSpeed ?? character.projectileSpeed,
+      kills: seat.stats?.kills ?? 0,
+      energyCollected: seat.stats?.energyCollected ?? 0,
     };
     if (stat === "health" && value > stats.maxHealth) stats.maxHealth = value;
     stats[stat] = value;
@@ -465,6 +474,9 @@ export class GameRoom {
         break;
       case "moveSpeed": player.moveSpeed = value; break;
       case "fireCooldownMs": player.fireCooldownMs = value; break;
+      case "projectileSpeed": player.projectileSpeed = value; break;
+      case "kills": player.kills = value; break;
+      case "energyCollected": player.energyCollected = value; break;
     }
     if (player.health < previousHealth) {
       player.lastCombatAt = this.world.now;

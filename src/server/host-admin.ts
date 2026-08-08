@@ -23,6 +23,9 @@ const STAT_RANGES: Readonly<Record<AdminStat, readonly [number, number]>> = {
   score: [0, 99],
   moveSpeed: [50, 600],
   fireCooldownMs: [100, 2_000],
+  projectileSpeed: [100, 2_000],
+  kills: [0, 99],
+  energyCollected: [0, 999],
 };
 
 export class HostAdminService {

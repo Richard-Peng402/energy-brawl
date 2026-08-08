@@ -74,7 +74,7 @@ describe("v3 arena layout", () => {
     expect(VIEW_WIDTH).toBe(1_536);
     expect(VIEW_HEIGHT).toBe(864);
     expect(MATCH_DURATION_MS).toBe(480_000);
-    expect(TARGET_SCORE).toBe(15);
+    expect(TARGET_SCORE).toBe(20);
     expect(HOLD_DURATION_MS).toBe(30_000);
     expect(KILL_SCORE).toBe(2);
     expect(HOLDER_KILL_BONUS).toBe(1);

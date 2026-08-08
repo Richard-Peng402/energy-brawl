@@ -17,7 +17,7 @@ describe("host presentation state", () => {
       canStart: false,
       pendingWinnerId: null,
       players: [
-        { id: "player-1", nickname: "玩家", characterId: "blaze", color: "#ff5a5f", isBot: false, connected: true, ready: true, health: 100, maxHealth: 100, damage: 27, moveSpeed: 265, fireCooldownMs: 450, score: 0 },
+        { id: "player-1", nickname: "玩家", characterId: "blaze", color: "#ff5a5f", isBot: false, connected: true, ready: true, health: 100, maxHealth: 100, damage: 27, moveSpeed: 265, fireCooldownMs: 450, projectileSpeed: 620, score: 0, kills: 0, energyCollected: 0 },
       ],
     };
     const game: GameSnapshot = {

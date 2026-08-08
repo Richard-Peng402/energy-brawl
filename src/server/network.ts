@@ -268,7 +268,7 @@ function isHostAdminCommand(command: unknown): command is HostAdminCommand {
   if (typeof candidate.playerId !== "string") return false;
   if (candidate.type === "kick" || candidate.type === "forceWinner") return true;
   return candidate.type === "setStat" &&
-    ["health", "maxHealth", "damage", "score", "moveSpeed", "fireCooldownMs"].includes(String(candidate.stat)) &&
+    ["health", "maxHealth", "damage", "score", "moveSpeed", "fireCooldownMs", "projectileSpeed", "kills", "energyCollected"].includes(String(candidate.stat)) &&
     Number.isFinite(candidate.value);
 }
 

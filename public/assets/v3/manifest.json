@@ -1,7 +1,7 @@
 {
   "generatedBy": "npm run assets:v3",
   "maxTextureDimension": 2048,
-  "initialLobbyCompressedBytes": 1261182,
+  "initialLobbyCompressedBytes": 350539,
   "entries": [
     {
       "source": "User-provided character art",
@@ -11,16 +11,64 @@
       "outputFiles": [
         "/assets/v3/characters/blaze/portrait.png",
         "/assets/v3/characters/blaze/combat.png",
+        "/assets/v3/characters/blaze/directions/right.png",
+        "/assets/v3/characters/blaze/directions/down-right.png",
+        "/assets/v3/characters/blaze/directions/down.png",
+        "/assets/v3/characters/blaze/directions/down-left.png",
+        "/assets/v3/characters/blaze/directions/left.png",
+        "/assets/v3/characters/blaze/directions/up-left.png",
+        "/assets/v3/characters/blaze/directions/up.png",
+        "/assets/v3/characters/blaze/directions/up-right.png",
         "/assets/v3/characters/medic/portrait.png",
         "/assets/v3/characters/medic/combat.png",
+        "/assets/v3/characters/medic/directions/right.png",
+        "/assets/v3/characters/medic/directions/down-right.png",
+        "/assets/v3/characters/medic/directions/down.png",
+        "/assets/v3/characters/medic/directions/down-left.png",
+        "/assets/v3/characters/medic/directions/left.png",
+        "/assets/v3/characters/medic/directions/up-left.png",
+        "/assets/v3/characters/medic/directions/up.png",
+        "/assets/v3/characters/medic/directions/up-right.png",
         "/assets/v3/characters/fortress/portrait.png",
         "/assets/v3/characters/fortress/combat.png",
+        "/assets/v3/characters/fortress/directions/right.png",
+        "/assets/v3/characters/fortress/directions/down-right.png",
+        "/assets/v3/characters/fortress/directions/down.png",
+        "/assets/v3/characters/fortress/directions/down-left.png",
+        "/assets/v3/characters/fortress/directions/left.png",
+        "/assets/v3/characters/fortress/directions/up-left.png",
+        "/assets/v3/characters/fortress/directions/up.png",
+        "/assets/v3/characters/fortress/directions/up-right.png",
         "/assets/v3/characters/arc/portrait.png",
         "/assets/v3/characters/arc/combat.png",
+        "/assets/v3/characters/arc/directions/right.png",
+        "/assets/v3/characters/arc/directions/down-right.png",
+        "/assets/v3/characters/arc/directions/down.png",
+        "/assets/v3/characters/arc/directions/down-left.png",
+        "/assets/v3/characters/arc/directions/left.png",
+        "/assets/v3/characters/arc/directions/up-left.png",
+        "/assets/v3/characters/arc/directions/up.png",
+        "/assets/v3/characters/arc/directions/up-right.png",
         "/assets/v3/characters/phase/portrait.png",
         "/assets/v3/characters/phase/combat.png",
+        "/assets/v3/characters/phase/directions/right.png",
+        "/assets/v3/characters/phase/directions/down-right.png",
+        "/assets/v3/characters/phase/directions/down.png",
+        "/assets/v3/characters/phase/directions/down-left.png",
+        "/assets/v3/characters/phase/directions/left.png",
+        "/assets/v3/characters/phase/directions/up-left.png",
+        "/assets/v3/characters/phase/directions/up.png",
+        "/assets/v3/characters/phase/directions/up-right.png",
         "/assets/v3/characters/runner/portrait.png",
-        "/assets/v3/characters/runner/combat.png"
+        "/assets/v3/characters/runner/combat.png",
+        "/assets/v3/characters/runner/directions/right.png",
+        "/assets/v3/characters/runner/directions/down-right.png",
+        "/assets/v3/characters/runner/directions/down.png",
+        "/assets/v3/characters/runner/directions/down-left.png",
+        "/assets/v3/characters/runner/directions/left.png",
+        "/assets/v3/characters/runner/directions/up-left.png",
+        "/assets/v3/characters/runner/directions/up.png",
+        "/assets/v3/characters/runner/directions/up-right.png"
       ]
     },
     {
@@ -34,49 +82,116 @@
         "/assets/v3/characters/blaze/attack.png",
         "/assets/v3/characters/blaze/hit.png",
         "/assets/v3/characters/blaze/death.png",
-        "/assets/v3/characters/blaze/combat.svg",
         "/assets/v3/characters/medic/idle.png",
         "/assets/v3/characters/medic/move.png",
         "/assets/v3/characters/medic/attack.png",
         "/assets/v3/characters/medic/hit.png",
         "/assets/v3/characters/medic/death.png",
-        "/assets/v3/characters/medic/combat.svg",
         "/assets/v3/characters/fortress/idle.png",
         "/assets/v3/characters/fortress/move.png",
         "/assets/v3/characters/fortress/attack.png",
         "/assets/v3/characters/fortress/hit.png",
         "/assets/v3/characters/fortress/death.png",
-        "/assets/v3/characters/fortress/combat.svg",
         "/assets/v3/characters/arc/idle.png",
         "/assets/v3/characters/arc/move.png",
         "/assets/v3/characters/arc/attack.png",
         "/assets/v3/characters/arc/hit.png",
         "/assets/v3/characters/arc/death.png",
-        "/assets/v3/characters/arc/combat.svg",
         "/assets/v3/characters/phase/idle.png",
         "/assets/v3/characters/phase/move.png",
         "/assets/v3/characters/phase/attack.png",
         "/assets/v3/characters/phase/hit.png",
         "/assets/v3/characters/phase/death.png",
-        "/assets/v3/characters/phase/combat.svg",
         "/assets/v3/characters/runner/idle.png",
         "/assets/v3/characters/runner/move.png",
         "/assets/v3/characters/runner/attack.png",
         "/assets/v3/characters/runner/hit.png",
-        "/assets/v3/characters/runner/death.png",
-        "/assets/v3/characters/runner/combat.svg"
+        "/assets/v3/characters/runner/death.png"
       ]
     },
     {
-      "source": "Top-down Shooter",
+      "source": "Top-down Sci-fi Shooter Terrain Texture",
+      "author": "Some Random Guys",
+      "license": "CC-BY-SA 3.0",
+      "sourceUrl": "https://opengameart.org/content/top-down-sci-fi-shooter-some-random-guys-terrain-texture",
+      "outputFiles": [
+        "/assets/v3/arena/floor.png"
+      ]
+    },
+    {
+      "source": "Sci-Fi RTS",
       "author": "Kenney",
       "license": "CC0 1.0",
-      "sourceUrl": "https://kenney.nl/assets/top-down-shooter",
+      "sourceUrl": "https://kenney.nl/assets/sci-fi-rts",
       "outputFiles": [
-        "/assets/v3/arena/floor.png",
         "/assets/v3/arena/wall.png",
         "/assets/v3/arena/decal.png",
         "/assets/v3/arena/light.png"
+      ]
+    },
+    {
+      "source": "Particle Pack",
+      "author": "Kenney",
+      "license": "CC0 1.0",
+      "sourceUrl": "https://kenney.nl/assets/particle-pack",
+      "outputFiles": [
+        "/assets/v3/fx/projectiles/projectile-core.png",
+        "/assets/v3/fx/projectiles/projectile-trace.png",
+        "/assets/v3/fx/projectiles/muzzle-flare.png",
+        "/assets/v3/fx/projectiles/impact-burst.png",
+        "/assets/v3/fx/projectiles/impact-spark.png",
+        "/assets/v3/fx/projectiles/impact-smoke.png"
+      ]
+    },
+    {
+      "source": "User-provided weapon art",
+      "author": "Project owner",
+      "license": "User-provided for this project",
+      "sourceUrl": "local://user-provided-weapon-art",
+      "outputFiles": [
+        "/assets/v3/weapons/cyan-heavy.png",
+        "/assets/v3/weapons/violet-rifle.png",
+        "/assets/v3/weapons/white-tech.png",
+        "/assets/v3/weapons/ember-cannon.png"
+      ]
+    },
+    {
+      "source": "User-provided killstreak audio",
+      "author": "Project owner",
+      "license": "User-provided for this project",
+      "sourceUrl": "local://user-provided-killstreak-audio",
+      "outputFiles": [
+        "/assets/v3/audio/killstreak/kill-1.wav",
+        "/assets/v3/audio/killstreak/kill-2.wav",
+        "/assets/v3/audio/killstreak/kill-3.wav",
+        "/assets/v3/audio/killstreak/kill-4.wav",
+        "/assets/v3/audio/killstreak/kill-5.wav"
+      ]
+    },
+    {
+      "source": "Energy Brawl project assets",
+      "author": "Energy Brawl contributors",
+      "license": "MIT",
+      "sourceUrl": "local://energy-brawl-project-assets",
+      "outputFiles": [
+        "/assets/v3/characters/blaze/fallback.svg",
+        "/assets/v3/characters/blaze/combat.svg",
+        "/assets/v3/characters/medic/fallback.svg",
+        "/assets/v3/characters/medic/combat.svg",
+        "/assets/v3/characters/fortress/fallback.svg",
+        "/assets/v3/characters/fortress/combat.svg",
+        "/assets/v3/characters/arc/fallback.svg",
+        "/assets/v3/characters/arc/combat.svg",
+        "/assets/v3/characters/phase/fallback.svg",
+        "/assets/v3/characters/phase/combat.svg",
+        "/assets/v3/characters/runner/fallback.svg",
+        "/assets/v3/characters/runner/combat.svg",
+        "/assets/v3/skills/dash.svg",
+        "/assets/v3/skills/shield.svg",
+        "/assets/v3/skills/spread.svg",
+        "/assets/v3/skills/heal.svg",
+        "/assets/v3/arena/sigil.svg",
+        "/assets/v3/pickups/energy-core.svg"
       ]
     }
   ]

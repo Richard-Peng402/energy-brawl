@@ -13,7 +13,7 @@ import {
   MATCH_DURATION_MS,
   MAX_ENERGY,
   PLAYER_RADIUS,
-  PROJECTILE_LIFETIME_MS,
+  PROJECTILE_MAX_DISTANCE,
   PROJECTILE_RADIUS,
   RESPAWN_DELAY_MS,
   SKILL_ORB_RADIUS,
@@ -47,6 +47,7 @@ import type {
   EnergySnapshot,
   GamePhase,
   GameSnapshot,
+  KillFeedEvent,
   PlayerInput,
   PlayerSnapshot,
   ProjectileSnapshot,
@@ -66,10 +67,11 @@ export interface WorldPlayer extends PlayerSnapshot {
   nextFireAt: number;
   lastCombatAt: number;
   regenAccumulatorMs: number;
+  killStreak: number;
 }
 
 export interface WorldProjectile extends ProjectileSnapshot {
-  expiresAt: number;
+  distanceTraveled: number;
   damage?: number;
 }
 
@@ -90,6 +92,8 @@ export interface GameWorld {
   nextEnergyId: number;
   nextEnergySpawnAt: number;
   nextEnergyPoint: number;
+  killFeed: KillFeedEvent[];
+  nextKillFeedId: number;
 }
 
 const EMPTY_INPUT: PlayerInput = {
@@ -128,10 +132,10 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
       damage: seed.stats?.damage ?? character.damage,
       moveSpeed: seed.stats?.moveSpeed ?? character.moveSpeed,
       fireCooldownMs: seed.stats?.fireCooldownMs ?? character.fireCooldownMs,
-      projectileSpeed: character.projectileSpeed,
+      projectileSpeed: seed.stats?.projectileSpeed ?? character.projectileSpeed,
       score: seed.stats?.score ?? 0,
-      kills: 0,
-      energyCollected: 0,
+      kills: seed.stats?.kills ?? 0,
+      energyCollected: seed.stats?.energyCollected ?? 0,
       alive: true,
       respawnAt: null,
       shieldUntil: now + SPAWN_SHIELD_MS,
@@ -144,6 +148,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
       nextFireAt: now,
       lastCombatAt: now,
       regenAccumulatorMs: 0,
+      killStreak: 0,
     });
   });
 
@@ -164,6 +169,8 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
     nextEnergyId: 1,
     nextEnergySpawnAt: now,
     nextEnergyPoint: 0,
+    killFeed: [],
+    nextKillFeedId: 1,
   };
 
   while (world.energy.size < MAX_ENERGY) spawnEnergy(world);
@@ -266,9 +273,19 @@ export function damagePlayer(
   victim.input = { ...EMPTY_INPUT, seq: victim.lastProcessedInput };
   victim.skillShieldHealth = 0;
   victim.skillShieldUntil = 0;
+  victim.killStreak = 0;
   clearSkillSlot(victim);
 
   if (attacker && attacker.id !== victim.id) {
+    attacker.killStreak += 1;
+    world.killFeed.push({
+      id: `kill-${world.nextKillFeedId++}`,
+      at: world.now,
+      killerId: attacker.id,
+      victimId: victim.id,
+      streak: attacker.killStreak,
+    });
+    if (world.killFeed.length > 6) world.killFeed.splice(0, world.killFeed.length - 6);
     attacker.score += KILL_SCORE + (world.holderId === victim.id ? HOLDER_KILL_BONUS : 0);
     attacker.kills += 1;
     handleScoreChange(world, attacker.id);
@@ -322,10 +339,11 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     holderId: world.holderId,
     holdRemainingMs: world.holdRemainingMs,
     finishedAt: world.finishedAt,
-    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, ...player }) => player),
-    projectiles: [...world.projectiles.values()].map(({ expiresAt: _expiresAt, damage: _damage, ...projectile }) => projectile),
+    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, killStreak: _killStreak, ...player }) => player),
+    projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, ...projectile }) => projectile),
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
+    killFeed: [...world.killFeed],
   };
 }
 
@@ -427,20 +445,22 @@ function spawnProjectile(world: GameWorld, player: WorldPlayer, angle: number, d
     vx: direction.x * player.projectileSpeed,
     vy: direction.y * player.projectileSpeed,
     damage,
-    expiresAt: world.now + PROJECTILE_LIFETIME_MS,
+    distanceTraveled: 0,
   });
 }
 
 function advanceProjectiles(world: GameWorld, deltaMs: number): void {
-  const frameStart = world.now - deltaMs;
   for (const projectile of [...world.projectiles.values()]) {
     if (world.phase === "finished") break;
-    const activeMs = Math.min(deltaMs, projectile.expiresAt - frameStart);
-    if (activeMs <= 0) {
+    const speed = Math.hypot(projectile.vx, projectile.vy);
+    const requestedDistance = speed * deltaMs / 1_000;
+    const remainingDistance = PROJECTILE_MAX_DISTANCE - projectile.distanceTraveled;
+    const activeDistance = Math.min(requestedDistance, remainingDistance);
+    if (activeDistance <= 0 || speed <= 0) {
       world.projectiles.delete(projectile.id);
       continue;
     }
-
+    const activeMs = activeDistance / speed * 1_000;
     const delta = { x: projectile.vx * activeMs / 1_000, y: projectile.vy * activeMs / 1_000 };
     const wallHit = firstWallHit(
       projectile,
@@ -468,7 +488,8 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
 
     projectile.x += delta.x;
     projectile.y += delta.y;
-    if (activeMs < deltaMs || projectile.x < PROJECTILE_RADIUS || projectile.x > ARENA_WIDTH - PROJECTILE_RADIUS || projectile.y < PROJECTILE_RADIUS || projectile.y > ARENA_HEIGHT - PROJECTILE_RADIUS) {
+    projectile.distanceTraveled += Math.hypot(delta.x, delta.y);
+    if (activeDistance < requestedDistance || projectile.distanceTraveled >= PROJECTILE_MAX_DISTANCE || projectile.x < PROJECTILE_RADIUS || projectile.x > ARENA_WIDTH - PROJECTILE_RADIUS || projectile.y < PROJECTILE_RADIUS || projectile.y > ARENA_HEIGHT - PROJECTILE_RADIUS) {
       world.projectiles.delete(projectile.id);
     }
   }

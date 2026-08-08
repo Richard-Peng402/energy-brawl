@@ -111,7 +111,7 @@ export class HostApp {
     this.find("#host-roster").innerHTML = Array.from({ length: 6 }, (_, index) => players[index])
       .map((player, index) =>
         player
-          ? `<div class="host-seat${pendingWinnerId === player.id ? " is-preset-winner" : ""}"><span class="seat-index">${index + 1}</span><i style="--player-color:${player.color}"></i><div class="host-player-name"><b>${escapeHtml(player.nickname)}</b><small>${pendingWinnerId === player.id ? "已预设胜者" : player.isBot ? "AI" : player.connected ? "在线" : "离线"}</small></div><span class="host-player-stats">生命 ${player.health}/${player.maxHealth} · 伤害 ${player.damage} · 积分 ${player.score} · 移速 ${player.moveSpeed} · 射击 ${player.fireCooldownMs}ms</span><div class="host-player-actions">${adminEnabled ? `<button type="button" data-admin-action="setStat" data-player-id="${player.id}">改数值</button><button type="button" data-admin-action="kick" data-player-id="${player.id}">踢出</button><button type="button" data-admin-action="forceWinner" data-player-id="${player.id}">${phase === "lobby" ? "预设获胜" : "强制获胜"}</button>` : ""}</div></div>`
+          ? `<div class="host-seat${pendingWinnerId === player.id ? " is-preset-winner" : ""}"><span class="seat-index">${index + 1}</span><i style="--player-color:${player.color}"></i><div class="host-player-name"><b>${escapeHtml(player.nickname)}</b><small>${pendingWinnerId === player.id ? "已预设胜者" : player.isBot ? "AI" : player.connected ? "在线" : "离线"}</small></div><span class="host-player-stats">生命 ${player.health}/${player.maxHealth} · 伤害 ${player.damage} · 积分 ${player.score} · 击杀 ${player.kills} · 能量 ${player.energyCollected} · 移速 ${player.moveSpeed} · 弹速 ${player.projectileSpeed} · 射击 ${player.fireCooldownMs}ms</span><div class="host-player-actions">${adminEnabled ? `<button type="button" data-admin-action="setStat" data-player-id="${player.id}">改数值</button><button type="button" data-admin-action="kick" data-player-id="${player.id}">踢出</button><button type="button" data-admin-action="forceWinner" data-player-id="${player.id}">${phase === "lobby" ? "预设获胜" : "强制获胜"}</button>` : ""}</div></div>`
           : `<div class="host-seat is-empty"><span class="seat-index">${index + 1}</span><i></i><b>空位</b><span>等待玩家</span><strong>—</strong></div>`,
       )
       .join("");
@@ -183,7 +183,7 @@ function hostTemplate(): string {
       <form id="stat-form" method="dialog">
         <span class="eyebrow">HOST OVERRIDE</span>
         <h2>修改 <b id="stat-player-name"></b></h2>
-        <label>属性<select id="stat-field"><option value="health">当前生命</option><option value="maxHealth">最大生命</option><option value="damage">伤害</option><option value="score">积分</option><option value="moveSpeed">移动速度</option><option value="fireCooldownMs">射击间隔（毫秒）</option></select></label>
+        <label>属性<select id="stat-field"><option value="health">当前生命</option><option value="maxHealth">最大生命</option><option value="damage">伤害</option><option value="score">积分</option><option value="moveSpeed">移动速度</option><option value="fireCooldownMs">射击间隔（毫秒）</option><option value="projectileSpeed">子弹飞行速度</option><option value="kills">击杀数</option><option value="energyCollected">能量收集数</option></select></label>
         <label>新数值<input id="stat-value" type="number" inputmode="numeric" required /></label>
         <p>提交后服务器会立即应用，并同步所有客户端。</p>
         <div><button id="stat-cancel" type="button">取消</button><button class="primary-button" type="submit">应用修改</button></div>

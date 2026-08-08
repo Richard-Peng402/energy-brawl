@@ -29,6 +29,7 @@ import {
   stepWorld,
   worldToSnapshot,
 } from "../src/server/simulation";
+import { PROJECTILE_MAX_DISTANCE } from "../src/shared/constants";
 
 function createWorld() {
   return createGameWorld([
@@ -40,6 +41,9 @@ function createWorld() {
 const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
 
 describe("authoritative simulation", () => {
+  it("uses twenty points as the final v3 target score", () => {
+    expect(TARGET_SCORE).toBe(20);
+  });
   it("applies host lobby stat presets when creating a match", () => {
     const world = createGameWorld([
       {
@@ -54,6 +58,9 @@ describe("authoritative simulation", () => {
           score: 9,
           moveSpeed: 400,
           fireCooldownMs: 180,
+          projectileSpeed: 1_200,
+          kills: 7,
+          energyCollected: 11,
         },
       },
     ]);
@@ -65,6 +72,9 @@ describe("authoritative simulation", () => {
       score: 9,
       moveSpeed: 400,
       fireCooldownMs: 180,
+      projectileSpeed: 1_200,
+      kills: 7,
+      energyCollected: 11,
     });
   });
 
@@ -83,11 +93,38 @@ describe("authoritative simulation", () => {
     expect(world.players.get("red")?.score).toBe(2);
     expect(world.players.get("red")?.kills).toBe(1);
     expect(world.players.get("blue")?.alive).toBe(false);
+    expect(world.killFeed).toEqual([
+      expect.objectContaining({ killerId: "red", victimId: "blue", at: world.now }),
+    ]);
+    expect(worldToSnapshot(world).killFeed).toEqual(world.killFeed);
 
     stepWorld(world, RESPAWN_DELAY_MS + 1);
 
     expect(world.players.get("blue")?.alive).toBe(true);
     expect(world.players.get("blue")?.health).toBe(getCharacter("fortress").maxHealth);
+  });
+
+  it("tracks authoritative killstreaks and resets the streak when the killer dies", () => {
+    const world = createWorld();
+    stepWorld(world, SPAWN_SHIELD_MS + 1);
+    const red = world.players.get("red")!;
+    const blue = world.players.get("blue")!;
+
+    for (let streak = 1; streak <= 6; streak += 1) {
+      blue.shieldUntil = 0;
+      expect(damagePlayer(world, blue.id, red.id, blue.health)).toBe(true);
+      expect(world.killFeed.at(-1)).toMatchObject({ killerId: red.id, victimId: blue.id, streak });
+      stepWorld(world, RESPAWN_DELAY_MS + 1);
+    }
+
+    red.shieldUntil = 0;
+    blue.shieldUntil = 0;
+    expect(damagePlayer(world, red.id, blue.id, red.health)).toBe(true);
+    stepWorld(world, RESPAWN_DELAY_MS + 1);
+    red.shieldUntil = 0;
+    blue.shieldUntil = 0;
+    expect(damagePlayer(world, blue.id, red.id, blue.health)).toBe(true);
+    expect(world.killFeed.at(-1)).toMatchObject({ killerId: red.id, victimId: blue.id, streak: 1 });
   });
 
   it("uses each character's dynamic movement, firing, projectile and respawn stats", () => {
@@ -135,7 +172,7 @@ describe("authoritative simulation", () => {
     expect(medic.health).toBe(medic.maxHealth);
   });
 
-  it("regenerates eight health per second only after five seconds out of combat", () => {
+  it("regenerates ten health per second after three seconds out of combat", () => {
     const world = createWorld();
     stepWorld(world, SPAWN_SHIELD_MS + 1);
     const attacker = world.players.get("red")!;
@@ -145,20 +182,48 @@ describe("authoritative simulation", () => {
     damagePlayer(world, victim.id, attacker.id, 40);
     const attackerAfterCombat = attacker.health;
     const victimAfterCombat = victim.health;
-    stepWorld(world, 4_999);
+    stepWorld(world, 2_999);
     expect(attacker.health).toBe(attackerAfterCombat);
     expect(victim.health).toBe(victimAfterCombat);
 
     stepWorld(world, 1);
     expect(victim.health).toBe(victimAfterCombat);
     stepWorld(world, 1_000);
-    expect(attacker.health).toBe(attackerAfterCombat + 8);
-    expect(victim.health).toBe(victimAfterCombat + 8);
+    expect(attacker.health).toBe(attackerAfterCombat + 10);
+    expect(victim.health).toBe(victimAfterCombat + 10);
 
     damagePlayer(world, victim.id, attacker.id, 1);
     const resetHealth = victim.health;
-    stepWorld(world, 4_999);
+    stepWorld(world, 2_999);
     expect(victim.health).toBe(resetHealth);
+  });
+
+  it("gives every projectile the same travel distance regardless of speed", () => {
+    const world = createWorld();
+    const attacker = world.players.get("red")!;
+    const victim = world.players.get("blue")!;
+    attacker.x = 200;
+    attacker.y = 100;
+    victim.x = 2_600;
+    victim.y = 1_300;
+    attacker.projectileSpeed = 400;
+    applyPlayerInput(world, attacker.id, { seq: 1, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: true });
+    stepWorld(world, 1);
+    const slow = [...world.projectiles.values()][0]!;
+    applyPlayerInput(world, attacker.id, { seq: 2, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: false });
+    stepWorld(world, 4_000);
+    expect(world.projectiles.has(slow.id)).toBe(false);
+    expect(slow.distanceTraveled).toBeCloseTo(PROJECTILE_MAX_DISTANCE, 4);
+
+    attacker.nextFireAt = world.now;
+    attacker.projectileSpeed = 1_200;
+    applyPlayerInput(world, attacker.id, { seq: 3, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: true });
+    stepWorld(world, 1);
+    const fast = [...world.projectiles.values()][0]!;
+    applyPlayerInput(world, attacker.id, { seq: 4, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: false });
+    stepWorld(world, 2_000);
+    expect(world.projectiles.has(fast.id)).toBe(false);
+    expect(fast.distanceTraveled).toBeCloseTo(PROJECTILE_MAX_DISTANCE, 4);
   });
 
 
@@ -521,7 +586,7 @@ describe("authoritative simulation", () => {
       y: 200,
       vx: 1000,
       vy: 0,
-      expiresAt: world.now + 1000,
+      distanceTraveled: 0,
     });
 
     stepWorld(world, 16);
@@ -637,7 +702,7 @@ describe("authoritative simulation", () => {
       y: scaleArenaPosition(500),
       vx: 5000,
       vy: 0,
-      expiresAt: world.now + 1000,
+      distanceTraveled: 0,
     });
 
     stepWorld(world, 100);
@@ -659,7 +724,7 @@ describe("authoritative simulation", () => {
       y: scaleArenaPosition(500),
       vx: 5000,
       vy: 0,
-      expiresAt: world.now + 1000,
+      distanceTraveled: 0,
     });
 
     stepWorld(world, 100);

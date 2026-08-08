@@ -70,8 +70,8 @@ describe("game network", () => {
       canStart: false,
       pendingWinnerId: null,
       players: [
-        { id: "human", nickname: "真人", characterId: "blaze" as const, color: "#f00", isBot: false, connected: true, ready: false, health: 94, maxHealth: 94, damage: 27, moveSpeed: 265, fireCooldownMs: 450, score: 0 },
-        { id: "bot", nickname: "AI", characterId: "medic" as const, color: "#0f0", isBot: true, connected: true, ready: true, health: 104, maxHealth: 104, damage: 23, moveSpeed: 250, fireCooldownMs: 480, score: 0 },
+        { id: "human", nickname: "真人", characterId: "blaze" as const, color: "#f00", isBot: false, connected: true, ready: false, health: 94, maxHealth: 94, damage: 27, moveSpeed: 265, fireCooldownMs: 450, projectileSpeed: 620, score: 0, kills: 0, energyCollected: 0 },
+        { id: "bot", nickname: "AI", characterId: "medic" as const, color: "#0f0", isBot: true, connected: true, ready: true, health: 104, maxHealth: 104, damage: 23, moveSpeed: 250, fireCooldownMs: 480, projectileSpeed: 600, score: 0, kills: 0, energyCollected: 0 },
       ],
     };
 

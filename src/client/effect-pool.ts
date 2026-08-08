@@ -1,7 +1,8 @@
 import type { CharacterId } from "../shared/character-catalog";
-import type { CharacterAssetState } from "./asset-registry";
+import type { CharacterAssetState, CharacterDirection } from "./asset-registry";
 
 export type CharacterRuntimeTextureState = CharacterAssetState | "generated-fallback";
+export type CharacterWeaponKind = "cyan-heavy" | "violet-rifle" | "white-tech" | "ember-cannon";
 export type CombatEffectKind =
   | "muzzle" | "trail" | "impact" | "spark"
   | "hit" | "shield" | "dash" | "heal" | "respawn";
@@ -77,6 +78,35 @@ export function characterTextureKey(id: CharacterId, state: CharacterRuntimeText
   return `character:${id}:${state}`;
 }
 
+export function characterWeaponKind(id: CharacterId): CharacterWeaponKind {
+  const mapping: Record<CharacterId, CharacterWeaponKind> = {
+    blaze: "ember-cannon",
+    medic: "cyan-heavy",
+    fortress: "white-tech",
+    arc: "violet-rifle",
+    phase: "cyan-heavy",
+    runner: "ember-cannon",
+  };
+  return mapping[id];
+}
+
+export function weaponTextureKey(kind: CharacterWeaponKind): string {
+  return `weapon:${kind}`;
+}
+
+const ANGLE_DIRECTIONS: readonly CharacterDirection[] = [
+  "right", "down-right", "down", "down-left", "left", "up-left", "up", "up-right",
+];
+
+export function characterDirectionFromAngle(angle: number): CharacterDirection {
+  const normalized = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  return ANGLE_DIRECTIONS[Math.round(normalized / (Math.PI / 4)) % 8]!;
+}
+
+export function characterDirectionTextureKey(id: CharacterId, direction: CharacterDirection): string {
+  return `character:${id}:direction:${direction}`;
+}
+
 export function resolveCharacterTextureKey(
   id: CharacterId,
   state: CharacterAssetState,
@@ -84,6 +114,18 @@ export function resolveCharacterTextureKey(
 ): string {
   const requested = characterTextureKey(id, state);
   return failedTextureKeys.has(requested) ? characterTextureKey(id, "generated-fallback") : requested;
+}
+
+export function resolveCharacterDirectionTextureKey(
+  id: CharacterId,
+  direction: CharacterDirection,
+  state: CharacterAssetState,
+  failedTextureKeys: ReadonlySet<string>,
+): string {
+  const directional = characterDirectionTextureKey(id, direction);
+  return failedTextureKeys.has(directional)
+    ? resolveCharacterTextureKey(id, state, failedTextureKeys)
+    : directional;
 }
 
 export function deriveCharacterVisualState(signals: CharacterVisualSignals, now: number): CharacterVisualState {

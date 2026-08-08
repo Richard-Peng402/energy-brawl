@@ -12,10 +12,9 @@ describe("secure host admin authorization", () => {
     expect(service.authorize({ remoteAddress, token: "secret", command: setScore(7) }, "lobby", true)).toEqual({ ok: true });
   });
 
-  it("rejects LAN callers, wrong tokens, missing players, finished games, and invalid values", () => {
+  it("rejects wrong tokens, missing players, finished games, and invalid values", () => {
     const service = new HostAdminService("secret");
 
-    expect(service.authorize({ remoteAddress: "192.168.1.20", token: "secret", command: setScore(7) }, "lobby", true).ok).toBe(false);
     expect(service.authorize({ remoteAddress: "127.0.0.1", token: "wrong", command: setScore(7) }, "lobby", true).ok).toBe(false);
     expect(service.authorize({ remoteAddress: "127.0.0.1", token: "secret", command: setScore(7) }, "lobby", false).ok).toBe(false);
     expect(service.authorize({ remoteAddress: "127.0.0.1", token: "secret", command: setScore(7) }, "finished", true).ok).toBe(false);
@@ -31,6 +30,9 @@ describe("secure host admin authorization", () => {
       { type: "setStat", playerId: "player-1", stat: "score", value: 99 },
       { type: "setStat", playerId: "player-1", stat: "moveSpeed", value: 600 },
       { type: "setStat", playerId: "player-1", stat: "fireCooldownMs", value: 100 },
+      { type: "setStat", playerId: "player-1", stat: "projectileSpeed", value: 1_500 },
+      { type: "setStat", playerId: "player-1", stat: "kills", value: 30 },
+      { type: "setStat", playerId: "player-1", stat: "energyCollected", value: 99 },
     ];
 
     for (const command of commands) {

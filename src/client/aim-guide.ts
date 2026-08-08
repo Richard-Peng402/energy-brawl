@@ -2,6 +2,8 @@ import { firstWallHit } from "../shared/collision";
 import { normalize } from "../shared/math";
 import type { Rect, Vec2 } from "../shared/protocol";
 
+export const AIM_GUIDE_LINE_WIDTH = 7;
+
 export function calculateAimGuide(
   origin: Vec2,
   aim: Vec2,

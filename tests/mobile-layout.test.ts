@@ -4,6 +4,16 @@ import { describe, expect, it } from "vitest";
 const styles = readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8");
 
 describe("mobile lobby compact landscape layout", () => {
+  it("keeps the skill control at the right safe edge and the kill feed to one row", () => {
+    const skillButton = extractBlock(styles, ".skill-button");
+    expect(skillButton).toContain("right:");
+    expect(skillButton).toContain("env(safe-area-inset-right)");
+    expect(skillButton).not.toContain("left: 50%");
+    expect(skillButton).not.toContain("translateX(-50%)");
+    expect(extractBlock(styles, ".skill-button.is-ready:active")).not.toContain("translateX(-50%)");
+    expect(extractBlock(styles, ".kill-feed")).toContain("grid-template-rows: 1fr");
+  });
+
   it("lets every sub-1000px landscape grid shrink instead of enforcing a desktop minimum", () => {
     const landscape = extractBlock(
       styles,

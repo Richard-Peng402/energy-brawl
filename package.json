@@ -1,6 +1,6 @@
 {
   "name": "energy-brawl",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "build": "vite build",
     "server": "tsx src/server/index.ts",
     "assets:v3": "node scripts/import-v3-assets.mjs",
+    "audio:killstreak": "node scripts/generate-killstreak-audio.mjs",
     "load-test": "tsx scripts/load-test.ts",
     "load-test:v3": "tsx scripts/v3-load-test.ts",
     "test": "vitest",

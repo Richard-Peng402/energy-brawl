@@ -690,6 +690,56 @@ button:disabled {
   text-align: center;
 }
 
+.kill-feed {
+  position: absolute;
+  top: max(102px, calc(env(safe-area-inset-top) + 96px));
+  left: 50%;
+  width: min(300px, 42vw);
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-rows: 1fr;
+  gap: 4px;
+}
+
+.kill-feed-row {
+  min-height: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid rgb(119 222 255 / 20%);
+  border-radius: 5px;
+  background: linear-gradient(90deg, transparent, rgb(4 10 20 / 82%) 18%, rgb(4 10 20 / 82%) 82%, transparent);
+  color: #d8e9f2;
+  font-size: 10px;
+  animation: kill-feed-arrive 180ms ease-out;
+}
+
+.kill-feed-row.is-local {
+  border-color: rgb(255 190 84 / 56%);
+  color: #fff2cc;
+}
+
+.kill-feed-row i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--killer-color);
+  box-shadow: 0 0 8px var(--killer-color);
+}
+
+.kill-feed-row span {
+  color: #ffad55;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+@keyframes kill-feed-arrive {
+  from { opacity: 0; transform: translateY(-5px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .leaderboard {
   position: absolute;
   top: max(58px, calc(env(safe-area-inset-top) + 52px));
@@ -767,15 +817,16 @@ button:disabled {
 .skill-button {
   position: absolute;
   z-index: 3;
-  left: 50%;
-  bottom: max(18px, calc(env(safe-area-inset-bottom) + 8px));
+  right: max(16px, calc(env(safe-area-inset-right) + 10px));
+  bottom: max(104px, calc(env(safe-area-inset-bottom) + 94px));
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  width: 152px;
-  min-height: 60px;
-  transform: translateX(-50%);
+  gap: 2px;
+  width: 84px;
+  min-height: 68px;
+  padding: 5px 7px;
   border: 2px solid rgb(242 193 78 / 62%);
   border-radius: 16px;
   background: linear-gradient(145deg, rgb(27 33 39 / 90%), rgb(8 11 14 / 86%));
@@ -800,7 +851,7 @@ button:disabled {
 .skill-button > span:not(.skill-empty-mark) {
   display: grid;
   gap: 1px;
-  text-align: left;
+  text-align: center;
   line-height: 1.05;
 }
 
@@ -808,7 +859,7 @@ button:disabled {
 .skill-button small { color: var(--muted); font-size: 10px; }
 .skill-button.is-ready { color: #fff; border-color: rgb(242 193 78 / 95%); filter: drop-shadow(0 0 10px rgb(242 193 78 / 24%)); }
 .skill-button.is-ready img { filter: none; }
-.skill-button.is-ready:active { transform: translateX(-50%) scale(0.94); }
+.skill-button.is-ready:active { transform: scale(0.94); }
 .skill-button[data-skill-type="dash"] { border-color: rgb(77 163 255 / 95%); }
 .skill-button[data-skill-type="shield"] { border-color: rgb(89 236 226 / 95%); }
 .skill-button[data-skill-type="spread"] { border-color: rgb(255 107 112 / 95%); }
@@ -1349,6 +1400,11 @@ button:disabled {
 
   .match-clock {
     top: 46px;
+  }
+
+  .kill-feed {
+    top: 88px;
+    width: min(270px, 40vw);
   }
 }
 

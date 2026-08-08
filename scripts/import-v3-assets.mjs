@@ -6,24 +6,42 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const assetRoot = join(root, "public", "assets", "v3");
 const characterIds = ["blaze", "medic", "fortress", "arc", "phase", "runner"];
 const rasterStates = ["portrait", "idle", "move", "attack", "hit", "death"];
+const characterDirections = ["right", "down-right", "down", "down-left", "left", "up-left", "up", "up-right"];
 const approvedSources = new Set([
   "local://user-provided-character-art",
+  "local://user-provided-weapon-art",
+  "local://user-provided-killstreak-audio",
+  "local://energy-brawl-project-assets",
   "https://opengameart.org/content/top-down-sci-fi-shooter-characters-20",
   "https://opengameart.org/content/top-down-sci-fi-shooter-pack",
   "https://opengameart.org/content/top-down-sci-fi-shooter-some-random-guys-terrain-texture",
   "https://kenney.nl/assets/top-down-shooter",
+  "https://kenney.nl/assets/sci-fi-rts",
+  "https://kenney.nl/assets/particle-pack",
 ]);
 
 const runtime = (relative) => `/assets/v3/${relative.replaceAll("\\", "/")}`;
 const characterOutputs = characterIds.flatMap((id) => [
   ...rasterStates.filter((state) => state !== "portrait").map((state) => runtime(`characters/${id}/${state}.png`)),
-  runtime(`characters/${id}/combat.svg`),
 ]);
 const userCharacterOutputs = characterIds.flatMap((id) => [
   runtime(`characters/${id}/portrait.png`),
   runtime(`characters/${id}/combat.png`),
+  ...characterDirections.map((direction) => runtime(`characters/${id}/directions/${direction}.png`)),
 ]);
-const arenaOutputs = ["floor", "wall", "decal", "light"].map((name) => runtime(`arena/${name}.png`));
+const arenaFloorOutput = [runtime("arena/floor.png")];
+const arenaStructureOutputs = ["wall", "decal", "light"].map((name) => runtime(`arena/${name}.png`));
+const projectileOutputs = [
+  "projectile-core", "projectile-trace", "muzzle-flare", "impact-burst", "impact-spark", "impact-smoke",
+].map((name) => runtime(`fx/projectiles/${name}.png`));
+const weaponOutputs = ["cyan-heavy", "violet-rifle", "white-tech", "ember-cannon"].map((name) => runtime(`weapons/${name}.png`));
+const projectAssetOutputs = [
+  ...characterIds.flatMap((id) => [runtime(`characters/${id}/fallback.svg`), runtime(`characters/${id}/combat.svg`)]),
+  ...["dash", "shield", "spread", "heal"].map((name) => runtime(`skills/${name}.svg`)),
+  runtime("arena/sigil.svg"),
+  runtime("pickups/energy-core.svg"),
+];
+const killstreakAudioOutputs = [1, 2, 3, 4, 5].map((tier) => runtime(`audio/killstreak/kill-${tier}.wav`));
 
 const manifestEntries = [
   {
@@ -41,11 +59,46 @@ const manifestEntries = [
     outputFiles: characterOutputs,
   },
   {
-    source: "Top-down Shooter",
+    source: "Top-down Sci-fi Shooter Terrain Texture",
+    author: "Some Random Guys",
+    license: "CC-BY-SA 3.0",
+    sourceUrl: "https://opengameart.org/content/top-down-sci-fi-shooter-some-random-guys-terrain-texture",
+    outputFiles: arenaFloorOutput,
+  },
+  {
+    source: "Sci-Fi RTS",
     author: "Kenney",
     license: "CC0 1.0",
-    sourceUrl: "https://kenney.nl/assets/top-down-shooter",
-    outputFiles: arenaOutputs,
+    sourceUrl: "https://kenney.nl/assets/sci-fi-rts",
+    outputFiles: arenaStructureOutputs,
+  },
+  {
+    source: "Particle Pack",
+    author: "Kenney",
+    license: "CC0 1.0",
+    sourceUrl: "https://kenney.nl/assets/particle-pack",
+    outputFiles: projectileOutputs,
+  },
+  {
+    source: "User-provided weapon art",
+    author: "Project owner",
+    license: "User-provided for this project",
+    sourceUrl: "local://user-provided-weapon-art",
+    outputFiles: weaponOutputs,
+  },
+  {
+    source: "User-provided killstreak audio",
+    author: "Project owner",
+    license: "User-provided for this project",
+    sourceUrl: "local://user-provided-killstreak-audio",
+    outputFiles: killstreakAudioOutputs,
+  },
+  {
+    source: "Energy Brawl project assets",
+    author: "Energy Brawl contributors",
+    license: "MIT",
+    sourceUrl: "local://energy-brawl-project-assets",
+    outputFiles: projectAssetOutputs,
   },
 ];
 
