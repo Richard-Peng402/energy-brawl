@@ -12,6 +12,7 @@ describe("mobile lobby compact landscape layout", () => {
     expect(skillButton).not.toContain("translateX(-50%)");
     expect(extractBlock(styles, ".skill-button.is-ready:active")).not.toContain("translateX(-50%)");
     expect(extractBlock(styles, ".kill-feed")).toContain("grid-template-rows: 1fr");
+    expect(skillButton).toContain("bottom: max(154px");
   });
 
   it("lets every sub-1000px landscape grid shrink instead of enforcing a desktop minimum", () => {

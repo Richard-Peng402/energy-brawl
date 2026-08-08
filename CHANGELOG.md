@@ -1,5 +1,14 @@
 # 更新记录
 
+## [4.0.1] - 2026-08-08
+
+### Fixed
+
+- Fixed Blaze anchor creation, dash, return, and mobile cooldown state feedback.
+- Added independent hold-to-preview indicators for all six exclusive skills.
+- Upgraded timed buffs to persistent layered aura, pulse, orbit, and afterimage feedback.
+- Moved both mobile skill controls upward to increase the safe gap from the attack stick.
+
 ## [4.0.0] - 2026-08-08
 
 ### Added

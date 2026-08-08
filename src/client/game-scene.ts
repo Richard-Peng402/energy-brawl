@@ -46,6 +46,10 @@ import { consumePositionCorrection, InputReconciler } from "./input-reconciliati
 import { calculateArenaCameraZoom } from "./mobile-viewport";
 import { predictLocalPosition } from "./prediction";
 import { shouldAdvanceSnapshotAnchor, SnapshotBuffer } from "./snapshot-buffer";
+import type { SkillIndicatorState } from "./skill-indicator";
+import { getSkillIndicatorProfile } from "./skill-indicator";
+import { getExclusiveEffectProfile } from "./skill-effects";
+import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 
 interface PlayerView {
   container: Phaser.GameObjects.Container;
@@ -76,6 +80,17 @@ interface MovingView {
   ownerId: string;
   color: number;
   lastTrail: TrailMemory;
+}
+
+interface ExclusiveEffectView {
+  container: Phaser.GameObjects.Container;
+  sprite: Phaser.GameObjects.Image;
+  inner: Phaser.GameObjects.Arc;
+  outer: Phaser.GameObjects.Arc;
+  orbit: Phaser.GameObjects.Arc;
+  graphics: Phaser.GameObjects.Graphics;
+  skillId: ExclusiveSkillId;
+  startedAt: number;
 }
 
 const CHARACTER_RENDER_STATES: readonly CharacterAssetState[] = ["idle", "move", "attack", "hit", "death", "fallback"];
@@ -143,6 +158,10 @@ export class GameRenderer {
     this.scene.resetLocalInputs();
   }
 
+  setExclusiveSkillPreview(state: SkillIndicatorState | null): void {
+    this.scene.setExclusiveSkillPreview(state);
+  }
+
   destroy(): void {
     this.game.destroy(true);
   }
@@ -154,6 +173,7 @@ class ArenaScene extends Phaser.Scene {
   private readonly energyViews = new Map<string, Phaser.GameObjects.Sprite>();
   private readonly skillOrbViews = new Map<string, Phaser.GameObjects.Container>();
   private readonly exclusiveEffectRevisions = new Map<string, string>();
+  private readonly exclusiveEffectViews = new Map<string, ExclusiveEffectView>();
   private readonly snapshotBuffer = new SnapshotBuffer<GameSnapshot>();
   private readonly inputReconciler = new InputReconciler();
   private snapshot: GameSnapshot | null = null;
@@ -161,6 +181,8 @@ class ArenaScene extends Phaser.Scene {
   private localAim: Vec2 = { x: 0, y: 0 };
   private aimCorridor: Phaser.GameObjects.Rectangle | null = null;
   private aimEnd: Phaser.GameObjects.Arc | null = null;
+  private exclusiveSkillPreview: SkillIndicatorState | null = null;
+  private exclusiveSkillIndicatorGraphics: Phaser.GameObjects.Graphics | null = null;
   private latestSnapshotReceivedAt = 0;
   private renderDelayMs = 100;
   private correctionRemaining: Vec2 = { x: 0, y: 0 };
@@ -219,6 +241,7 @@ class ArenaScene extends Phaser.Scene {
     this.resizeCamera(this.scale.width, this.scale.height);
     this.scale.on(Phaser.Scale.Events.RESIZE, (gameSize: Phaser.Structs.Size) => this.resizeCamera(gameSize.width, gameSize.height));
     this.aimCorridor = this.add.rectangle(0, 0, 1, AIM_GUIDE_LINE_WIDTH, 0xffe6a3, 0.9).setOrigin(0, 0.5).setDepth(8).setVisible(false);
+    this.exclusiveSkillIndicatorGraphics = this.add.graphics().setDepth(8).setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
     this.aimEnd = this.add.circle(0, 0, 5, 0xfff1bf, 0.9).setStrokeStyle(2, 0xff8c58, 0.95).setDepth(9).setVisible(false);
     this.ready = true;
     if (this.snapshot) this.syncSnapshot(this.snapshot);
@@ -250,6 +273,7 @@ class ArenaScene extends Phaser.Scene {
     }
     this.updateCamera();
     this.updateAimGuide();
+    this.updateExclusiveSkillIndicator();
   }
 
   applySnapshot(snapshot: GameSnapshot): void {
@@ -281,6 +305,15 @@ class ArenaScene extends Phaser.Scene {
 
   setLocalAim(input: Vec2): void {
     this.localAim = input;
+  }
+
+  setExclusiveSkillPreview(state: SkillIndicatorState | null): void {
+    this.exclusiveSkillPreview = state ? {
+      ...state,
+      origin: { ...state.origin },
+      direction: { ...state.direction },
+    } : null;
+    if (!state) this.exclusiveSkillIndicatorGraphics?.setVisible(false).clear();
   }
 
   addLocalInput(input: PlayerInput, deltaMs: number): void {
@@ -380,6 +413,7 @@ class ArenaScene extends Phaser.Scene {
     for (const [id, view] of this.playerViews) {
       if (!activePlayers.has(id)) {
         if (view.shield) view.shield.setVisible(false);
+        this.destroyExclusiveEffectView(id);
         view.container.destroy(true);
         this.playerViews.delete(id);
       }
@@ -444,31 +478,102 @@ class ArenaScene extends Phaser.Scene {
 
   private syncExclusiveSkillEffect(player: PlayerSnapshot): void {
     const state = player.exclusiveSkillState;
-    if (!state) { this.exclusiveEffectRevisions.delete(player.id); return; }
-    const revision = `${state.skillId}:${state.startedAt}`;
-    if (this.exclusiveEffectRevisions.get(player.id) === revision) return;
-    this.exclusiveEffectRevisions.set(player.id, revision);
-    const color = Phaser.Display.Color.HexStringToColor(player.color).color;
-    const sprite = this.add.image(player.x, player.y, `exclusive-fx:${player.characterId}`).setDisplaySize(210, 210).setDepth(6).setAlpha(0.9);
-    const graphics = this.add.graphics().setDepth(7);
-    graphics.lineStyle(state.skillId === "mobile-bulwark" ? 12 : 8, color, 0.88);
-    graphics.fillStyle(color, 0.2);
-    if (state.skillId === "pulse-heal") {
-      graphics.fillCircle(player.x, player.y, 54);
-      graphics.strokeCircle(player.x, player.y, 280);
-    } else if (state.skillId === "mobile-bulwark") {
-      graphics.beginPath(); graphics.arc(player.x, player.y, 150, player.angle - 0.72, player.angle + 0.72); graphics.strokePath();
-    } else if (state.skillId === "capacitor-overload") {
-      graphics.strokeCircle(player.x, player.y, 68); graphics.strokeCircle(player.x, player.y, 92);
-    } else if (state.skillId === "afterimage-run") {
-      graphics.fillEllipse(player.x - Math.cos(player.angle) * 70, player.y - Math.sin(player.angle) * 70, 120, 52);
-    } else {
-      const origin = state.anchor ?? { x: player.x - Math.cos(player.angle) * 180, y: player.y - Math.sin(player.angle) * 180 };
-      graphics.beginPath(); graphics.moveTo(origin.x, origin.y); graphics.lineTo(player.x, player.y); graphics.strokePath();
-      graphics.fillCircle(origin.x, origin.y, 22); graphics.fillCircle(player.x, player.y, 18);
+    if (!state) {
+      this.exclusiveEffectRevisions.delete(player.id);
+      this.destroyExclusiveEffectView(player.id);
+      return;
     }
-    this.tweens.add({ targets: graphics, alpha: 0, duration: state.skillId === "pulse-heal" ? 520 : 900, ease: "Sine.Out", onComplete: () => graphics.destroy() });
-    this.tweens.add({ targets: sprite, alpha: 0, scale: 1.45, duration: state.skillId === "pulse-heal" ? 520 : 900, ease: "Sine.Out", onComplete: () => sprite.destroy() });
+    const revision = `${state.skillId}:${state.startedAt}`;
+    let effect = this.exclusiveEffectViews.get(player.id);
+    if (!effect || this.exclusiveEffectRevisions.get(player.id) !== revision) {
+      this.destroyExclusiveEffectView(player.id);
+      effect = this.createExclusiveEffectView(player, state.skillId, state.startedAt);
+      this.exclusiveEffectViews.set(player.id, effect);
+      this.exclusiveEffectRevisions.set(player.id, revision);
+    }
+    this.updateExclusiveEffectView(effect, player);
+  }
+
+  private createExclusiveEffectView(player: PlayerSnapshot, skillId: ExclusiveSkillId, startedAt: number): ExclusiveEffectView {
+    const profile = getExclusiveEffectProfile(skillId);
+    const color = Phaser.Display.Color.HexStringToColor(player.color).color;
+    const sprite = this.add.image(0, 0, `exclusive-fx:${player.characterId}`)
+      .setDisplaySize(profile.innerRadius * 2.45, profile.innerRadius * 2.45)
+      .setAlpha(0.82)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const inner = this.add.circle(0, 0, profile.innerRadius, color, 0.12)
+      .setStrokeStyle(5, 0xffffff, 0.72)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const outer = this.add.circle(0, 0, profile.outerRadius, color, 0.055)
+      .setStrokeStyle(skillId === "mobile-bulwark" ? 10 : 6, color, 0.72)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const orbit = this.add.circle(0, 0, Math.min(profile.outerRadius * 0.82, profile.innerRadius + 44), 0xffffff, 0)
+      .setStrokeStyle(3, 0xffffff, 0.52)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const graphics = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
+    const container = this.add.container(player.x, player.y, [outer, inner, orbit, sprite, graphics]).setDepth(6);
+    this.tweens.add({ targets: inner, scale: 1.22, alpha: 0.22, duration: profile.pulseMs, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+    this.tweens.add({ targets: outer, scale: 1.08, alpha: 0.36, duration: profile.pulseMs * 1.35, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+    this.tweens.add({ targets: orbit, angle: 360, duration: profile.rotationMs, repeat: -1, ease: "Linear" });
+    this.tweens.add({ targets: sprite, angle: skillId === "afterimage-run" ? -8 : 12, scale: 1.12, alpha: 0.48, duration: profile.pulseMs * 0.8, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+    return { container, sprite, inner, outer, orbit, graphics, skillId, startedAt };
+  }
+
+  private updateExclusiveEffectView(effect: ExclusiveEffectView, player: PlayerSnapshot): void {
+    const state = player.exclusiveSkillState;
+    if (!state) return;
+    const color = Phaser.Display.Color.HexStringToColor(player.color).color;
+    const graphics = effect.graphics;
+    effect.container.setPosition(player.x, player.y);
+    graphics.clear().fillStyle(color, 0.16).lineStyle(effect.skillId === "mobile-bulwark" ? 12 : 7, color, 0.88);
+    if (effect.skillId === "breach" && state.anchor) {
+      const localAnchor = { x: state.anchor.x - player.x, y: state.anchor.y - player.y };
+      graphics.lineBetween(0, 0, localAnchor.x, localAnchor.y);
+      graphics.fillCircle(localAnchor.x, localAnchor.y, 24);
+      graphics.lineStyle(5, 0xffefb4, 0.92).strokeCircle(localAnchor.x, localAnchor.y, 38);
+    } else if (effect.skillId === "pulse-heal") {
+      graphics.strokeCircle(0, 0, 280);
+      graphics.lineStyle(4, 0xe6fff6, 0.72).strokeCircle(0, 0, 150);
+      for (let index = 0; index < 4; index += 1) {
+        const angle = (Math.PI * 2 * index) / 4;
+        graphics.fillCircle(Math.cos(angle) * 92, Math.sin(angle) * 92, 13);
+      }
+    } else if (effect.skillId === "mobile-bulwark") {
+      graphics.beginPath();
+      graphics.moveTo(0, 0);
+      graphics.arc(0, 0, 170, player.angle - 0.72, player.angle + 0.72, false);
+      graphics.closePath();
+      graphics.fillPath();
+      graphics.strokePath();
+      graphics.lineStyle(5, 0xffffff, 0.62).strokeCircle(0, 0, 280);
+    } else if (effect.skillId === "capacitor-overload") {
+      for (let index = 0; index < 8; index += 1) {
+        const angle = (Math.PI * 2 * index) / 8 + player.angle;
+        const innerRadius = 62 + (index % 2) * 8;
+        graphics.lineBetween(Math.cos(angle) * innerRadius, Math.sin(angle) * innerRadius, Math.cos(angle) * 112, Math.sin(angle) * 112);
+      }
+      graphics.lineStyle(4, 0xffffff, 0.84).strokeCircle(0, 0, 84);
+    } else if (effect.skillId === "afterimage-run") {
+      for (let index = 1; index <= 3; index += 1) {
+        const x = -Math.cos(player.angle) * index * 48;
+        const y = -Math.sin(player.angle) * index * 48;
+        graphics.fillEllipse(x, y, 96 - index * 14, 48 - index * 6);
+      }
+      graphics.lineStyle(5, 0xffffff, 0.64).lineBetween(-Math.cos(player.angle) * 170, -Math.sin(player.angle) * 170, Math.cos(player.angle) * 70, Math.sin(player.angle) * 70);
+    } else {
+      const backwardX = -Math.cos(player.angle) * 150;
+      const backwardY = -Math.sin(player.angle) * 150;
+      graphics.lineBetween(backwardX, backwardY, 0, 0);
+      graphics.fillCircle(backwardX, backwardY, 28);
+    }
+  }
+
+  private destroyExclusiveEffectView(playerId: string): void {
+    const effect = this.exclusiveEffectViews.get(playerId);
+    if (!effect) return;
+    this.tweens.killTweensOf([effect.inner, effect.outer, effect.orbit, effect.sprite]);
+    effect.container.destroy(true);
+    this.exclusiveEffectViews.delete(playerId);
   }
 
   private createPlayerView(player: PlayerSnapshot): PlayerView {
@@ -641,6 +746,85 @@ class ArenaScene extends Phaser.Scene {
     );
     object.setPosition(result.position.x, result.position.y);
     this.correctionRemaining = result.remaining;
+  }
+
+  private updateExclusiveSkillIndicator(): void {
+    const graphics = this.exclusiveSkillIndicatorGraphics;
+    const preview = this.exclusiveSkillPreview;
+    const player = this.snapshot?.players.find((candidate) => candidate.id === this.localPlayerId);
+    const view = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : null;
+    if (!graphics || !preview?.visible || !player?.alive || !view || !preview.skillId) {
+      graphics?.setVisible(false).clear();
+      return;
+    }
+
+    const profile = getSkillIndicatorProfile(preview.skillId);
+    const directionLength = Math.hypot(preview.direction.x, preview.direction.y);
+    const direction = directionLength > 0.08
+      ? { x: preview.direction.x / directionLength, y: preview.direction.y / directionLength }
+      : { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+    const origin = { x: view.container.x, y: view.container.y };
+    const angle = Math.atan2(direction.y, direction.x);
+    graphics.clear().setVisible(true);
+    graphics.fillStyle(profile.color, 0.11);
+    graphics.lineStyle(profile.thickness, profile.color, 0.42);
+
+    const activeAnchor = preview.skillId === "blaze" && player.exclusiveSkillState?.skillId === "breach"
+      ? player.exclusiveSkillState.anchor
+      : undefined;
+    if (activeAnchor) {
+      graphics.lineBetween(origin.x, origin.y, activeAnchor.x, activeAnchor.y);
+      graphics.fillCircle(activeAnchor.x, activeAnchor.y, 24);
+      graphics.lineStyle(5, 0xfff2c2, 0.96).strokeCircle(activeAnchor.x, activeAnchor.y, 38);
+      graphics.lineStyle(3, profile.color, 0.88).strokeCircle(activeAnchor.x, activeAnchor.y, 54);
+      return;
+    }
+
+    const target = { x: origin.x + direction.x * profile.range, y: origin.y + direction.y * profile.range };
+    switch (profile.shape) {
+      case "dash-line":
+      case "phase-line":
+        graphics.lineBetween(origin.x, origin.y, target.x, target.y);
+        graphics.fillCircle(target.x, target.y, profile.shape === "phase-line" ? 30 : 24);
+        graphics.lineStyle(5, 0xffffff, 0.82).strokeCircle(target.x, target.y, profile.shape === "phase-line" ? 46 : 36);
+        break;
+      case "heal-radius":
+        graphics.fillCircle(origin.x, origin.y, 52);
+        graphics.strokeCircle(origin.x, origin.y, profile.range);
+        graphics.lineStyle(5, 0xcffff0, 0.8).strokeCircle(origin.x, origin.y, profile.range * 0.55);
+        break;
+      case "front-cone":
+        graphics.beginPath();
+        graphics.moveTo(origin.x, origin.y);
+        graphics.arc(origin.x, origin.y, profile.range, angle - 0.72, angle + 0.72, false);
+        graphics.closePath();
+        graphics.fillPath();
+        graphics.strokePath();
+        break;
+      case "buff-aura":
+        graphics.fillCircle(origin.x, origin.y, profile.range * 0.55);
+        graphics.strokeCircle(origin.x, origin.y, profile.range);
+        graphics.lineStyle(5, 0xffffff, 0.75).strokeCircle(origin.x, origin.y, profile.range * 0.72);
+        for (let index = 0; index < 6; index += 1) {
+          const ray = (Math.PI * 2 * index) / 6;
+          graphics.lineBetween(origin.x + Math.cos(ray) * 55, origin.y + Math.sin(ray) * 55, origin.x + Math.cos(ray) * 105, origin.y + Math.sin(ray) * 105);
+        }
+        break;
+      case "afterimage-lane": {
+        const sideX = -direction.y * 54;
+        const sideY = direction.x * 54;
+        graphics.beginPath();
+        graphics.moveTo(origin.x + sideX, origin.y + sideY);
+        graphics.lineTo(target.x + sideX, target.y + sideY);
+        graphics.lineTo(target.x - sideX, target.y - sideY);
+        graphics.lineTo(origin.x - sideX, origin.y - sideY);
+        graphics.closePath();
+        graphics.fillPath();
+        graphics.strokePath();
+        graphics.fillTriangle(target.x, target.y, target.x - direction.x * 48 + sideX * 0.6, target.y - direction.y * 48 + sideY * 0.6, target.x - direction.x * 48 - sideX * 0.6, target.y - direction.y * 48 - sideY * 0.6);
+        break;
+      }
+    }
   }
 
   private updateAimGuide(): void {

@@ -10,6 +10,8 @@ import { GameRenderer } from "./game-scene";
 import { buildCharacterSelection, GameNetworkClient, isCharacterSelectionDisabled } from "./network";
 import { MobileViewport } from "./mobile-viewport";
 import { gameLeaderboardRevision, roomUiRevision } from "./render-throttle";
+import { canPressExclusiveSkill, exclusiveSkillButtonMode } from "./exclusive-skill-ui";
+import { getSkillIndicatorProfile, SkillIndicatorController, type SkillIndicatorSkill } from "./skill-indicator";
 import { skillUseBlockReason } from "./skill-use";
 import { TouchRouter } from "./touch-router";
 import { VirtualStick } from "./virtual-stick";
@@ -28,6 +30,9 @@ export class MobileApp {
   private inputSequence = 0;
   private skillActionSequence = 0;
   private exclusiveSkillActionSequence = 0;
+  private readonly exclusiveSkillIndicator = new SkillIndicatorController();
+  private exclusivePreviewPointerId: number | null = null;
+  private exclusivePreviewActive = false;
   private lastSkillType: SkillType | null | undefined = undefined;
   private lastInputSentAt = 0;
   private acceptingInput = false;
@@ -99,10 +104,26 @@ export class MobileApp {
       const result = await this.network.returnToLobby();
       if (!result.ok) this.showToast(result.error ?? "无法返回大厅");
     });
-    this.find<HTMLButtonElement>("#exclusive-skill-button").addEventListener("pointerdown", (event) => {
+    const exclusiveButton = this.find<HTMLButtonElement>("#exclusive-skill-button");
+    exclusiveButton.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.useExclusiveSkill();
+      if (exclusiveButton.setPointerCapture) exclusiveButton.setPointerCapture(event.pointerId);
+      this.beginExclusiveSkillPreview(event.pointerId);
+    });
+    exclusiveButton.addEventListener("pointerup", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.releaseExclusiveSkillPreview(event.pointerId);
+    });
+    exclusiveButton.addEventListener("pointercancel", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.cancelExclusiveSkillPreview(event.pointerId);
+    });
+    exclusiveButton.addEventListener("lostpointercapture", (event) => {
+      const pointerId = (event as PointerEvent).pointerId;
+      if (this.exclusivePreviewPointerId === pointerId) this.cancelExclusiveSkillPreview(pointerId);
     });
     for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-fullscreen]")) {
       button.addEventListener("click", async () => {
@@ -314,10 +335,13 @@ export class MobileApp {
     if (!player) { button.disabled = true; return; }
     const skill = getExclusiveSkill(player.characterId);
     const remaining = Math.max(0, (player.exclusiveSkillReadyAt ?? 0) - serverTime);
-    button.disabled = !player.alive || remaining > 0;
-    button.classList.toggle("is-ready", player.alive && remaining === 0);
-    button.innerHTML = `<span class="exclusive-skill-mark">✦</span><span><b>${skill.name}</b><small>${remaining > 0 ? `${(remaining / 1_000).toFixed(1)}s` : "就绪"}</small></span>`;
-    button.setAttribute("aria-label", `${skill.name}：${skill.description}`);
+    const mode = exclusiveSkillButtonMode(player, serverTime);
+    button.disabled = !canPressExclusiveSkill(player, serverTime);
+    button.classList.toggle("is-ready", mode === "ready" || mode === "anchor-return");
+    button.classList.toggle("is-anchor-return", mode === "anchor-return");
+    const status = mode === "anchor-return" ? "返回锚点" : mode === "cooldown" ? `${(remaining / 1_000).toFixed(1)}s` : mode === "ready" ? "就绪" : "等待复活";
+    button.innerHTML = `<span class="exclusive-skill-mark">✦</span><span><b>${skill.name}</b><small>${status}</small></span>`;
+    button.setAttribute("aria-label", `${skill.name} · ${skill.description}`);
   }
 
   private renderSkillButton(player: PlayerSnapshot | undefined): void {
@@ -399,6 +423,7 @@ export class MobileApp {
       const aim = this.aimStick.getValue();
       this.renderer?.setLocalInput(move);
       this.renderer?.setLocalAim(aim);
+      this.updateExclusiveSkillPreview(move, aim);
       if (time - this.lastInputSentAt >= 33) {
         const input = {
           seq: ++this.inputSequence,
@@ -414,6 +439,7 @@ export class MobileApp {
         this.lastInputSentAt = time;
       }
     } else {
+      if (this.exclusivePreviewActive) this.cancelExclusiveSkillPreview(this.exclusivePreviewPointerId ?? -1);
       if (this.acceptingInput) this.renderer?.resetLocalInputs();
       this.lastInputSentAt = 0;
       this.renderer?.setLocalInput({ x: 0, y: 0 });
@@ -449,17 +475,59 @@ export class MobileApp {
     this.network.sendSkillAction(this.skillActionSequence);
   };
 
-  private readonly useExclusiveSkill = (): void => {
+  private beginExclusiveSkillPreview(pointerId: number): void {
     const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
+    const serverTime = this.network.game?.serverTime ?? 0;
     if (!this.acceptingInput || !own) { this.showToast("暂时无法使用专属技能"); return; }
-    const remaining = Math.max(0, (own.exclusiveSkillReadyAt ?? 0) - (this.network.game?.serverTime ?? 0));
-    if (!own.alive || remaining > 0) { this.showToast(remaining > 0 ? `专属技能冷却 ${(remaining / 1_000).toFixed(1)} 秒` : "等待复活"); return; }
+    if (!canPressExclusiveSkill(own, serverTime)) {
+      const remaining = Math.max(0, (own.exclusiveSkillReadyAt ?? 0) - serverTime);
+      this.showToast(own.alive ? `专属技能冷却 ${Math.ceil(remaining / 1_000)} 秒` : "等待复活");
+      return;
+    }
+    const skillId = own.characterId as SkillIndicatorSkill;
+    const profile = getSkillIndicatorProfile(skillId);
     const move = this.moveStick.getValue();
     const aim = this.aimStick.getValue();
     const direction = own.characterId === "blaze" ? move : aim.magnitude > 0.08 ? aim : { x: Math.cos(own.angle), y: Math.sin(own.angle) };
+    this.exclusiveSkillIndicator.begin(skillId, { x: own.x, y: own.y }, profile.range);
+    this.exclusiveSkillIndicator.update(direction);
+    this.exclusivePreviewPointerId = pointerId;
+    this.exclusivePreviewActive = true;
+    this.renderer?.setExclusiveSkillPreview(this.exclusiveSkillIndicator.snapshot());
+  }
+
+  private updateExclusiveSkillPreview(move: { x: number; y: number; magnitude: number }, aim: { x: number; y: number; magnitude: number }): void {
+    if (!this.exclusivePreviewActive) return;
+    const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
+    if (!own) return;
+    const direction = own.characterId === "blaze" ? move : aim.magnitude > 0.08 ? aim : { x: Math.cos(own.angle), y: Math.sin(own.angle) };
+    this.exclusiveSkillIndicator.update(direction);
+    this.renderer?.setExclusiveSkillPreview(this.exclusiveSkillIndicator.snapshot());
+  }
+
+  private releaseExclusiveSkillPreview(pointerId: number): void {
+    if (!this.exclusivePreviewActive || this.exclusivePreviewPointerId !== pointerId) return;
+    const preview = this.exclusiveSkillIndicator.release();
+    this.exclusivePreviewActive = false;
+    this.exclusivePreviewPointerId = null;
+    this.renderer?.setExclusiveSkillPreview(null);
+    this.sendExclusiveSkill(preview.direction);
+  }
+
+  private cancelExclusiveSkillPreview(pointerId: number): void {
+    if (!this.exclusivePreviewActive || (pointerId !== -1 && this.exclusivePreviewPointerId !== pointerId)) return;
+    this.exclusiveSkillIndicator.cancel();
+    this.exclusivePreviewActive = false;
+    this.exclusivePreviewPointerId = null;
+    this.renderer?.setExclusiveSkillPreview(null);
+  }
+
+  private sendExclusiveSkill(direction: { x: number; y: number }): void {
+    const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
+    if (!this.acceptingInput || !own) return;
     this.exclusiveSkillActionSequence = Math.max(this.exclusiveSkillActionSequence, own.lastProcessedExclusiveSkillAction ?? 0) + 1;
     this.network.sendExclusiveSkillAction(this.exclusiveSkillActionSequence, direction.x, direction.y);
-  };
+  }
 
   private showToast(message: string): void {
     const toast = this.find("#toast");

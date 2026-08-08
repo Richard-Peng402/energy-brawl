@@ -833,7 +833,7 @@ button:disabled {
   position: absolute;
   z-index: 3;
   right: max(16px, calc(env(safe-area-inset-right) + 10px));
-  bottom: max(104px, calc(env(safe-area-inset-bottom) + 94px));
+  bottom: max(154px, calc(env(safe-area-inset-bottom) + 144px));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -857,6 +857,13 @@ button:disabled {
 .exclusive-skill-button {
   right: max(112px, calc(env(safe-area-inset-right) + 106px));
   border-color: rgb(199 125 255 / 72%);
+}
+
+.exclusive-skill-button.is-anchor-return {
+  border-color: #ffb84d;
+  color: #fff5d6;
+  background: linear-gradient(145deg, rgb(94 55 20 / 96%), rgb(24 16 9 / 92%));
+  filter: drop-shadow(0 0 16px rgb(255 184 77 / 48%));
 }
 
 .exclusive-skill-mark {

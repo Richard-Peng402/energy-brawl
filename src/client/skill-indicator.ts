@@ -3,6 +3,27 @@ import type { Vec2 } from "../shared/protocol";
 export type SkillIndicatorSkill = "blaze" | "medic" | "fortress" | "arc" | "phase" | "runner";
 export interface SkillIndicatorState { skillId: SkillIndicatorSkill | null; origin: Vec2; direction: Vec2; range: number; visible: boolean; }
 
+export type SkillIndicatorShape = "dash-line" | "heal-radius" | "front-cone" | "buff-aura" | "phase-line" | "afterimage-lane";
+export interface SkillIndicatorProfile {
+  shape: SkillIndicatorShape;
+  range: number;
+  thickness: number;
+  color: number;
+}
+
+const INDICATOR_PROFILES: Readonly<Record<SkillIndicatorSkill, SkillIndicatorProfile>> = {
+  blaze: { shape: "dash-line", range: 360, thickness: 16, color: 0xffa63d },
+  medic: { shape: "heal-radius", range: 280, thickness: 14, color: 0x62f5be },
+  fortress: { shape: "front-cone", range: 280, thickness: 18, color: 0x63d9ff },
+  arc: { shape: "buff-aura", range: 120, thickness: 14, color: 0xffd45e },
+  phase: { shape: "phase-line", range: 420, thickness: 16, color: 0xa77bff },
+  runner: { shape: "afterimage-lane", range: 220, thickness: 14, color: 0xff6d94 },
+};
+
+export function getSkillIndicatorProfile(skillId: SkillIndicatorSkill): SkillIndicatorProfile {
+  return { ...INDICATOR_PROFILES[skillId] };
+}
+
 export class SkillIndicatorController {
   private state: SkillIndicatorState = { skillId: null, origin: { x: 0, y: 0 }, direction: { x: 1, y: 0 }, range: 0, visible: false };
   begin(skillId: SkillIndicatorSkill, origin: Vec2, range: number): SkillIndicatorState { this.state = { skillId, origin: { ...origin }, direction: { x: 1, y: 0 }, range, visible: true }; return this.state; }
