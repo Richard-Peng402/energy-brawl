@@ -783,11 +783,26 @@ class ArenaScene extends Phaser.Scene {
     const target = { x: origin.x + direction.x * profile.range, y: origin.y + direction.y * profile.range };
     switch (profile.shape) {
       case "dash-line":
-      case "phase-line":
+      case "phase-line": {
+        const sideX = -direction.y * 24;
+        const sideY = direction.x * 24;
+        graphics.lineStyle(profile.thickness + 18, profile.color, 0.14);
+        graphics.lineBetween(origin.x, origin.y, target.x, target.y);
+        graphics.lineStyle(profile.thickness, profile.color, 0.7);
         graphics.lineBetween(origin.x, origin.y, target.x, target.y);
         graphics.fillCircle(target.x, target.y, profile.shape === "phase-line" ? 30 : 24);
         graphics.lineStyle(5, 0xffffff, 0.82).strokeCircle(target.x, target.y, profile.shape === "phase-line" ? 46 : 36);
+        graphics.fillStyle(0xffffff, 0.92).fillTriangle(
+          target.x + direction.x * 18,
+          target.y + direction.y * 18,
+          target.x - direction.x * 28 + sideX,
+          target.y - direction.y * 28 + sideY,
+          target.x - direction.x * 28 - sideX,
+          target.y - direction.y * 28 - sideY,
+        );
+        graphics.lineStyle(4, profile.color, 0.9).strokeCircle(origin.x, origin.y, 34);
         break;
+      }
       case "heal-radius":
         graphics.fillCircle(origin.x, origin.y, 52);
         graphics.strokeCircle(origin.x, origin.y, profile.range);

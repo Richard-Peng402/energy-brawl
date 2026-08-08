@@ -135,6 +135,20 @@ input:focus-visible {
   pointer-events: auto;
 }
 
+.control-settings-button {
+  min-width: 52px;
+  height: 30px;
+  border: 1px solid rgb(167 123 255 / 62%);
+  border-radius: 4px;
+  padding: 0 9px;
+  background: rgb(20 14 31 / 88%);
+  color: #e9d9ff;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 .sound-button.is-muted {
   border-color: rgb(255 255 255 / 24%);
   color: #8f9ca2;
@@ -829,6 +843,14 @@ button:disabled {
   pointer-events: auto;
 }
 
+.arena-controls {
+  position: absolute;
+  z-index: 30;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(142px, calc(env(safe-area-inset-right) + 130px));
+  pointer-events: auto;
+}
+
 .skill-button {
   position: absolute;
   z-index: 3;
@@ -864,6 +886,18 @@ button:disabled {
   color: #fff5d6;
   background: linear-gradient(145deg, rgb(94 55 20 / 96%), rgb(24 16 9 / 92%));
   filter: drop-shadow(0 0 16px rgb(255 184 77 / 48%));
+}
+
+.exclusive-skill-button.is-aiming {
+  border-color: #e4c4ff;
+  color: #ffffff;
+  filter: drop-shadow(0 0 18px rgb(167 123 255 / 72%));
+}
+
+.skill-button.is-dragging {
+  z-index: 45;
+  border-color: #ffffff;
+  filter: drop-shadow(0 0 20px rgb(255 255 255 / 58%));
 }
 
 .exclusive-skill-mark {
@@ -942,6 +976,101 @@ button:disabled {
 
 .aim-stick {
   border-color: rgb(255 90 95 / 55%);
+}
+
+.exclusive-skill-stick {
+  z-index: 5;
+  width: 144px;
+  height: 144px;
+  margin: -72px 0 0 -72px;
+  border: 4px solid rgb(199 125 255 / 76%);
+  background: radial-gradient(circle, rgb(167 123 255 / 8%) 0 42%, rgb(20 10 35 / 72%) 44% 100%);
+  box-shadow: 0 0 28px rgb(167 123 255 / 35%), inset 0 0 24px rgb(167 123 255 / 18%);
+}
+
+.exclusive-skill-stick .stick-knob {
+  border-color: #f4e9ff;
+  background: rgb(167 123 255 / 88%);
+  box-shadow: 0 0 20px rgb(167 123 255 / 72%);
+}
+
+.skill-aim-hint {
+  position: absolute;
+  left: 50%;
+  bottom: max(28px, calc(env(safe-area-inset-bottom) + 18px));
+  transform: translateX(-50%);
+  border: 1px solid rgb(199 125 255 / 72%);
+  border-radius: 999px;
+  padding: 7px 14px;
+  background: rgb(11 7 18 / 84%);
+  color: #f3e8ff;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: 0 0 22px rgb(167 123 255 / 22%);
+}
+
+.layout-editor {
+  position: absolute;
+  z-index: 42;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 3px 8px;
+  border: 1px solid rgb(242 193 78 / 70%);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgb(10 13 16 / 94%);
+  pointer-events: auto;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 55%);
+}
+
+.layout-editor strong,
+.layout-editor span {
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
+.layout-editor strong { font-size: 11px; }
+.layout-editor span { color: #9aa8ae; font-size: 8px; }
+
+.layout-editor button {
+  min-height: 28px;
+  border: 1px solid #526068;
+  border-radius: 4px;
+  background: #222a30;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+#layout-save {
+  border-color: #31d0aa;
+  background: #1a574a;
+}
+
+.arena-screen.is-layout-editing::after {
+  content: "布局编辑中";
+  position: absolute;
+  z-index: 39;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(3 5 8 / 24%);
+  color: rgb(255 255 255 / 16%);
+  font-size: 8vw;
+  font-weight: 950;
+  pointer-events: none;
+}
+
+.arena-screen.is-layout-editing .skill-button {
+  animation: editable-control-pulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes editable-control-pulse {
+  to { box-shadow: 0 0 0 5px rgb(242 193 78 / 22%), 0 8px 22px rgb(0 0 0 / 42%); }
 }
 
 .stick-knob {
@@ -1047,6 +1176,137 @@ button:disabled {
   transform: translate(-50%, 0);
   opacity: 1;
 }
+
+.controls-dialog {
+  width: min(760px, calc(100vw - 36px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border: 1px solid #56656e;
+  border-radius: 12px;
+  padding: 0;
+  background: #171d22;
+  color: #f4f7f8;
+  box-shadow: 0 28px 90px rgb(0 0 0 / 75%);
+}
+
+.controls-dialog::backdrop {
+  background: rgb(3 6 9 / 78%);
+  backdrop-filter: blur(5px);
+}
+
+.controls-dialog-heading {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #39454c;
+  padding: 12px 18px;
+  background: linear-gradient(90deg, #20162e, #171d22);
+}
+
+.controls-dialog-heading .eyebrow { margin: 0 0 2px; }
+.controls-dialog-heading h2 { margin: 0; font-size: 22px; }
+
+.controls-dialog-heading > button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #56656e;
+  border-radius: 50%;
+  background: #222a30;
+  color: #ffffff;
+  font-size: 24px;
+}
+
+.controls-dialog-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 1px;
+  background: #39454c;
+}
+
+.controls-dialog-grid > section {
+  min-width: 0;
+  padding: 16px 18px 18px;
+  background: #171d22;
+}
+
+.controls-dialog-grid h3 { margin: 0 0 5px; font-size: 15px; }
+.controls-dialog-grid p { margin: 0 0 12px; color: #9aa8ae; font-size: 10px; line-height: 1.5; }
+
+.key-binding-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.key-binding-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #354149;
+  border-radius: 5px;
+  padding: 4px 5px 4px 9px;
+  background: #11171b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.key-capture {
+  min-width: 66px;
+  min-height: 28px;
+  border: 1px solid rgb(167 123 255 / 58%);
+  border-radius: 4px;
+  background: #281b38;
+  color: #eadcff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.key-capture.is-capturing {
+  min-width: 100px;
+  border-color: #f2c14e;
+  color: #fff1bd;
+  animation: editable-control-pulse 650ms ease-in-out infinite alternate;
+}
+
+.secondary-control-button,
+.touch-scale-label,
+#controls-edit-layout {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.secondary-control-button {
+  min-height: 34px;
+  border: 1px solid #56656e;
+  border-radius: 4px;
+  background: #222a30;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.touch-scale-label {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #354149;
+  border-radius: 6px;
+  padding: 12px;
+  background: #11171b;
+  color: #b9c4c9;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.touch-scale-label span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.touch-scale-label b { color: #f2c14e; }
+.touch-scale-label input { width: 100%; accent-color: #a77bff; }
 
 /* Host dashboard */
 .host-shell {
@@ -1373,6 +1633,20 @@ button:disabled {
 }
 
 @media (max-height: 470px) and (orientation: landscape) {
+  .controls-dialog {
+    width: min(820px, calc(100vw - 24px));
+    max-height: calc(100dvh - 16px);
+  }
+
+  .controls-dialog-heading {
+    min-height: 48px;
+    padding-block: 6px;
+  }
+
+  .controls-dialog-heading h2 { font-size: 17px; }
+  .controls-dialog-grid > section { padding: 10px 12px; }
+  .key-binding-row { min-height: 32px; }
+
   .game-header {
     height: 40px;
   }
