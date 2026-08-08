@@ -9,6 +9,36 @@ export type CombatEffectKind =
 export type RenderEffectKind = CombatEffectKind | "environment";
 export type CharacterVisualState = "idle" | "move" | "attack" | "hit" | "death";
 
+export const PLAYER_CHILD_LAYER_ORDER = [
+  "shadow",
+  "ring",
+  "sprite",
+  "weapon",
+  "aim",
+  "health-bg",
+  "health-fill",
+  "name",
+] as const;
+export type PlayerChildLayer = typeof PLAYER_CHILD_LAYER_ORDER[number];
+
+export function getPlayerChildLayerOrder(): readonly PlayerChildLayer[] {
+  return PLAYER_CHILD_LAYER_ORDER;
+}
+
+export interface WeaponTransform {
+  x: number;
+  y: number;
+  rotation: number;
+}
+
+export function resolveWeaponTransform(angle: number, distance: number): WeaponTransform {
+  return {
+    x: Math.cos(angle) * distance,
+    y: Math.sin(angle) * distance,
+    rotation: angle,
+  };
+}
+
 export interface CharacterVisualSignals {
   alive: boolean;
   speed: number;

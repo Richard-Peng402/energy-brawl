@@ -36,8 +36,10 @@ import {
   characterWeaponKind,
   characterTextureKey,
   deriveCharacterVisualState,
+  getPlayerChildLayerOrder,
   resolveCharacterDirectionTextureKey,
   resolveCharacterTextureKey,
+  resolveWeaponTransform,
   shouldRenderEffect,
   type CombatEffectKind,
   type CharacterVisualState,
@@ -442,8 +444,8 @@ class ArenaScene extends Phaser.Scene {
       const now = performance.now();
       view.aim.rotation = player.angle;
       view.sprite.setRotation(0);
-      view.weapon.rotation = player.angle;
-      view.weapon.setPosition(Math.cos(player.angle) * (PLAYER_RADIUS + 10), Math.sin(player.angle) * (PLAYER_RADIUS + 10));
+      const weaponTransform = resolveWeaponTransform(player.angle, PLAYER_RADIUS + 10);
+      view.weapon.setRotation(weaponTransform.rotation).setPosition(weaponTransform.x, weaponTransform.y);
       view.container.setAlpha(player.alive ? 1 : 0.62);
       view.name.setText(player.isBot ? `${player.nickname} · AI` : player.nickname);
       view.healthFill.width = 72 * (player.health / player.maxHealth);
@@ -602,7 +604,15 @@ class ArenaScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setY(-58);
-    const container = this.add.container(player.x, player.y, [shadow, ring, weapon, sprite, aim, healthBg, healthFill, name]).setDepth(4);
+    const childrenByLayer = { shadow, ring, sprite, weapon, aim, "health-bg": healthBg, "health-fill": healthFill, name };
+    const container = this.add.container(
+      player.x,
+      player.y,
+      getPlayerChildLayerOrder().map((layer) => childrenByLayer[layer]),
+    ).setDepth(4);
+    // Keep this relationship explicit: Phaser renders later Container children on top,
+    // while the HUD labels remain above both gameplay sprites.
+    container.moveAbove(weapon, sprite);
     const view: PlayerView = {
       container,
       sprite,
