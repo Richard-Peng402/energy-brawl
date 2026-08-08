@@ -8,7 +8,7 @@ const player = (overrides: Partial<PlayerSnapshot> = {}): PlayerSnapshot => ({
   x: 100, y: 100, vx: 0, vy: 0, angle: 0, health: 100, maxHealth: 100, damage: 23, moveSpeed: 250,
   fireCooldownMs: 480, projectileSpeed: 600, score: 0, kills: 0, energyCollected: 0, alive: true, respawnAt: null,
   shieldUntil: 0, skillShieldHealth: 0, skillShieldUntil: 0, lastProcessedInput: 0,
-  skillSlot: { type: "heal", charges: 1 }, lastProcessedSkillAction: 0,
+  skillSlot: { type: "heal", charges: 1 }, lastProcessedSkillAction: 0, teamId: null,
   ...overrides,
 });
 

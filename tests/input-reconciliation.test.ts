@@ -102,6 +102,7 @@ function player(overrides: Partial<PlayerSnapshot>): PlayerSnapshot {
     lastProcessedInput: 0,
     skillSlot: { type: null, charges: 0 },
     lastProcessedSkillAction: 0,
+    teamId: null,
     ...overrides,
   };
 }

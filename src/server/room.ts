@@ -7,6 +7,7 @@ import {
   SKILL_ACTION_MAX_JUMP,
 } from "../shared/constants";
 import { CHARACTER_CATALOG, getCharacter, isCharacterId, type CharacterId } from "../shared/character-catalog";
+import { getModeDefinition, isMatchMode, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import type {
   Ack,
   AdminStat,
@@ -31,8 +32,10 @@ import {
   type PlayerSeed,
 } from "./simulation";
 import { clearSkillSlot } from "./skill-system";
+import { assignBalancedTeams, hasDuplicateCharacterOnTeam, swapTeams } from "./team-system";
 
 interface RoomSeat extends PlayerSeed {
+  teamId: TeamId | null;
   socketId: string | null;
   reconnectToken: string | null;
   connected: boolean;
@@ -54,6 +57,27 @@ export class GameRoom {
   private autoResetAt: number | null = null;
   private nextPlayerNumber = 1;
   private pendingWinnerId: string | null = null;
+  private matchMode: MatchMode = "solo";
+
+  setMatchMode(mode: MatchMode): Ack {
+    if (this.world) return { ok: false, error: "对局开始后无法切换模式" };
+    if (!isMatchMode(mode)) return { ok: false, error: "模式无效" };
+    this.matchMode = mode;
+    assignBalancedTeams([...this.seats.values()], mode);
+    return { ok: true };
+  }
+
+  swapPlayerTeams(firstId: string, secondId: string): Ack {
+    if (this.world) return { ok: false, error: "对局开始后无法调整队伍" };
+    if (this.matchMode === "solo") return { ok: false, error: "个人战没有队伍" };
+    const seats = [...this.seats.values()];
+    if (!swapTeams(seats, firstId, secondId)) return { ok: false, error: "无法交换队伍" };
+    if (hasDuplicateCharacterOnTeam(seats)) {
+      swapTeams(seats, firstId, secondId);
+      return { ok: false, error: "同队角色不能重复" };
+    }
+    return { ok: true };
+  }
 
   gameWorld(): GameWorld | null {
     return this.world;
@@ -102,7 +126,7 @@ export class GameRoom {
     if (!isCharacterId(payload.characterId)) {
       return { ok: false, error: "请选择有效角色" };
     }
-    if ([...this.seats.values()].some((seat) => seat.characterId === payload.characterId)) {
+    if (this.matchMode === "solo" && [...this.seats.values()].some((seat) => seat.characterId === payload.characterId)) {
       return { ok: false, error: "这个角色已被使用" };
     }
 
@@ -118,7 +142,13 @@ export class GameRoom {
       connected: true,
       ready: false,
       disconnectedAt: null,
+      teamId: null,
     });
+    assignBalancedTeams([...this.seats.values()], this.matchMode);
+    if (hasDuplicateCharacterOnTeam([...this.seats.values()])) {
+      this.seats.delete(id);
+      return { ok: false, error: "同队角色不能重复" };
+    }
     this.socketPlayers.set(socketId, id);
     return { ok: true, data: { playerId: id, reconnectToken } };
   }
@@ -165,7 +195,11 @@ export class GameRoom {
     if (!seat?.connected || seat.isBot) return { ok: false, error: "尚未加入房间" };
     if (seat.ready) return { ok: false, error: "请先取消准备再更换角色" };
     if (!isCharacterId(characterId)) return { ok: false, error: "请选择有效角色" };
-    if ([...this.seats.values()].some((candidate) => candidate.id !== seat.id && candidate.characterId === characterId)) {
+    if ([...this.seats.values()].some((candidate) =>
+      candidate.id !== seat.id &&
+      candidate.characterId === characterId &&
+      (this.matchMode === "solo" || candidate.teamId === seat.teamId)
+    )) {
       return { ok: false, error: "这个角色已被使用" };
     }
 
@@ -188,7 +222,9 @@ export class GameRoom {
 
     this.removeDisconnectedLobbySeats();
     this.fillBotSeats();
-    this.world = createGameWorld([...this.seats.values()], this.clockMs);
+    assignBalancedTeams([...this.seats.values()], this.matchMode);
+    if (hasDuplicateCharacterOnTeam([...this.seats.values()])) return { ok: false, error: "同队角色不能重复" };
+    this.world = createGameWorld([...this.seats.values()], this.clockMs, this.matchMode);
     this.autoResetAt = null;
     this.pendingInputs.clear();
     this.pendingSkillActions.clear();
@@ -339,6 +375,7 @@ export class GameRoom {
             isBot: seat.isBot,
             connected: seat.connected,
             ready: seat.ready,
+            teamId: seat.teamId,
             health: Math.min(seat.stats?.health ?? maxHealth, maxHealth),
             maxHealth,
             damage: seat.stats?.damage ?? character.damage,
@@ -354,7 +391,15 @@ export class GameRoom {
       phase: this.world?.phase ?? "lobby",
       canStart: this.canStart(),
       pendingWinnerId: this.pendingWinnerId,
-      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, health, maxHealth, damage, score, moveSpeed, fireCooldownMs, projectileSpeed, kills, energyCollected }) => ({
+      matchMode: this.matchMode,
+      teamScores: this.world
+        ? worldToSnapshot(this.world).teamScores
+        : [...new Set([...this.seats.values()].map((seat) => seat.teamId).filter((teamId): teamId is TeamId => teamId !== null))].map((teamId) => ({
+            teamId,
+            score: 0,
+            targetScore: getModeDefinition(this.matchMode).targetScore,
+          })),
+      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, teamId, health, maxHealth, damage, score, moveSpeed, fireCooldownMs, projectileSpeed, kills, energyCollected }) => ({
         id,
         nickname,
         characterId,
@@ -371,6 +416,7 @@ export class GameRoom {
         projectileSpeed,
         kills,
         energyCollected,
+        teamId: teamId ?? null,
       })),
     };
   }
@@ -508,7 +554,9 @@ export class GameRoom {
         connected: false,
         ready: true,
         disconnectedAt: null,
+        teamId: null,
       });
+      assignBalancedTeams([...this.seats.values()], this.matchMode);
     }
   }
 

@@ -9,6 +9,32 @@ const join = (room: GameRoom, socketId: string, nickname: string, characterId: C
   room.joinHuman(socketId, { nickname, characterId });
 
 describe("game room", () => {
+  it("selects a team mode only in the lobby and carries balanced teams into the match", () => {
+    const room = new GameRoom();
+    expect(room.setMatchMode("team3v3")).toEqual({ ok: true });
+    const joined = join(room, "socket-team", "组队玩家", "blaze");
+    room.setReady("socket-team", true);
+
+    expect(room.startMatch()).toEqual({ ok: true });
+    expect(room.gameSnapshot()).toMatchObject({ matchMode: "team3v3" });
+    const counts = room.gameSnapshot()!.players.reduce<Record<string, number>>((result, player) => {
+      result[player.teamId!] = (result[player.teamId!] ?? 0) + 1;
+      return result;
+    }, {});
+    expect(counts).toEqual({ red: 3, blue: 3 });
+    expect(room.setMatchMode("solo")).toMatchObject({ ok: false });
+    expect(room.snapshot().players.find((player) => player.id === joined.data!.playerId)?.teamId).toBeDefined();
+  });
+
+  it("allows the same character on opposing teams but rejects it on one team", () => {
+    const room = new GameRoom();
+    room.setMatchMode("team3v3");
+    const first = join(room, "socket-team-a", "红方", "blaze");
+    const second = join(room, "socket-team-b", "蓝方", "blaze");
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(room.swapPlayerTeams(first.data!.playerId, second.data!.playerId)).toEqual({ ok: true });
+  });
   it("applies lobby stat changes, kicks seats, and presets the next winner synchronously", () => {
     const room = new GameRoom();
     const first = join(room, "socket-admin-1", "属性目标", "blaze");

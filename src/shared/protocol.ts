@@ -100,7 +100,7 @@ export interface RoomSnapshot {
   matchMode?: MatchMode;
   teamScores?: TeamScoreSnapshot[];
   players: Array<
-    Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready"> & AdminStats
+    Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready"> & AdminStats & { teamId?: TeamId | null }
   >;
 }
 

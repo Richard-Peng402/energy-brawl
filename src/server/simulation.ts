@@ -23,6 +23,7 @@ import {
   WALLS,
 } from "../shared/constants";
 import { getCharacter, MEDIC_ENERGY_HEAL, type CharacterId } from "../shared/character-catalog";
+import { getModeDefinition, TEAM_IDS, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import type { SkillType } from "../shared/skill-catalog";
 import { firstWallHit, moveCircleSafely, moveCircleUntilBlocked, sweepCircleCircle } from "../shared/collision";
 import { StaticSpatialIndex } from "../shared/spatial-index";
@@ -60,6 +61,7 @@ export interface PlayerSeed {
   characterId: CharacterId;
   isBot: boolean;
   stats?: Partial<AdminStats>;
+  teamId?: TeamId | null;
 }
 
 export interface WorldPlayer extends PlayerSnapshot {
@@ -94,6 +96,8 @@ export interface GameWorld {
   nextEnergyPoint: number;
   killFeed: KillFeedEvent[];
   nextKillFeedId: number;
+  matchMode: MatchMode;
+  teamScores: Map<TeamId, number>;
 }
 
 const EMPTY_INPUT: PlayerInput = {
@@ -107,7 +111,7 @@ const EMPTY_INPUT: PlayerInput = {
 
 const WALL_INDEX = new StaticSpatialIndex(WALLS);
 
-export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorld {
+export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode: MatchMode = "solo"): GameWorld {
   const players = new Map<string, WorldPlayer>();
   seeds.forEach((seed, index) => {
     const character = getCharacter(seed.characterId);
@@ -149,6 +153,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
       lastCombatAt: now,
       regenAccumulatorMs: 0,
       killStreak: 0,
+      teamId: seed.teamId ?? null,
     });
   });
 
@@ -171,6 +176,10 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0): GameWorl
     nextEnergyPoint: 0,
     killFeed: [],
     nextKillFeedId: 1,
+    matchMode,
+    teamScores: new Map(
+      TEAM_IDS.slice(0, getModeDefinition(matchMode).teamCount).map((teamId) => [teamId, 0] as const),
+    ),
   };
 
   while (world.energy.size < MAX_ENERGY) spawnEnergy(world);
@@ -344,6 +353,12 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
     killFeed: [...world.killFeed],
+    matchMode: world.matchMode,
+    teamScores: [...world.teamScores].map(([teamId, score]) => ({
+      teamId,
+      score,
+      targetScore: getModeDefinition(world.matchMode).targetScore,
+    })),
   };
 }
 
