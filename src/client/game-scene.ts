@@ -602,7 +602,7 @@ class ArenaScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setY(-58);
-    const container = this.add.container(player.x, player.y, [shadow, ring, weapon, sprite, aim, healthBg, healthFill, name]).setDepth(4);
+    const container = this.add.container(player.x, player.y, [shadow, ring, sprite, weapon, aim, healthBg, healthFill, name]).setDepth(4);
     const view: PlayerView = {
       container,
       sprite,
