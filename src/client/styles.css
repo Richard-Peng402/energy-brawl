@@ -1077,7 +1077,7 @@ button:disabled {
 
 .host-status-band {
   display: grid;
-  grid-template-columns: 180px 180px 1fr;
+  grid-template-columns: 180px 180px 180px 1fr;
   gap: 1px;
   max-width: 1280px;
   min-height: 82px;
@@ -1087,12 +1087,30 @@ button:disabled {
   background: #3c474e;
 }
 
-.host-status-band > div {
+.host-status-band > div,
+.host-mode-control {
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: 15px 20px;
   background: #101419;
+}
+
+.host-mode-control {
+  color: #8f9ca2;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.host-mode-control select {
+  margin-top: 5px;
+  min-height: 34px;
+  border: 1px solid #526068;
+  border-radius: 4px;
+  background: #171d22;
+  color: #ffffff;
+  font: inherit;
+  font-size: 14px;
 }
 
 .host-status-band span {
@@ -1540,6 +1558,10 @@ button:disabled {
 
   .host-status-band {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .host-mode-control {
+    min-width: 0;
   }
 
   .host-actions {

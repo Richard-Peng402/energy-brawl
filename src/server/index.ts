@@ -31,7 +31,7 @@ app.get("/api/info", async (_request, response) => {
   const qrDataUrls = await Promise.all(joinUrls.map((url) => QRCode.toDataURL(url, { margin: 1, width: 320 })));
   const info: ServerInfo = {
     name: "能量乱斗",
-    version: "3.4.0",
+    version: "4.0.0",
     joinUrls,
     qrDataUrls,
     room: room.snapshot(),

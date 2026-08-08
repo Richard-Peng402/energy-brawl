@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { ASSET_MANIFEST } from "../src/client/asset-registry";
 
 const publicAssetsRoot = path.resolve("public/assets");
-const consolidatedRoot = path.join(publicAssetsRoot, "v3");
+const consolidatedRoots = [path.join(publicAssetsRoot, "v3"), path.join(publicAssetsRoot, "v4")];
 const runtimeExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".svg", ".wav", ".mp3", ".ogg"]);
 
 async function runtimeFiles(root: string): Promise<string[]> {
@@ -18,18 +18,20 @@ async function runtimeFiles(root: string): Promise<string[]> {
 }
 
 describe("portable runtime assets", () => {
-  it("keeps every shipped runtime asset under public/assets/v3", async () => {
+  it("keeps every shipped runtime asset under managed version folders", async () => {
     const outsideConsolidatedRoot = (await runtimeFiles(publicAssetsRoot))
-      .filter((file) => !file.startsWith(`${consolidatedRoot}${path.sep}`));
+      .filter((file) => !consolidatedRoots.some((root) => file.startsWith(`${root}${path.sep}`)));
 
     expect(outsideConsolidatedRoot).toEqual([]);
   });
 
   it("records every shipped runtime asset in the portable manifest", async () => {
-    const shipped = (await runtimeFiles(consolidatedRoot)).map((file) =>
-      `/assets/v3/${path.relative(consolidatedRoot, file).replaceAll("\\", "/")}`,
-    );
-    const recorded = ASSET_MANIFEST.flatMap((entry) => entry.outputFiles).sort();
+    const shipped = (await Promise.all(consolidatedRoots.map(async (root) => {
+      const version = path.basename(root);
+      return (await runtimeFiles(root)).map((file) => `/assets/${version}/${path.relative(root, file).replaceAll("\\", "/")}`);
+    }))).flat().sort();
+    const v4Manifest = JSON.parse(await readFile(path.join(publicAssetsRoot, "v4", "manifest.json"), "utf8")) as { entries: Array<{ outputFiles: string[] }> };
+    const recorded = [...ASSET_MANIFEST.flatMap((entry) => entry.outputFiles), ...v4Manifest.entries.flatMap((entry) => entry.outputFiles)].sort();
 
     expect(recorded).toEqual(shipped);
   });
