@@ -56,6 +56,7 @@ export interface PlayerSnapshot extends Vec2 {
   lastProcessedInput: number;
   skillSlot: SkillSlotSnapshot;
   lastProcessedSkillAction: number;
+  lastProcessedExclusiveSkillAction?: number;
   teamId?: TeamId | null;
   exclusiveSkillCooldownMs?: number;
   exclusiveSkillReadyAt?: number;

@@ -152,6 +152,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
       lastProcessedInput: 0,
       skillSlot: { type: null, charges: 0 },
       lastProcessedSkillAction: 0,
+      lastProcessedExclusiveSkillAction: 0,
       input: { ...EMPTY_INPUT },
       nextFireAt: now,
       lastCombatAt: now,

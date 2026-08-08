@@ -839,6 +839,21 @@ button:disabled {
   transition: transform 90ms ease, border-color 120ms ease, filter 120ms ease;
 }
 
+.exclusive-skill-button {
+  right: max(112px, calc(env(safe-area-inset-right) + 106px));
+  border-color: rgb(199 125 255 / 72%);
+}
+
+.exclusive-skill-mark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: #c77dff;
+  font-size: 30px;
+  line-height: 1;
+}
+
 .skill-button img,
 .skill-empty-mark {
   width: 38px;

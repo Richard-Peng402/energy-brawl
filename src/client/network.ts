@@ -123,6 +123,10 @@ export class GameNetworkClient {
     if (this.connected && this.playerSessionReady) this.socket.emit("useSkill", { skillActionSeq });
   }
 
+  sendExclusiveSkillAction(skillActionSeq: number, directionX: number, directionY: number): void {
+    if (this.connected && this.playerSessionReady) this.socket.emit("useExclusiveSkill", { skillActionSeq, directionX, directionY });
+  }
+
   sendPerformanceHint(hint: PerformanceHint): void {
     if (!this.connected) return;
     this.snapshotMode = hint.snapshotMode;

@@ -358,7 +358,7 @@ export class GameRoom {
     if (!Number.isSafeInteger(payload.skillActionSeq) || payload.skillActionSeq < 0 || !Number.isFinite(payload.directionX) || !Number.isFinite(payload.directionY)) return false;
     const player = this.world.players.get(seat.id);
     const queued = this.pendingExclusiveSkillActions.get(seat.id);
-    if (!player || payload.skillActionSeq <= player.lastProcessedSkillAction || (queued && payload.skillActionSeq <= queued.skillActionSeq)) return false;
+    if (!player || payload.skillActionSeq <= (player.lastProcessedExclusiveSkillAction ?? 0) || (queued && payload.skillActionSeq <= queued.skillActionSeq)) return false;
     this.pendingExclusiveSkillActions.set(seat.id, { ...payload });
     return true;
   }
@@ -388,7 +388,7 @@ export class GameRoom {
     for (const [playerId, action] of this.pendingExclusiveSkillActions) {
       const player = this.world.players.get(playerId);
       if (player) {
-        player.lastProcessedSkillAction = action.skillActionSeq;
+        player.lastProcessedExclusiveSkillAction = action.skillActionSeq;
         applyWorldExclusiveSkill(this.world, playerId, { x: action.directionX, y: action.directionY });
       }
     }

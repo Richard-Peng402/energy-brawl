@@ -1,6 +1,7 @@
 import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
 import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
+import { getExclusiveSkill } from "../shared/exclusive-skill-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
@@ -26,6 +27,7 @@ export class MobileApp {
   private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
   private inputSequence = 0;
   private skillActionSequence = 0;
+  private exclusiveSkillActionSequence = 0;
   private lastSkillType: SkillType | null | undefined = undefined;
   private lastInputSentAt = 0;
   private acceptingInput = false;
@@ -96,6 +98,11 @@ export class MobileApp {
     this.find<HTMLButtonElement>("#return-lobby").addEventListener("click", async () => {
       const result = await this.network.returnToLobby();
       if (!result.ok) this.showToast(result.error ?? "无法返回大厅");
+    });
+    this.find<HTMLButtonElement>("#exclusive-skill-button").addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.useExclusiveSkill();
     });
     for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-fullscreen]")) {
       button.addEventListener("click", async () => {
@@ -172,6 +179,7 @@ export class MobileApp {
     } else {
       this.find("#results-overlay").classList.add("is-hidden");
       this.skillActionSequence = 0;
+      this.exclusiveSkillActionSequence = 0;
       this.lastSkillType = undefined;
       if (this.renderer) {
         this.renderer.destroy();
@@ -211,7 +219,8 @@ export class MobileApp {
       }, { once: true });
     }
     const selected = cards.find((character) => character.id === this.selectedCharacterId) ?? cards[0]!;
-    this.find("#character-detail").innerHTML = `<div class="character-detail-heading"><div><strong>${selected.name}</strong><span>${selected.role}</span></div><p><b>${selected.passiveName}</b> · ${selected.passiveDescription}</p></div>
+    const exclusiveSkill = getExclusiveSkill(selected.id);
+    this.find("#character-detail").innerHTML = `<div class="character-detail-heading"><div><strong>${selected.name}</strong><span>${selected.role}</span></div><p><b>${selected.passiveName}</b> · ${selected.passiveDescription}</p><p><b>${exclusiveSkill.name}</b> · ${exclusiveSkill.description}（冷却 ${exclusiveSkill.cooldownMs / 1_000} 秒）</p></div>
       <div class="character-traits"><span class="trait-good">优势 ${selected.advantage}</span><span class="trait-cost">代价 ${selected.tradeoff}</span></div>
       <div class="character-stats" aria-label="${selected.name}精确数值"><span>生命 <b>${selected.maxHealth}</b></span><span>伤害 <b>${selected.damage}</b></span><span>移速 <b>${selected.moveSpeed}</b></span><span>射速 <b>${selected.fireCooldownMs}ms</b></span><span>弹速 <b>${selected.projectileSpeed}</b></span></div>`;
   }
@@ -293,6 +302,18 @@ export class MobileApp {
     respawn.textContent = own && !own.alive ? `${Math.ceil(remaining / 1_000)} 秒后重返战场` : "";
     respawn.classList.toggle("is-hidden", own?.alive !== false);
     this.renderSkillButton(own);
+    this.renderExclusiveSkillButton(own, snapshot.serverTime);
+  }
+
+  private renderExclusiveSkillButton(player: PlayerSnapshot | undefined, serverTime: number): void {
+    const button = this.find<HTMLButtonElement>("#exclusive-skill-button");
+    if (!player) { button.disabled = true; return; }
+    const skill = getExclusiveSkill(player.characterId);
+    const remaining = Math.max(0, (player.exclusiveSkillReadyAt ?? 0) - serverTime);
+    button.disabled = !player.alive || remaining > 0;
+    button.classList.toggle("is-ready", player.alive && remaining === 0);
+    button.innerHTML = `<span class="exclusive-skill-mark">✦</span><span><b>${skill.name}</b><small>${remaining > 0 ? `${(remaining / 1_000).toFixed(1)}s` : "就绪"}</small></span>`;
+    button.setAttribute("aria-label", `${skill.name}：${skill.description}`);
   }
 
   private renderSkillButton(player: PlayerSnapshot | undefined): void {
@@ -422,6 +443,18 @@ export class MobileApp {
     this.network.sendSkillAction(this.skillActionSequence);
   };
 
+  private readonly useExclusiveSkill = (): void => {
+    const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
+    if (!this.acceptingInput || !own) { this.showToast("暂时无法使用专属技能"); return; }
+    const remaining = Math.max(0, (own.exclusiveSkillReadyAt ?? 0) - (this.network.game?.serverTime ?? 0));
+    if (!own.alive || remaining > 0) { this.showToast(remaining > 0 ? `专属技能冷却 ${(remaining / 1_000).toFixed(1)} 秒` : "等待复活"); return; }
+    const move = this.moveStick.getValue();
+    const aim = this.aimStick.getValue();
+    const direction = own.characterId === "blaze" ? move : aim.magnitude > 0.08 ? aim : { x: Math.cos(own.angle), y: Math.sin(own.angle) };
+    this.exclusiveSkillActionSequence = Math.max(this.exclusiveSkillActionSequence, own.lastProcessedExclusiveSkillAction ?? 0) + 1;
+    this.network.sendExclusiveSkillAction(this.exclusiveSkillActionSequence, direction.x, direction.y);
+  };
+
   private showToast(message: string): void {
     const toast = this.find("#toast");
     toast.textContent = message;
@@ -485,6 +518,7 @@ function mobileTemplate(): string {
           <div id="respawn-state" class="respawn-state is-hidden"></div>
         </div>
         <div class="control-layer">
+          <button id="exclusive-skill-button" class="skill-button exclusive-skill-button" data-exclusive-skill-button type="button" aria-label="专属技能"><span class="exclusive-skill-mark">✦</span><span><b>专属技能</b><small>等待状态</small></span></button>
           <button id="skill-button" class="skill-button" data-skill-button data-skill-type="empty" type="button" aria-label="技能槽为空" aria-disabled="true"><span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span></button>
           <div id="move-stick" class="virtual-stick move-stick"><div class="stick-mark">MOVE</div><div class="stick-knob"></div></div>
           <div id="aim-stick" class="virtual-stick aim-stick"><div class="stick-mark">FIRE</div><div class="stick-knob"></div></div>

@@ -164,6 +164,17 @@ describe("game room", () => {
     expect(room.gameSnapshot()!.players.find((player) => player.id === joined.data!.playerId)!.lastProcessedSkillAction).toBe(1);
   });
 
+  it("queues independent exclusive skill actions and applies them authoritatively", () => {
+    const room = new GameRoom();
+    const joined = join(room, "socket-exclusive", "专属技能", "blaze");
+    room.setReady("socket-exclusive", true);
+    room.startMatch();
+    expect(room.handleExclusiveSkillAction("socket-exclusive", { skillActionSeq: 1, directionX: 1, directionY: 0 })).toBe(true);
+    expect(room.handleExclusiveSkillAction("socket-exclusive", { skillActionSeq: 1, directionX: 1, directionY: 0 })).toBe(false);
+    room.tick(16);
+    expect(room.gameSnapshot()?.players.find((player) => player.id === joined.data!.playerId)).toMatchObject({ lastProcessedExclusiveSkillAction: 1, exclusiveSkillReadyAt: 10_000 });
+  });
+
   it("preserves a collected skill on reconnect but clears it after bot takeover", () => {
     const room = new GameRoom();
     const joined = join(room, "socket-1", "技能玩家", "blaze");
