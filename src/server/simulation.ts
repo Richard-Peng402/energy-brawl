@@ -24,7 +24,8 @@ import {
   WALLS,
 } from "../shared/constants";
 import { getCharacter, MEDIC_ENERGY_HEAL, type CharacterId } from "../shared/character-catalog";
-import { getModeDefinition, TEAM_IDS, type MatchMode, type TeamId } from "../shared/mode-catalog";
+import { getModeDefinition, isCaptureMode, TEAM_IDS, type MatchMode, type TeamId } from "../shared/mode-catalog";
+import { advanceCapturePoint, createCapturePointState, DEFAULT_CAPTURE_POINT_CONFIG, isCapturePointComplete, type CapturePointState } from "../shared/capture-point";
 import { applyExclusiveSkill, advanceExclusiveSkillEffects, clearExclusiveSkillState, isExclusiveEffectActive, type ExclusiveRuntimeState } from "./exclusive-skill-system";
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import type { SkillType } from "../shared/skill-catalog";
@@ -102,6 +103,8 @@ export interface GameWorld {
   nextKillFeedId: number;
   matchMode: MatchMode;
   teamScores: Map<TeamId, number>;
+  captureScores: Map<TeamId, number>;
+  capturePoint: CapturePointState | null;
 }
 
 const EMPTY_INPUT: PlayerInput = {
@@ -188,6 +191,10 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
     teamScores: new Map(
       TEAM_IDS.slice(0, getModeDefinition(matchMode).teamCount).map((teamId) => [teamId, 0] as const),
     ),
+    captureScores: new Map(
+      TEAM_IDS.slice(0, getModeDefinition(matchMode).teamCount).map((teamId) => [teamId, 0] as const),
+    ),
+    capturePoint: isCaptureMode(matchMode) ? createCapturePointState() : null,
   };
 
   while (world.energy.size < MAX_ENERGY) spawnEnergy(world);
@@ -258,6 +265,8 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
     [...world.players.values()].filter((player) => player.alive),
   );
   advanceExclusiveSkillEffects([...world.players.values()], world.now);
+  advanceWorldCapturePoint(world, simulationDelta);
+  if (isFinished(world)) return;
 
   if (world.phase === "playing" && world.remainingMs === 0) finishNormalTime(world);
 }
@@ -389,7 +398,35 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
       score,
       targetScore: getModeDefinition(world.matchMode).targetScore,
     })),
+    captureScores: [...world.captureScores].map(([teamId, score]) => ({
+      teamId,
+      score,
+      targetScore: DEFAULT_CAPTURE_POINT_CONFIG.targetProgress,
+    })),
+    capturePoint: world.capturePoint ? {
+      x: DEFAULT_CAPTURE_POINT_CONFIG.center.x,
+      y: DEFAULT_CAPTURE_POINT_CONFIG.center.y,
+      radius: DEFAULT_CAPTURE_POINT_CONFIG.radius,
+      ownerTeamId: world.capturePoint.ownerTeamId,
+      progress: world.capturePoint.progress,
+      targetProgress: DEFAULT_CAPTURE_POINT_CONFIG.targetProgress,
+      contestingTeams: [...world.capturePoint.contestingTeams],
+      state: world.capturePoint.state,
+    } : null,
   };
+}
+
+function advanceWorldCapturePoint(world: GameWorld, deltaMs: number): void {
+  if (!world.capturePoint || world.phase === "finished") return;
+  world.capturePoint = advanceCapturePoint(world.capturePoint, [...world.players.values()], deltaMs);
+  if (world.capturePoint.state !== "owned" || !world.capturePoint.ownerTeamId || !world.capturePoint.contestingTeams.includes(world.capturePoint.ownerTeamId)) return;
+  const teamId = world.capturePoint.ownerTeamId;
+  const score = Math.min(
+    DEFAULT_CAPTURE_POINT_CONFIG.targetProgress,
+    (world.captureScores.get(teamId) ?? 0) + deltaMs / 1_000,
+  );
+  world.captureScores.set(teamId, score);
+  if (isCapturePointComplete(score)) finishMatch(world, playerIdsForTeam(world, teamId));
 }
 
 function executeSkill(world: GameWorld, player: WorldPlayer, skill: SkillType): boolean {
@@ -738,6 +775,15 @@ function safePlayerPosition(world: GameWorld, player: WorldPlayer, delta: Vec2):
 }
 
 function finishNormalTime(world: GameWorld): void {
+  if (isCaptureMode(world.matchMode)) {
+    const leadingTeams = leadingCaptureTeamIds(world);
+    if (leadingTeams.length === 1) finishMatch(world, playerIdsForTeam(world, leadingTeams[0]!));
+    else {
+      world.phase = "overtime";
+      world.overtimePlayerIds = leadingTeams.flatMap((teamId) => playerIdsForTeam(world, teamId));
+    }
+    return;
+  }
   const leaders = world.matchMode === "solo" ? leadingSoloPlayerIds(world) : leadingTeamPlayerIds(world);
   if (world.matchMode !== "solo") {
     const leadingTeams = leadingTeamIds(world);
@@ -758,6 +804,7 @@ function finishNormalTime(world: GameWorld): void {
 
 function handleScoreChange(world: GameWorld, scorerId: string): void {
   if (world.phase === "finished") return;
+  if (isCaptureMode(world.matchMode)) return;
   if (world.phase === "overtime" && world.overtimePlayerIds.includes(scorerId)) {
     const scorer = world.players.get(scorerId);
     finishMatch(world, world.matchMode !== "solo" && scorer?.teamId ? playerIdsForTeam(world, scorer.teamId) : [scorerId]);
@@ -779,6 +826,11 @@ function leadingSoloPlayerIds(world: GameWorld): string[] {
 function leadingTeamIds(world: GameWorld): TeamId[] {
   const highestScore = Math.max(...world.teamScores.values());
   return [...world.teamScores].filter(([, score]) => score === highestScore).map(([teamId]) => teamId);
+}
+
+function leadingCaptureTeamIds(world: GameWorld): TeamId[] {
+  const highestScore = Math.max(...world.captureScores.values());
+  return [...world.captureScores].filter(([, score]) => score === highestScore).map(([teamId]) => teamId);
 }
 
 function leadingTeamPlayerIds(world: GameWorld): string[] {

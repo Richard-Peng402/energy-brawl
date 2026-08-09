@@ -3,7 +3,7 @@ import Phaser from "phaser";
 import { CHARACTER_CATALOG } from "../shared/character-catalog";
 import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_MAX_DISTANCE, VIEW_HEIGHT, VIEW_WIDTH, WALLS } from "../shared/constants";
 import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
-import type { GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import type { CapturePointSnapshot, GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import { AIM_GUIDE_LINE_WIDTH, calculateAimGuide } from "./aim-guide";
 import {
   ARENA_ASSETS,
@@ -185,6 +185,8 @@ class ArenaScene extends Phaser.Scene {
   private aimEnd: Phaser.GameObjects.Arc | null = null;
   private exclusiveSkillPreview: SkillIndicatorState | null = null;
   private exclusiveSkillIndicatorGraphics: Phaser.GameObjects.Graphics | null = null;
+  private capturePointGraphics: Phaser.GameObjects.Graphics | null = null;
+  private capturePointPulse: Phaser.GameObjects.Arc | null = null;
   private latestSnapshotReceivedAt = 0;
   private renderDelayMs = 100;
   private correctionRemaining: Vec2 = { x: 0, y: 0 };
@@ -244,6 +246,10 @@ class ArenaScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, (gameSize: Phaser.Structs.Size) => this.resizeCamera(gameSize.width, gameSize.height));
     this.aimCorridor = this.add.rectangle(0, 0, 1, AIM_GUIDE_LINE_WIDTH, 0xffe6a3, 0.9).setOrigin(0, 0.5).setDepth(8).setVisible(false);
     this.exclusiveSkillIndicatorGraphics = this.add.graphics().setDepth(8).setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
+    this.capturePointGraphics = this.add.graphics().setDepth(-3).setBlendMode(Phaser.BlendModes.ADD);
+    this.capturePointPulse = this.add.circle(1_440, 810, 220, 0x4da3ff, 0.03)
+      .setStrokeStyle(6, 0x4da3ff, 0.36)
+      .setDepth(-2);
     this.aimEnd = this.add.circle(0, 0, 5, 0xfff1bf, 0.9).setStrokeStyle(2, 0xff8c58, 0.95).setDepth(9).setVisible(false);
     this.ready = true;
     if (this.snapshot) this.syncSnapshot(this.snapshot);
@@ -476,6 +482,27 @@ class ArenaScene extends Phaser.Scene {
 
     this.syncEnergy(snapshot);
     this.syncSkillOrbs(snapshot);
+    this.syncCapturePoint(snapshot.capturePoint ?? null);
+  }
+
+  private syncCapturePoint(point: CapturePointSnapshot | null): void {
+    const graphics = this.capturePointGraphics;
+    const pulse = this.capturePointPulse;
+    if (!graphics || !pulse || !point) {
+      graphics?.clear().setVisible(false);
+      pulse?.setVisible(false);
+      return;
+    }
+    const colors = { red: 0xff5a5f, blue: 0x4da3ff, gold: 0xffd166 } as const;
+    const ownerColor = point.ownerTeamId ? colors[point.ownerTeamId] : 0x8ca4b3;
+    const progress = Math.max(0, Math.min(1, point.progress / Math.max(1, point.targetProgress)));
+    graphics.clear().setVisible(true);
+    graphics.lineStyle(12, 0x071019, 0.82).strokeCircle(point.x, point.y, point.radius);
+    graphics.lineStyle(7, ownerColor, point.state === "contested" ? 0.52 : 0.9);
+    if (progress > 0) graphics.arc(point.x, point.y, point.radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress, false);
+    graphics.lineStyle(4, 0xdff7ff, point.state === "contested" ? 0.86 : 0.45).strokeCircle(point.x, point.y, point.radius * 0.72);
+    pulse.setVisible(true).setPosition(point.x, point.y).setRadius(point.radius).setStrokeStyle(6, ownerColor, point.state === "contested" ? 0.78 : 0.28);
+    pulse.setAlpha(point.state === "contested" ? 0.9 : 0.55);
   }
 
   private syncExclusiveSkillEffect(player: PlayerSnapshot): void {

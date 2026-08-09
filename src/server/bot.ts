@@ -26,12 +26,16 @@ export function chooseBotDecision(
   const enemy = nearestPlayer(player, [...world.players.values()].filter((candidate) => candidate.id !== player.id && candidate.alive));
   const energy = nearestPoint(player, [...world.energy.values()]);
   const skillOrb = nearestPoint(player, [...world.skillSystem.orbs.values()]);
+  const capturePoint = world.capturePoint;
+  const captureTarget = capturePoint ? { x: 1_440, y: 810 } : null;
   const enemyDistance = enemy ? distanceSquared(player, enemy) : Number.POSITIVE_INFINITY;
   const energyDistance = energy ? distanceSquared(player, energy) : Number.POSITIVE_INFINITY;
 
   let movement: Vec2 = { x: 0, y: 0 };
   if (enemy && player.health <= RETREAT_HEALTH && enemyDistance <= RETREAT_DISTANCE_SQUARED) {
     movement = normalize({ x: player.x - enemy.x, y: player.y - enemy.y });
+  } else if (captureTarget && capturePoint && capturePoint.ownerTeamId !== player.teamId && capturePoint.state !== "owned") {
+    movement = normalize({ x: captureTarget.x - player.x, y: captureTarget.y - player.y });
   } else if (skillOrb) {
     movement = normalize({ x: skillOrb.x - player.x, y: skillOrb.y - player.y });
   } else if (energy && (!enemy || energyDistance < enemyDistance * 0.8)) {

@@ -52,6 +52,12 @@ describe("v3.3 combat audio policy", () => {
     expect(policy.request({ kind: "hurt", local: true }, 1_080)).toMatchObject({ kind: "hurt", gain: 1 });
   });
 
+  it("approves objective feedback as a local combat cue", () => {
+    const policy = new CombatAudioPolicy();
+    policy.unlock();
+    expect(policy.request({ kind: "objective", local: true, objectiveStage: "captured" }, 1_000)).toMatchObject({ kind: "objective", gain: 0.92 });
+  });
+
   it("persists only the mute preference", () => {
     const values = new Map<string, string>();
     const storage = {

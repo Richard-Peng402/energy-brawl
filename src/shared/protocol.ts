@@ -2,6 +2,7 @@ import type { CharacterId } from "./character-catalog";
 import type { MatchMode, TeamId } from "./mode-catalog";
 import type { SkillType } from "./skill-catalog";
 import type { ExclusiveSkillId } from "./exclusive-skill-catalog";
+import type { CapturePointStateName } from "./capture-point";
 
 export interface Vec2 {
   x: number;
@@ -130,6 +131,17 @@ export interface GameSnapshot {
   killFeed?: KillFeedEvent[];
   matchMode?: MatchMode;
   teamScores?: TeamScoreSnapshot[];
+  captureScores?: TeamScoreSnapshot[];
+  capturePoint?: CapturePointSnapshot | null;
+}
+
+export interface CapturePointSnapshot extends Vec2 {
+  radius: number;
+  ownerTeamId: TeamId | null;
+  progress: number;
+  targetProgress: number;
+  contestingTeams: TeamId[];
+  state: CapturePointStateName;
 }
 
 export interface TeamScoreSnapshot {

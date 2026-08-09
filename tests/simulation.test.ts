@@ -31,6 +31,7 @@ import {
   worldToSnapshot,
 } from "../src/server/simulation";
 import { PROJECTILE_MAX_DISTANCE } from "../src/shared/constants";
+import { DEFAULT_CAPTURE_POINT_CONFIG } from "../src/shared/capture-point";
 
 function createWorld() {
   return createGameWorld([
@@ -42,6 +43,34 @@ function createWorld() {
 const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
 
 describe("authoritative simulation", () => {
+  it("advances and broadcasts the central objective only in team modes", () => {
+    const world = createGameWorld([
+      { id: "red-1", nickname: "红一", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "blue-1", nickname: "蓝一", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "domination3v3");
+    const red = world.players.get("red-1")!;
+    const blue = world.players.get("blue-1")!;
+    red.x = DEFAULT_CAPTURE_POINT_CONFIG.center.x;
+    red.y = DEFAULT_CAPTURE_POINT_CONFIG.center.y;
+    blue.x = 200;
+    blue.y = 200;
+    stepWorld(world, 10_000);
+    expect(world.capturePoint?.ownerTeamId).toBe("red");
+    expect(world.capturePoint?.progress).toBeGreaterThan(0);
+    expect(worldToSnapshot(world).capturePoint).toMatchObject({ ownerTeamId: "red", state: "capturing" });
+  });
+
+  it("does not end domination from ordinary kill or energy score", () => {
+    const world = createGameWorld([
+      { id: "red-1", nickname: "红一", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "blue-1", nickname: "蓝一", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "domination3v3");
+    world.teamScores.set("red", 100);
+    damagePlayer(world, "blue-1", "red-1", 999);
+    expect(world.phase).not.toBe("finished");
+    expect(world.captureScores.get("red")).toBe(0);
+  });
+
   it("scales team targets and awards kill points to the killer's team", () => {
     const world = createGameWorld([
       { id: "red-1", nickname: "红一", characterId: "blaze", isBot: false, teamId: "red" },

@@ -15,3 +15,9 @@ export function gameLeaderboardRevision(snapshot: GameSnapshot, localPlayerId: s
     .map((player) => [player.id, player.nickname, player.color, player.score, player.kills, player.id === localPlayerId].join(":"))
     .join(";");
 }
+
+export function capturePointRevision(snapshot: GameSnapshot): string {
+  const point = snapshot.capturePoint;
+  if (!point) return "solo";
+  return [point.state, point.ownerTeamId ?? "", point.progress.toFixed(1), point.contestingTeams.join(",")].join(":");
+}

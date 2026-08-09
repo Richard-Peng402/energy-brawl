@@ -9,7 +9,7 @@ import { didPickUpLocalSkill, selectLatestKillFeedback } from "./combat-feedback
 import { GameRenderer } from "./game-scene";
 import { buildCharacterSelection, GameNetworkClient, isCharacterSelectionDisabled } from "./network";
 import { MobileViewport } from "./mobile-viewport";
-import { gameLeaderboardRevision, roomUiRevision } from "./render-throttle";
+import { capturePointRevision, gameLeaderboardRevision, roomUiRevision } from "./render-throttle";
 import { canPressExclusiveSkill, exclusiveSkillButtonMode } from "./exclusive-skill-ui";
 import { getSkillIndicatorProfile, SkillIndicatorController, type SkillIndicatorSkill } from "./skill-indicator";
 import {
@@ -68,6 +68,7 @@ export class MobileApp {
   private lastLeaderboardRevision = "";
   private lastKillFeedRevision = "";
   private lastResultsRevision = "";
+  private lastCapturePointRevision = "";
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = mobileTemplate();
@@ -452,6 +453,7 @@ export class MobileApp {
       this.lastLeaderboardRevision = "";
       this.lastKillFeedRevision = "";
       this.lastResultsRevision = "";
+      this.lastCapturePointRevision = "";
     }
 
     if (this.network.notice) this.showToast(this.network.notice);
@@ -564,13 +566,35 @@ export class MobileApp {
     const own = snapshot.players.find((player) => player.id === this.network.playerId);
     const leaders = [...snapshot.players].sort((a, b) => b.score - a.score || b.kills - a.kills);
     const ownTeamScore = own?.teamId ? snapshot.teamScores?.find((team) => team.teamId === own.teamId) : undefined;
+    const ownCaptureScore = own?.teamId ? snapshot.captureScores?.find((team) => team.teamId === own.teamId) : undefined;
     this.find("#own-score").textContent = `${ownTeamScore?.score ?? own?.score ?? 0}`;
     this.find<HTMLElement>("#health-fill").style.width = `${own ? (own.health / own.maxHealth) * 100 : 0}%`;
     this.find("#health-value").textContent = own?.alive ? `${Math.ceil(own.health)}` : "0";
     this.find("#target-score").textContent = `${ownTeamScore?.targetScore ?? TARGET_SCORE}`;
     this.find("#team-score").textContent = snapshot.matchMode === "solo"
       ? "个人战"
-      : (snapshot.teamScores ?? []).map((team) => `${team.teamId === "red" ? "红" : team.teamId === "blue" ? "蓝" : "金"} ${team.score}/${team.targetScore}`).join(" · ");
+      : (snapshot.teamScores ?? []).map((team) => {
+        const capture = snapshot.captureScores?.find((candidate) => candidate.teamId === team.teamId)?.score ?? 0;
+        return `${team.teamId === "red" ? "红" : team.teamId === "blue" ? "蓝" : "金"} ${team.score}/${team.targetScore} · 据点 ${capture.toFixed(0)}`;
+      }).join(" · ");
+    const capture = snapshot.capturePoint;
+    const captureStatus = this.find("#capture-status");
+    if (!capture || snapshot.matchMode === "solo") captureStatus.textContent = "";
+    else if (capture.state === "contested") captureStatus.textContent = `据点争夺中 · ${capture.progress.toFixed(0)}%`;
+    else if (capture.ownerTeamId) captureStatus.textContent = `${capture.ownerTeamId === "red" ? "红队" : capture.ownerTeamId === "blue" ? "蓝队" : "金队"} 占领 · ${capture.progress.toFixed(0)}%`;
+    else captureStatus.textContent = "据点待占领";
+    const captureRevision = capturePointRevision(snapshot);
+    if (captureRevision !== this.lastCapturePointRevision) {
+      const previous = this.lastCapturePointRevision;
+      this.lastCapturePointRevision = captureRevision;
+      if (previous && capture?.state === "contested") {
+        this.audio.playObjective("contested");
+        this.showToast("据点争夺中");
+      } else if (previous && capture?.ownerTeamId && capture.state === "owned") {
+        this.audio.playObjective("captured");
+        this.showToast(`${capture.ownerTeamId === "red" ? "红队" : capture.ownerTeamId === "blue" ? "蓝队" : "金队"} 已占领据点`);
+      }
+    }
     const holder = snapshot.holderId ? snapshot.players.find((player) => player.id === snapshot.holderId) : null;
     this.find("#match-clock").textContent = holder && snapshot.holdRemainingMs !== null
       ? `${holder.nickname} ${Math.ceil(snapshot.holdRemainingMs / 1_000)}s`
@@ -898,6 +922,7 @@ function mobileTemplate(): string {
           </div>
           <div id="match-clock" class="match-clock">5:00</div>
           <div id="team-score" class="team-score">个人战</div>
+          <div id="capture-status" class="capture-status" aria-live="polite"></div>
           <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
           <div id="leaderboard" class="leaderboard"></div>
            <button class="control-settings-button arena-controls" data-controls-open type="button">键位</button><button class="sound-button arena-sound" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>

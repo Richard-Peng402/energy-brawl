@@ -1,4 +1,5 @@
-export type CombatSoundKind = "fire" | "impact" | "hurt" | "pickup" | "kill";
+export type CombatSoundKind = "fire" | "impact" | "hurt" | "pickup" | "kill" | "objective";
+export type ObjectiveSoundStage = "capture-start" | "contested" | "captured" | "overtime" | "finish";
 
 export interface CombatSoundRequest {
   kind: CombatSoundKind;
@@ -6,12 +7,14 @@ export interface CombatSoundRequest {
   sourceId?: string;
   distance?: number;
   streak?: number;
+  objectiveStage?: ObjectiveSoundStage;
 }
 
 export interface ApprovedCombatSound {
   kind: CombatSoundKind;
   gain: number;
   streak?: number;
+  objectiveStage?: ObjectiveSoundStage;
 }
 
 export type KillStreakTier = 1 | 2 | 3 | 4 | 5;
@@ -132,8 +135,9 @@ export class CombatAudioPolicy {
     }
     return {
       kind: request.kind,
-      gain: request.kind === "hurt" ? 1 : request.kind === "kill" ? 0.92 : request.local ? 0.78 : 0.45,
+      gain: request.kind === "hurt" ? 1 : request.kind === "kill" || request.kind === "objective" ? 0.92 : request.local ? 0.78 : 0.45,
       streak: request.streak,
+      objectiveStage: request.objectiveStage,
     };
   }
 }
@@ -248,6 +252,10 @@ export class CombatAudio {
     this.play({ kind: "kill", local: true, streak });
   }
 
+  playObjective(stage: ObjectiveSoundStage): void {
+    this.play({ kind: "objective", local: true, objectiveStage: stage });
+  }
+
   private play(request: CombatSoundRequest): void {
     const approved = this.policy.request(request, performance.now());
     const context = this.context;
@@ -297,6 +305,19 @@ export class CombatAudio {
               tone === finalTone ? finish : undefined,
             );
           }
+          break;
+        }
+        case "objective": {
+          const tones: Record<ObjectiveSoundStage, [number, number]> = {
+            "capture-start": [520, 780],
+            contested: [280, 210],
+            captured: [640, 980],
+            overtime: [180, 260],
+            finish: [420, 1_080],
+          };
+          const stage: ObjectiveSoundStage = approved.objectiveStage ?? "capture-start";
+          const [startFrequency, endFrequency] = tones[stage];
+          this.playTone(context, "triangle", startFrequency, endFrequency, 0.18, approved.gain * 0.42, 0, finish);
           break;
         }
       }

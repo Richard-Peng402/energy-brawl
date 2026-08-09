@@ -205,7 +205,7 @@ function hostTemplate(): string {
     </header>
     <section class="host-status-band">
       <div><span>房间状态</span><strong id="host-phase">大厅</strong></div>
-      <label class="host-mode-control">模式<select id="host-mode"><option value="solo">个人战</option><option value="team3v3">3v3</option><option value="team2v2v2">2v2v2</option></select></label>
+      <label class="host-mode-control">模式<select id="host-mode"><option value="solo">个人战</option><option value="team3v3">3v3</option><option value="team2v2v2">2v2v2</option><option value="domination3v3">据点 3v3</option><option value="domination2v2v2">据点 2v2v2</option></select></label>
       <div><span>真人玩家</span><strong id="host-count">0 / 6</strong></div>
       <div class="host-actions">
         <button id="host-start" class="primary-button" type="button" disabled>开始对局</button>

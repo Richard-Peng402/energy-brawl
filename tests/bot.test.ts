@@ -4,6 +4,21 @@ import { chooseBotDecision } from "../src/server/bot";
 import { createGameWorld } from "../src/server/simulation";
 
 describe("bot decisions", () => {
+  it("prioritizes the central objective in team modes when not retreating", () => {
+    const world = createGameWorld([
+      { id: "bot-1", nickname: "bot", characterId: "medic", isBot: true, teamId: "red" },
+      { id: "human", nickname: "human", characterId: "blaze", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    const bot = world.players.get("bot-1")!;
+    const enemy = world.players.get("human")!;
+    enemy.x = bot.x + 1_000;
+    enemy.y = bot.y;
+    world.energy.clear();
+    const decision = chooseBotDecision(world, bot.id, () => 0.5);
+    expect(decision.input.moveX).toBeGreaterThan(0);
+    expect(Math.abs(decision.input.moveY)).toBeLessThan(0.75);
+  });
+
   it("moves toward nearby energy when no enemy is urgent", () => {
     const world = createGameWorld([
       { id: "bot-1", nickname: "脉冲", characterId: "medic", isBot: true },

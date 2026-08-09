@@ -719,6 +719,24 @@ button:disabled {
   pointer-events: none;
 }
 
+.capture-status {
+  position: absolute;
+  z-index: 20;
+  top: max(92px, calc(env(safe-area-inset-top) + 84px));
+  left: 50%;
+  transform: translateX(-50%);
+  min-height: 18px;
+  padding: 3px 10px;
+  border: 1px solid rgb(120 223 255 / 24%);
+  border-radius: 999px;
+  background: rgb(7 11 16 / 72%);
+  color: #dff7ff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
 .kill-feed {
   position: absolute;
   top: max(102px, calc(env(safe-area-inset-top) + 96px));
