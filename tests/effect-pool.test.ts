@@ -93,16 +93,16 @@ describe("v3 render effect pool", () => {
     expect(deriveCharacterVisualState({ alive: true, speed: 0, attackUntil: 0, hitUntil: 0 }, 100)).toBe("idle");
   });
 
-  it("never removes combat-readable effects in low performance mode", () => {
+  it("keeps every visual layer enabled even when an old reduced hint is supplied", () => {
     for (const effect of ["muzzle", "trail", "hit", "shield", "dash", "heal", "respawn"] as const) {
       expect(shouldRenderEffect(effect, true)).toBe(true);
     }
-    expect(shouldRenderEffect("environment", true)).toBe(false);
+    expect(shouldRenderEffect("environment", true)).toBe(true);
     expect(shouldRenderEffect("environment", false)).toBe(true);
   });
 
-  it("drops decorative sparks but keeps readable combat effects in reduced mode", () => {
-    expect(shouldRenderEffect("spark", true)).toBe(false);
+  it("keeps decorative sparks alongside combat effects in reduced mode", () => {
+    expect(shouldRenderEffect("spark", true)).toBe(true);
     expect(shouldRenderEffect("trail", true)).toBe(true);
     expect(shouldRenderEffect("impact", true)).toBe(true);
   });

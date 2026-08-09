@@ -128,6 +128,7 @@ export class GameRenderer {
       render: {
         roundPixels: false,
         antialiasGL: true,
+        powerPreference: "high-performance",
       },
     });
   }
@@ -150,10 +151,6 @@ export class GameRenderer {
 
   addLocalInput(input: PlayerInput, deltaMs: number): void {
     this.scene.addLocalInput(input, deltaMs);
-  }
-
-  setSnapshotMode(mode: "full" | "reduced"): void {
-    this.scene.setSnapshotMode(mode);
   }
 
   resetLocalInputs(): void {
@@ -191,12 +188,9 @@ class ArenaScene extends Phaser.Scene {
   private renderDelayMs = 100;
   private correctionRemaining: Vec2 = { x: 0, y: 0 };
   private readonly failedTextureKeys = new Set<string>();
-  private readonly decorativeLights: Phaser.GameObjects.Image[] = [];
-  private readonly decorativeShadows: Phaser.GameObjects.GameObject[] = [];
   private effectPools: Record<CombatEffectKind, FixedObjectPool<Phaser.GameObjects.Arc>> | null = null;
   private projectileImagePools: Record<"muzzle" | "trail" | "impact" | "spark" | "smoke", FixedObjectPool<Phaser.GameObjects.Image>> | null = null;
   private projectilePool: ReusableObjectPool<MovingView> | null = null;
-  private lowPerformance = false;
   private ready = false;
 
   constructor(private localPlayerId: string | null, private readonly audio: CombatAudio) {
@@ -328,12 +322,6 @@ class ArenaScene extends Phaser.Scene {
     this.inputReconciler.add(input, deltaMs);
   }
 
-  setSnapshotMode(mode: "full" | "reduced"): void {
-    this.renderDelayMs = mode === "reduced" ? 150 : 100;
-    this.lowPerformance = mode === "reduced";
-    this.applyPerformanceMode();
-  }
-
   resetLocalInputs(): void {
     this.inputReconciler.reset();
     this.localInput = { x: 0, y: 0 };
@@ -395,12 +383,10 @@ class ArenaScene extends Phaser.Scene {
     this.add.image(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "arena-sigil").setDepth(-5).setAlpha(0.18).setScale(1.55);
     for (const [x, y] of [[420, 360], [ARENA_WIDTH - 420, 360], [420, ARENA_HEIGHT - 360], [ARENA_WIDTH - 420, ARENA_HEIGHT - 360]] as const) {
       const light = this.add.image(x, y, "arena-light-v3").setDepth(-4).setScale(3.4).setAlpha(0.42).setTint(0x3adfff).setBlendMode(Phaser.BlendModes.ADD);
-      this.decorativeLights.push(light);
       this.tweens.add({ targets: light, alpha: 0.1, scale: 2.6, duration: 1_800, yoyo: true, repeat: -1, ease: "Sine.InOut" });
     }
     for (const wall of WALLS) {
-      const shadow = this.add.rectangle(wall.x + wall.width / 2 + 12, wall.y + wall.height / 2 + 13, wall.width, wall.height, 0x000000, 0.4).setDepth(-2);
-      this.decorativeShadows.push(shadow);
+      this.add.rectangle(wall.x + wall.width / 2 + 12, wall.y + wall.height / 2 + 13, wall.width, wall.height, 0x000000, 0.4).setDepth(-2);
       this.add.tileSprite(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, "arena-wall-v3")
         .setDepth(-1)
         .setTint(0x7393a8);
@@ -412,7 +398,6 @@ class ArenaScene extends Phaser.Scene {
       .rectangle(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, ARENA_WIDTH - 10, ARENA_HEIGHT - 10)
       .setStrokeStyle(10, 0x050708, 1)
       .setFillStyle(0x000000, 0);
-    this.applyPerformanceMode();
   }
 
   private syncSnapshot(snapshot: GameSnapshot): void {
@@ -725,9 +710,9 @@ class ArenaScene extends Phaser.Scene {
             .setVisible(true)
             .setActive(true);
           item.core.setFillStyle(0xffffff, 1).setStrokeStyle(3, color, 1);
-          item.glow.setFillStyle(color, this.lowPerformance ? 0.28 : 0.48);
-          item.coreSprite.setTint(color).setAlpha(this.lowPerformance ? 0.9 : 1);
-          item.traceSprite.setTint(color).setAlpha(0.86).setVisible(shouldShowProjectileTrace(this.lowPerformance));
+          item.glow.setFillStyle(color, 0.48);
+          item.coreSprite.setTint(color).setAlpha(1);
+          item.traceSprite.setTint(color).setAlpha(0.86).setVisible(shouldShowProjectileTrace(false));
         });
         if (!acquired) continue;
         view = acquired;
@@ -752,7 +737,7 @@ class ArenaScene extends Phaser.Scene {
       const x = Phaser.Math.Linear(start.x, end.x, alpha);
       const y = Phaser.Math.Linear(start.y, end.y, alpha);
       view.container.setPosition(x, y).setRotation(projectileAngle({ x: projectile.vx, y: projectile.vy }));
-      if (shouldEmitProjectileTrail(view.lastTrail, { x, y }, performance.now(), this.lowPerformance)) {
+      if (shouldEmitProjectileTrail(view.lastTrail, { x, y }, performance.now(), false)) {
         this.playCombatEffect("trail", x, y, view.color);
         this.playProjectileImageEffect("trail", x, y, view.color, projectileAngle({ x: projectile.vx, y: projectile.vy }));
         view.lastTrail = { x, y, emittedAt: performance.now() };
@@ -973,7 +958,7 @@ class ArenaScene extends Phaser.Scene {
     color: number,
     angle = 0,
   ): void {
-    if (!shouldRenderProjectileImageEffect(kind, this.lowPerformance)) return;
+    if (!shouldRenderProjectileImageEffect(kind, false)) return;
     const pool = this.projectileImagePools?.[kind];
     if (!pool) return;
     const image = pool.acquire((item) => {
@@ -1035,7 +1020,7 @@ class ArenaScene extends Phaser.Scene {
     const y = view.container.y;
     this.playCombatEffect("impact", x, y, view.color);
     if (view.ownerId === this.localPlayerId) this.audio.playImpact();
-    if (!shouldRenderEffect("spark", this.lowPerformance)) return;
+    if (!shouldRenderEffect("spark", false)) return;
     const pool = this.effectPools?.spark;
     if (!pool) return;
     for (let index = 0; index < 3; index += 1) {
@@ -1106,16 +1091,7 @@ class ArenaScene extends Phaser.Scene {
     else if (state === "attack") view.sprite.setTint(0xffedb0);
     else view.sprite.setTint(player.id === this.localPlayerId ? 0xffffff : 0xe8f2f7);
     view.weapon.setAlpha(player.alive ? (state === "attack" ? 1 : 0.92) : 0.34);
-    view.shadow.setAlpha(this.lowPerformance ? 0.16 : player.alive ? 0.34 : 0.12);
-  }
-
-  private applyPerformanceMode(): void {
-    for (const light of this.decorativeLights) {
-      light.setAlpha(this.lowPerformance ? 0.08 : 0.22);
-      const tweens = this.tweens.getTweensOf(light);
-      for (const tween of tweens) this.lowPerformance ? tween.pause() : tween.resume();
-    }
-    for (const shadow of this.decorativeShadows) (shadow as Phaser.GameObjects.Rectangle).setAlpha(this.lowPerformance ? 0.14 : 1);
+    view.shadow.setAlpha(player.alive ? 0.34 : 0.12);
   }
 
   private resizeCamera(width: number, height: number): void {

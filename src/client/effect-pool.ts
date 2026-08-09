@@ -165,6 +165,6 @@ export function deriveCharacterVisualState(signals: CharacterVisualSignals, now:
   return signals.speed > 8 ? "move" : "idle";
 }
 
-export function shouldRenderEffect(effect: RenderEffectKind, lowPerformance: boolean): boolean {
-  return !lowPerformance || (effect !== "environment" && effect !== "spark");
+export function shouldRenderEffect(_effect: RenderEffectKind, _lowPerformance: boolean): boolean {
+  return true;
 }

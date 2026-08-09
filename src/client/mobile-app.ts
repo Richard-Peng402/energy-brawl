@@ -60,10 +60,6 @@ export class MobileApp {
   private lastInputSentAt = 0;
   private acceptingInput = false;
   private toastTimer = 0;
-  private lastFrameAt = 0;
-  private hintWindowAt = 0;
-  private frameIntervals: number[] = [];
-  private slowFrameWindows = 0;
   private lastRoomUiRevision = "";
   private lastLeaderboardRevision = "";
   private lastKillFeedRevision = "";
@@ -436,7 +432,6 @@ export class MobileApp {
     if (inGame && this.network.game) {
       this.ensureRenderer();
       this.renderer?.setLocalPlayerId(this.network.playerId);
-      this.renderer?.setSnapshotMode(this.network.snapshotMode);
       this.renderer?.setSnapshot(this.network.game);
       this.renderHud(this.network.game);
       this.renderResults(this.network.game);
@@ -709,20 +704,6 @@ export class MobileApp {
   }
 
   private readonly inputLoop = (time: number): void => {
-    if (this.lastFrameAt > 0) {
-      this.frameIntervals.push(time - this.lastFrameAt);
-      if (this.frameIntervals.length > 120) this.frameIntervals.shift();
-    }
-    this.lastFrameAt = time;
-    if (time - this.hintWindowAt >= 2_000 && this.frameIntervals.length >= 20) {
-      const sorted = [...this.frameIntervals].sort((a, b) => a - b);
-      const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? 0;
-      if (p95 > 24) this.slowFrameWindows += 1;
-      else this.slowFrameWindows = 0;
-      this.network.sendPerformanceHint({ snapshotMode: this.slowFrameWindows >= 2 ? "reduced" : "full", frameP95Ms: p95 });
-      this.hintWindowAt = time;
-      this.frameIntervals = [];
-    }
     const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
     const ownPlayer = this.network.game?.players.find((player) => player.id === this.network.playerId);
     const activePhase = this.network.game?.phase === "playing" || this.network.game?.phase === "overtime";

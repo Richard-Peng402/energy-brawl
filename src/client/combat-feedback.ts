@@ -35,10 +35,10 @@ export function shouldShowProjectileTrace(_lowPerformance: boolean): boolean {
 }
 
 export function shouldRenderProjectileImageEffect(
-  kind: "muzzle" | "trail" | "impact" | "spark" | "smoke",
-  lowPerformance: boolean,
+  _kind: "muzzle" | "trail" | "impact" | "spark" | "smoke",
+  _lowPerformance: boolean,
 ): boolean {
-  return !lowPerformance || (kind !== "spark" && kind !== "smoke");
+  return true;
 }
 
 export function projectileAngle(velocity: Vec2): number {
