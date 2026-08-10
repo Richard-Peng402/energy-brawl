@@ -3,6 +3,7 @@ import type { MatchMode, TeamId } from "./mode-catalog";
 import type { SkillType } from "./skill-catalog";
 import type { ExclusiveSkillId } from "./exclusive-skill-catalog";
 import type { CapturePointStateName } from "./capture-point";
+import type { NetworkSnapshot } from "./network";
 
 export interface Vec2 {
   x: number;
@@ -227,5 +228,6 @@ export interface ServerInfo {
   version: string;
   joinUrls: string[];
   qrDataUrls: string[];
+  network: NetworkSnapshot;
   room: RoomSnapshot;
 }

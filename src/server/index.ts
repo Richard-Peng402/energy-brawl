@@ -7,11 +7,12 @@ import path from "node:path";
 import express from "express";
 import QRCode from "qrcode";
 
-import type { ServerInfo } from "../shared/protocol";
-import { getLanAddresses } from "./lan-address";
 import { attachGameNetwork } from "./network";
 import { listenOnAvailablePort } from "./port";
 import { GameRoom } from "./room";
+import { discoverNetworkSnapshot } from "./network-topology";
+import { NetworkSnapshotProvider } from "./network-snapshot-provider";
+import { applyNoStoreHeaders, buildServerInfo, getAllowedLanAddresses } from "./server-info";
 
 const preferredPort = Number.parseInt(process.env.PORT ?? "3000", 10);
 let port = preferredPort;
@@ -19,7 +20,9 @@ const app = express();
 const httpServer = createServer(app);
 const room = new GameRoom();
 const hostToken = process.env.NODE_ENV === "test" ? process.env.HOST_TOKEN?.trim() || randomBytes(18).toString("hex") : randomBytes(18).toString("hex");
-const network = attachGameNetwork(httpServer, room, hostToken);
+let allowedLanAddresses: string[] = [];
+const network = attachGameNetwork(httpServer, room, hostToken, () => allowedLanAddresses);
+const topology = new NetworkSnapshotProvider(() => discoverNetworkSnapshot({ port, interfaces: networkInterfaces() }));
 const clientDirectory = path.resolve(process.cwd(), "dist");
 
 app.disable("x-powered-by");
@@ -27,15 +30,12 @@ app.use(express.json({ limit: "32kb" }));
 app.use(express.static(clientDirectory));
 
 app.get("/api/info", async (_request, response) => {
-  const joinUrls = getLanAddresses(port, networkInterfaces());
-  const qrDataUrls = await Promise.all(joinUrls.map((url) => QRCode.toDataURL(url, { margin: 1, width: 320 })));
-  const info: ServerInfo = {
-    name: "能量乱斗",
-    version: "4.2.2",
-    joinUrls,
-    qrDataUrls,
-    room: room.snapshot(),
-  };
+  applyNoStoreHeaders(response);
+  const snapshot = await topology.get();
+  allowedLanAddresses = getAllowedLanAddresses(snapshot);
+  const baseInfo = buildServerInfo(snapshot, room.snapshot(), "4.2.3");
+  const qrDataUrls = await Promise.all(baseInfo.joinUrls.map((url) => QRCode.toDataURL(url, { margin: 1, width: 320 })));
+  const info = { ...baseInfo, qrDataUrls };
   response.json(info);
 });
 
@@ -49,10 +49,14 @@ app.get(["/", "/host"], (_request, response) => {
 
 port = await listenOnAvailablePort(httpServer, preferredPort, "0.0.0.0");
 {
-  const joinUrls = getLanAddresses(port, networkInterfaces());
+  const startupSnapshot = await topology.get();
+  allowedLanAddresses = getAllowedLanAddresses(startupSnapshot);
+  const joinUrls = startupSnapshot.status === "unavailable"
+    ? []
+    : startupSnapshot.candidates.filter((candidate) => candidate.kind !== "virtual").map((candidate) => candidate.url);
   const hostUrl = `http://127.0.0.1:${port}/host?token=${hostToken}`;
   console.log("\n能量乱斗服务器已启动");
-  if (port !== preferredPort) console.log(`端口 ${preferredPort} 已被占用，已自动改用 ${port}`);
+  if (preferredPort > 0 && port !== preferredPort) console.log(`端口 ${preferredPort} 已被占用，已自动改用 ${port}`);
   console.log(`主机控制台: ${hostUrl}`);
   for (const url of joinUrls) console.log(`手机加入: ${url}`);
   console.log("按 Ctrl+C 停止服务器\n");

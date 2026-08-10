@@ -32,4 +32,14 @@ describe("listenOnAvailablePort", () => {
 
     expect(selectedPort).toBe(address.port + 1);
   });
+
+  it("returns the actual operating-system port when zero requests an ephemeral port", async () => {
+    const server = createServer();
+    servers.add(server);
+
+    const selectedPort = await listenOnAvailablePort(server, 0, "127.0.0.1");
+
+    expect(selectedPort).toBeGreaterThan(0);
+    expect(server.address()).toMatchObject({ port: selectedPort });
+  });
 });

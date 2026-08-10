@@ -1474,6 +1474,28 @@ button:disabled {
   font-size: 14px;
 }
 
+.join-network-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  color: #aebbc2;
+  font-size: 12px;
+}
+
+.join-network-status span {
+  color: #31d0aa;
+  font-weight: 700;
+}
+
+.join-network-status span.is-offline {
+  color: #ff807d;
+}
+
+.join-network-status time {
+  text-align: right;
+}
+
 .host-roster-panel {
   min-width: 0;
   align-self: start;

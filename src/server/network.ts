@@ -40,10 +40,15 @@ export interface GameNetwork {
   close: () => Promise<void>;
 }
 
-export function attachGameNetwork(httpServer: HttpServer, room: GameRoom, hostToken: string): GameNetwork {
+export function attachGameNetwork(
+  httpServer: HttpServer,
+  room: GameRoom,
+  hostToken: string,
+  allowedLanAddresses: () => readonly string[] = () => [],
+): GameNetwork {
   const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(httpServer, {
     cors: { origin: true, credentials: false },
-    allowRequest: (request, callback) => callback(null, isAllowedLanOrigin(request.headers.origin)),
+    allowRequest: (request, callback) => callback(null, isAllowedLanOrigin(request.headers.origin, allowedLanAddresses())),
     transports: ["websocket", "polling"],
   });
   const lastInputAt = new Map<string, number>();
@@ -313,7 +318,7 @@ function sendAcknowledgement<T>(callback: ((result: Ack<T>) => void) | undefined
   if (typeof callback === "function") callback(result);
 }
 
-export function isAllowedLanOrigin(origin: string | undefined): boolean {
+export function isAllowedLanOrigin(origin: string | undefined, allowedLanAddresses: readonly string[] = []): boolean {
   if (!origin) return true;
   try {
     const parsedHostname = new URL(origin).hostname.toLowerCase();
@@ -322,6 +327,7 @@ export function isAllowedLanOrigin(origin: string | undefined): boolean {
       : parsedHostname;
     if (hostname === "localhost" || hostname === "::1") return true;
     if (isIP(hostname) !== 4) return false;
+    if (allowedLanAddresses.includes(hostname)) return true;
 
     const [first, second = Number.NaN] = hostname.split(".").map(Number);
     return first === 127 || first === 10 || (first === 192 && second === 168) || (first === 172 && second >= 16 && second <= 31);

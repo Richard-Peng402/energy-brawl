@@ -1,6 +1,6 @@
 {
   "name": "energy-brawl",
-  "version": "4.2.2",
+  "version": "4.2.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,9 +16,12 @@
     "load-test:v3": "tsx scripts/v3-load-test.ts",
     "load-test:v4": "tsx scripts/v4-load-test.ts",
     "test": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "doctor": "tsx scripts/release-doctor.ts",
+    "smoke:clean-clone": "tsx scripts/clean-clone-smoke.ts"
   },
   "dependencies": {
+    "default-gateway": "^7.2.0",
     "express": "^5.1.0",
     "phaser": "^3.90.0",
     "qrcode": "^1.5.4",
@@ -26,6 +29,7 @@
     "socket.io-client": "^4.8.1"
   },
   "devDependencies": {
+    "@types/default-gateway": "^7.2.2",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.0",
     "@types/qrcode": "^1.5.5",

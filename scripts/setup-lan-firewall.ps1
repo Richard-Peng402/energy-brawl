@@ -10,12 +10,12 @@ if ($null -eq $rule) {
         -DisplayName $ruleName `
         -Direction Inbound `
         -Action Allow `
-        -Profile Private `
+        -Profile Any `
         -Protocol TCP `
         -LocalPort "3000-3010" `
         -RemoteAddress LocalSubnet | Out-Null
 } else {
-    Set-NetFirewallRule -DisplayName $ruleName -Enabled True -Profile Private -Direction Inbound -Action Allow
+    Set-NetFirewallRule -DisplayName $ruleName -Enabled True -Profile Any -Direction Inbound -Action Allow
     $rule | Get-NetFirewallPortFilter | Set-NetFirewallPortFilter -Protocol TCP -LocalPort "3000-3010"
     $rule | Get-NetFirewallAddressFilter | Set-NetFirewallAddressFilter -RemoteAddress LocalSubnet
 }

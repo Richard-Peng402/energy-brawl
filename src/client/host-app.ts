@@ -1,11 +1,15 @@
 import type { MatchMode } from "../shared/mode-catalog";
 import type { AdminStat, GamePhase, GameSnapshot, RoomSnapshot, ServerInfo, TeamScoreSnapshot } from "../shared/protocol";
 import { GameNetworkClient } from "./network";
+import { ServerInfoRefreshController, type ServerInfoRefreshState } from "./server-info-refresh";
 
 export class HostApp {
   private readonly network = new GameNetworkClient(false);
+  private readonly infoRefresh = new ServerInfoRefreshController();
   private readonly token = new URLSearchParams(window.location.search).get("token") ?? "";
   private info: ServerInfo | null = null;
+  private infoState: ServerInfoRefreshState = this.infoRefresh.state;
+  private renderedNetworkRevision: string | null = null;
   private message = "";
   private editingPlayerId: string | null = null;
   private selectedSwapPlayerId: string | null = null;
@@ -14,7 +18,12 @@ export class HostApp {
     root.innerHTML = hostTemplate();
     this.bindActions();
     this.network.subscribe(() => this.render());
-    void this.loadInfo();
+    this.infoRefresh.subscribe((state) => {
+      this.infoState = state;
+      this.info = state.info;
+      this.render();
+    });
+    this.infoRefresh.start();
   }
 
   private bindActions(): void {
@@ -88,17 +97,6 @@ export class HostApp {
     this.find<HTMLInputElement>("#stat-value").value = String(player[stat]);
   }
 
-  private async loadInfo(): Promise<void> {
-    try {
-      const response = await fetch("/api/info");
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      this.info = (await response.json()) as ServerInfo;
-    } catch {
-      this.message = "无法读取服务器信息";
-    }
-    this.render();
-  }
-
   private async command(command: "start" | "end" | "reset"): Promise<void> {
     const result = await this.network.hostCommand(this.token, command);
     this.message = result.ok ? "命令已执行" : result.error ?? "命令执行失败";
@@ -123,10 +121,11 @@ export class HostApp {
     const joinUrl = this.info?.joinUrls[0] ?? "正在获取局域网地址";
     this.find("#join-url").textContent = joinUrl;
     const qr = this.find<HTMLImageElement>("#join-qr");
-    if (this.info?.qrDataUrls[0]) {
+    if (this.info?.qrDataUrls[0] && this.renderedNetworkRevision === null) {
       qr.src = this.info.qrDataUrls[0];
       qr.classList.remove("is-loading");
     }
+    this.renderNetworkInfo();
 
     const players = presentation.players;
     const phase = presentation.phase;
@@ -161,6 +160,38 @@ export class HostApp {
     return resolveHostPresentation(room, this.network.game).players.find((candidate) => candidate.id === playerId);
   }
 
+  private renderNetworkInfo(): void {
+    const network = this.info?.network;
+    const stale = this.infoState.stale;
+    const status = this.find("#join-network-state");
+    const checkedAt = this.find<HTMLTimeElement>("#join-network-check");
+    status.textContent = stale
+      ? "地址待确认"
+      : network
+        ? networkStatusName(network.status)
+        : "正在检测网络";
+    status.classList.toggle("is-offline", stale || network?.status === "unavailable");
+
+    const lastCheck = this.infoState.lastSuccessfulAt ?? network?.checkedAt;
+    checkedAt.textContent = lastCheck ? `最近检测 ${new Date(lastCheck).toLocaleTimeString()}` : "";
+    checkedAt.dateTime = lastCheck ? new Date(lastCheck).toISOString() : "";
+
+    if (!network) return;
+    this.find("#join-url").textContent = network.primaryUrl ?? "当前没有可用的局域网加入地址";
+    if (network.revision === this.renderedNetworkRevision) return;
+
+    const qr = this.find<HTMLImageElement>("#join-qr");
+    const qrDataUrl = this.info?.qrDataUrls[0];
+    if (qrDataUrl) {
+      qr.src = qrDataUrl;
+      qr.classList.remove("is-loading");
+    } else {
+      qr.removeAttribute("src");
+      qr.classList.add("is-loading");
+    }
+    this.renderedNetworkRevision = network.revision;
+  }
+
   private find<T extends HTMLElement = HTMLElement>(selector: string): T {
     const element = this.root.querySelector<T>(selector);
     if (!element) throw new Error(`Missing host UI element: ${selector}`);
@@ -191,6 +222,15 @@ export function canEditLobbyRules(phase: GamePhase, token: string): boolean {
   return token.length > 0 && phase === "lobby";
 }
 
+function networkStatusName(status: ServerInfo["network"]["status"]): string {
+  return ({
+    ready: "同一局域网可加入",
+    "hotspot-only": "当前仅检测到电脑热点",
+    limited: "网络连接受限",
+    unavailable: "没有可用的局域网地址",
+  } as const)[status];
+}
+
 function teamName(teamId: TeamScoreSnapshot["teamId"]): string {
   return teamId === "red" ? "红队" : teamId === "blue" ? "蓝队" : "金队";
 }
@@ -218,6 +258,7 @@ function hostTemplate(): string {
         <span class="eyebrow">PLAYER ENTRY</span><h2>扫码加入战场</h2>
         <img id="join-qr" class="join-qr is-loading" alt="手机加入二维码" />
         <code id="join-url">正在获取局域网地址</code>
+        <div class="join-network-status"><span id="join-network-state">正在检测网络</span><time id="join-network-check"></time></div>
       </div>
       <div class="host-roster-panel">
         <div class="section-heading"><span>六席状态</span><small id="host-message"></small></div>

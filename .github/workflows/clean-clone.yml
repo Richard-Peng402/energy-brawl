@@ -1,0 +1,25 @@
+name: Clean clone
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify-clean-clone:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run assets:v3
+      - run: npm run assets:v4
+      - run: npm test -- --run
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run smoke:clean-clone

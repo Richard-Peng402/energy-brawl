@@ -197,6 +197,8 @@ describe("game network", () => {
     expect(isAllowedLanOrigin("https://10.0.0.1.evil.example")).toBe(false);
     expect(isAllowedLanOrigin("https://172.16.0.1.evil.example")).toBe(false);
     expect(isAllowedLanOrigin("http://[::1]:5173")).toBe(true);
+    expect(isAllowedLanOrigin("http://203.0.113.20:3000", ["203.0.113.20"])).toBe(true);
+    expect(isAllowedLanOrigin("http://203.0.113.21:3000", ["203.0.113.20"])).toBe(false);
   });
 
   it("notifies observers when autonomous expiry returns a match to the lobby", async () => {

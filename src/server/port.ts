@@ -10,7 +10,8 @@ export async function listenOnAvailablePort(
     const port = preferredPort + offset;
     try {
       await listen(server, port, host);
-      return port;
+      const address = server.address();
+      return address && typeof address !== "string" ? address.port : port;
     } catch (error) {
       if (!isAddressInUse(error) || offset === attempts - 1) throw error;
     }

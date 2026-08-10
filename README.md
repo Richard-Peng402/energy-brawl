@@ -2,13 +2,21 @@
 
 局域网横屏多人对战小游戏。Windows 电脑运行权威服务器，手机或电脑浏览器通过同一局域网加入；最多 6 名玩家，不足席位由 AI 补齐。
 
-当前版本：**v4.2.2**
+当前版本：**v4.2.3**
+
+## v4.2.3 网络接入与开源完整性
+
+- 服务器按系统默认路由识别当前真实 Wi-Fi/有线网卡，虚拟网卡和热点不再抢占主要二维码；非 RFC1918 的真实局域网地址也可被精确识别。
+- 房主控制台每 3 秒刷新一次网络快照，并在网络恢复、窗口聚焦或页面重新可见时立即刷新；切换 Wi-Fi、DHCP 地址或热点后，地址和二维码会在约 4 秒内更新。
+- `/api/info` 明确禁止浏览器缓存；旧请求不会覆盖新地址，刷新失败时保留上次地址但标记为“地址待确认”。
+- Windows 防火墙规则兼容 Public/Private/Domain 配置文件，但仍只允许本地子网访问 TCP `3000-3010`。
+- 新增 `npm run doctor`、133 项运行时素材启动冒烟检查，以及 Windows/Ubuntu 干净克隆 GitHub Actions。
 
 ## v4.2.2 家庭局域网与手机 HiDPI 修复
 
 - 二维码地址优先选择真实 Wi-Fi/有线网卡，虚拟网卡、VPN 与 Windows 热点地址不再抢占首位。
 - Phaser 画布按完整 `devicePixelRatio` 分配物理像素，CSS 尺寸、地图视野和摄像机跟随保持不变；不限制 DPR、不降低特效、不降低快照频率。
-- Windows 防火墙规则仅向专用网络的本地子网开放 TCP `3000-3010`，兼容服务器自动选择备用端口。
+- Windows 防火墙规则仅向本地子网开放 TCP `3000-3010`，兼容服务器自动选择备用端口。
 
 ## v4.2.1 高保真渲染
 
@@ -91,7 +99,8 @@
 ## 安装与启动
 
 ```powershell
-npm.cmd install
+npm.cmd ci
+npm.cmd run doctor
 npm.cmd run build
 npm.cmd run server
 ```
@@ -102,7 +111,7 @@ Windows 首次运行前，请在“管理员 PowerShell”中执行一次：
 powershell -ExecutionPolicy Bypass -File scripts/setup-lan-firewall.ps1
 ```
 
-服务器启动后会在终端打印房主控制台地址、手机加入地址和二维码。Windows 用户也可以双击根目录的 `启动游戏.bat`，脚本会检查 Node.js、安装依赖、构建客户端并启动服务器。
+服务器启动后会在终端打印房主控制台和手机加入地址；二维码显示在房主控制台中，并会随网络变化自动刷新。Windows 用户也可以双击根目录的 `启动游戏.bat`，脚本会检查 Node.js、安装依赖、构建客户端并启动服务器。
 
 开发模式：
 
@@ -112,12 +121,12 @@ npm.cmd run dev
 
 ## 手机加入局域网对局
 
-1. 电脑和手机连接同一个 Wi-Fi；不要使用访客网络。
-2. 运行服务器，在电脑终端找到 `手机加入` 地址或扫描二维码。
+1. 电脑和手机连接同一个允许设备互访的 Wi-Fi/局域网；电脑可使用有线网络，手机使用同一路由器的 Wi-Fi；不要使用访客网络。
+2. 运行服务器，打开终端打印的房主控制台地址并扫描其中的二维码。
 3. 手机保持横屏打开地址，首次触摸页面以启用浏览器音频。
 4. 左半屏任意位置按下生成移动摇杆，右半屏任意位置生成瞄准/射击摇杆；页面已禁止缩放和滚动。
 
-如果手机打不开页面：先确认二维码是电脑当前 Wi-Fi 地址并执行防火墙脚本；如果电脑可打开该地址而手机仍打不开，再关闭路由器的访客网络/客户端/AP 隔离。
+如果手机打不开页面：先运行 `npm.cmd run doctor`，确认二维码对应当前活动网卡并执行防火墙脚本；如果电脑可打开该地址而手机仍打不开，再关闭路由器的访客网络、客户端隔离或 AP 隔离。这些路由器限制无法由本机程序绕过。移动数据、异地公网和跨 NAT 不属于本地版支持范围。
 
 ## 房主控制台安全说明
 
@@ -128,7 +137,11 @@ npm.cmd run dev
 ```powershell
 npm.cmd test -- --run
 npm.cmd run typecheck
+npm.cmd run assets:v3
+npm.cmd run assets:v4
 npm.cmd run build
+npm.cmd run doctor
+npm.cmd run smoke:clean-clone
 git diff --check
 ```
 
@@ -156,13 +169,14 @@ npm.cmd run load-test
 src/client/       Phaser 客户端、移动端 UI、音频和视觉反馈
 src/server/       房间、固定步长模拟、网络和房主控制台
 src/shared/       协议、常量、角色与技能目录
-public/assets/v3/ 全部正式运行时素材及完整素材清单（上传时必须整体保留）
+public/assets/v3/ 角色、武器、地图、子弹、音效等正式运行时素材
+public/assets/v4/ 专属技能特效素材及完整素材清单
 scripts/          素材导入、音效处理和压力测试脚本
 tests/            单元、网络、资产和模拟测试
 docs/             历史设计/实施文档
 ```
 
-`public/assets/v3/` 是唯一运行时素材根目录，包含角色、八方向图、武器、地图、能量球、技能图标、子弹特效、连杀音效和 `manifest.json`。上传 GitHub 时应完整提交该目录。`dist/`、`node_modules/`、`coverage/` 和 `artifacts/` 是本地产物，已加入 `.gitignore`，不应提交。
+`public/assets/v3/` 与 `public/assets/v4/` 共同组成完整运行时素材，包含角色、八方向图、武器、地图、能量球、技能图标、专属技能特效、子弹特效、连杀音效和清单文件。上传 GitHub 时应完整提交这两个目录。`dist/`、`node_modules/`、`coverage/` 和 `artifacts/` 是本地产物，已加入 `.gitignore`，不应提交。
 
 ## 许可与素材
 
@@ -170,4 +184,4 @@ docs/             历史设计/实施文档
 
 ## 当前状态与后续计划
 
-v4.1.0 是当前可玩的 LAN 版本，重点是顺滑操作、清晰的技能方向反馈、可自定义控制和服务器权威多人对战。
+v4.2.3 是当前可玩的 LAN 版本，重点是顺滑操作、完整高保真特效、服务器权威多人对战，以及可验证的同网接入和开源完整性。
