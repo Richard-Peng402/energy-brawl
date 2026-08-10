@@ -8,5 +8,7 @@ describe("high-fidelity render configuration", () => {
   it("requests the browser high-performance GPU path without disabling antialiasing", () => {
     expect(gameSceneSource).toContain('powerPreference: "high-performance"');
     expect(gameSceneSource).toContain("antialiasGL: true");
+    expect(gameSceneSource).toContain("Phaser.Scale.NONE");
+    expect(gameSceneSource).toContain("resolveRenderMetrics");
   });
 });

@@ -52,6 +52,7 @@ import type { SkillIndicatorState } from "./skill-indicator";
 import { getSkillIndicatorProfile } from "./skill-indicator";
 import { getExclusiveEffectProfile } from "./skill-effects";
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
+import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 
 interface PlayerView {
   container: Phaser.GameObjects.Container;
@@ -106,24 +107,29 @@ const SKILL_COLORS: Readonly<Record<SkillType, number>> = {
 export class GameRenderer {
   private readonly scene: ArenaScene;
   private readonly game: Phaser.Game;
+  private readonly container: HTMLElement;
+  private renderMetrics: RenderMetrics;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor(container: HTMLElement, localPlayerId: string | null, audio: CombatAudio) {
+    this.container = container;
     this.scene = new ArenaScene(localPlayerId, audio);
     const width = Math.max(1, container.clientWidth || VIEW_WIDTH);
     const height = Math.max(1, container.clientHeight || VIEW_HEIGHT);
+    this.renderMetrics = resolveRenderMetrics(width, height, window.devicePixelRatio || 1);
     this.game = new Phaser.Game({
       type: Phaser.AUTO,
       parent: container,
-      width,
-      height,
+      width: this.renderMetrics.physicalWidth,
+      height: this.renderMetrics.physicalHeight,
       backgroundColor: "#101419",
       scene: this.scene,
       transparent: false,
       antialias: true,
       scale: {
-        mode: Phaser.Scale.RESIZE,
-        width,
-        height,
+        mode: Phaser.Scale.NONE,
+        width: this.renderMetrics.physicalWidth,
+        height: this.renderMetrics.physicalHeight,
       },
       render: {
         roundPixels: false,
@@ -131,6 +137,9 @@ export class GameRenderer {
         powerPreference: "high-performance",
       },
     });
+    this.resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => this.resizeForHiDpi());
+    this.resizeObserver?.observe(container);
+    window.addEventListener("resize", this.resizeForHiDpi, { passive: true });
   }
 
   setSnapshot(snapshot: GameSnapshot): void {
@@ -162,8 +171,17 @@ export class GameRenderer {
   }
 
   destroy(): void {
+    this.resizeObserver?.disconnect();
+    window.removeEventListener("resize", this.resizeForHiDpi);
     this.game.destroy(true);
   }
+
+  private readonly resizeForHiDpi = (): void => {
+    const width = Math.max(1, this.container.clientWidth || VIEW_WIDTH);
+    const height = Math.max(1, this.container.clientHeight || VIEW_HEIGHT);
+    this.renderMetrics = resolveRenderMetrics(width, height, window.devicePixelRatio || 1);
+    this.game.scale.resize(this.renderMetrics.physicalWidth, this.renderMetrics.physicalHeight);
+  };
 }
 
 class ArenaScene extends Phaser.Scene {
