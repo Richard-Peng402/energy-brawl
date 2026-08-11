@@ -207,6 +207,25 @@ describe("authoritative simulation", () => {
     expect(world.players.get("blue")?.health).toBe(getCharacter("fortress").maxHealth);
   });
 
+  it("records damage, deaths, and assists from the authoritative hit stream", () => {
+    const world = createGameWorld([
+      { id: "red", nickname: "红", characterId: "blaze", isBot: false },
+      { id: "blue", nickname: "蓝", characterId: "medic", isBot: false },
+      { id: "gold", nickname: "金", characterId: "fortress", isBot: false },
+    ]);
+    stepWorld(world, SPAWN_SHIELD_MS + 1);
+
+    damagePlayer(world, "blue", "red", 25);
+    damagePlayer(world, "blue", "gold", 75);
+
+    expect(world.players.get("red")?.damageDealt).toBe(25);
+    expect(world.players.get("gold")?.damageDealt).toBe(75);
+    expect(world.players.get("gold")?.kills).toBe(1);
+    expect(world.players.get("red")?.assists).toBe(1);
+    expect(world.players.get("blue")?.deaths).toBe(1);
+    expect(world.players.get("blue")?.damageTaken).toBe(100);
+  });
+
   it("tracks authoritative killstreaks and resets the streak when the killer dies", () => {
     const world = createWorld();
     stepWorld(world, SPAWN_SHIELD_MS + 1);

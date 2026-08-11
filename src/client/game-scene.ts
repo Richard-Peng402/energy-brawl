@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 
 import { CHARACTER_CATALOG } from "../shared/character-catalog";
-import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_MAX_DISTANCE, VIEW_HEIGHT, VIEW_WIDTH, WALLS } from "../shared/constants";
+import { getMapDefinition, type MapId } from "../shared/map-catalog";
+import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_MAX_DISTANCE, VIEW_HEIGHT, VIEW_WIDTH } from "../shared/constants";
 import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
 import type { CapturePointSnapshot, GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import { AIM_GUIDE_LINE_WIDTH, calculateAimGuide } from "./aim-guide";
@@ -111,9 +112,9 @@ export class GameRenderer {
   private renderMetrics: RenderMetrics;
   private resizeObserver: ResizeObserver | null = null;
 
-  constructor(container: HTMLElement, localPlayerId: string | null, audio: CombatAudio) {
+  constructor(container: HTMLElement, localPlayerId: string | null, audio: CombatAudio, mapId: MapId = "reactor-core") {
     this.container = container;
-    this.scene = new ArenaScene(localPlayerId, audio);
+    this.scene = new ArenaScene(localPlayerId, audio, mapId);
     const width = Math.max(1, container.clientWidth || VIEW_WIDTH);
     const height = Math.max(1, container.clientHeight || VIEW_HEIGHT);
     this.renderMetrics = resolveRenderMetrics(width, height, window.devicePixelRatio || 1);
@@ -211,7 +212,7 @@ class ArenaScene extends Phaser.Scene {
   private projectilePool: ReusableObjectPool<MovingView> | null = null;
   private ready = false;
 
-  constructor(private localPlayerId: string | null, private readonly audio: CombatAudio) {
+  constructor(private localPlayerId: string | null, private readonly audio: CombatAudio, private readonly mapId: MapId) {
     super({ key: "arena" });
   }
 
@@ -403,11 +404,13 @@ class ArenaScene extends Phaser.Scene {
       const light = this.add.image(x, y, "arena-light-v3").setDepth(-4).setScale(3.4).setAlpha(0.42).setTint(0x3adfff).setBlendMode(Phaser.BlendModes.ADD);
       this.tweens.add({ targets: light, alpha: 0.1, scale: 2.6, duration: 1_800, yoyo: true, repeat: -1, ease: "Sine.InOut" });
     }
-    for (const wall of WALLS) {
+    const map = getMapDefinition(this.mapId);
+    const wallTint = map.theme === "neon" ? 0x7c6cff : map.theme === "crystal" ? 0x8f7dff : 0x7393a8;
+    for (const wall of map.walls) {
       this.add.rectangle(wall.x + wall.width / 2 + 12, wall.y + wall.height / 2 + 13, wall.width, wall.height, 0x000000, 0.4).setDepth(-2);
       this.add.tileSprite(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, "arena-wall-v3")
         .setDepth(-1)
-        .setTint(0x7393a8);
+        .setTint(wallTint);
       this.add.rectangle(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, 0x000000, 0)
         .setDepth(0)
         .setStrokeStyle(5, 0x8bdcf2, 0.92);
@@ -887,7 +890,7 @@ class ArenaScene extends Phaser.Scene {
     const view = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : null;
     const player = this.snapshot.players.find((candidate) => candidate.id === this.localPlayerId);
     const guide = view && player?.alive && this.snapshot.phase !== "finished"
-      ? calculateAimGuide(view.container, this.localAim, PROJECTILE_MAX_DISTANCE, WALLS)
+      ? calculateAimGuide(view.container, this.localAim, PROJECTILE_MAX_DISTANCE, getMapDefinition(this.mapId).walls)
       : { start: { x: 0, y: 0 }, end: { x: 0, y: 0 }, angle: 0, length: 0, visible: false };
     this.aimCorridor.setVisible(guide.visible).setPosition(guide.start.x, guide.start.y).setRotation(guide.angle).setSize(guide.length, AIM_GUIDE_LINE_WIDTH).setDisplaySize(guide.length, AIM_GUIDE_LINE_WIDTH);
     this.aimEnd.setVisible(guide.visible).setPosition(guide.end.x, guide.end.y);
@@ -1120,7 +1123,12 @@ class ArenaScene extends Phaser.Scene {
 
   private updateCamera(): void {
     if (!this.snapshot || this.snapshot.phase === "finished" || !this.localPlayerId) return;
-    const view = this.playerViews.get(this.localPlayerId);
+    const local = this.snapshot.players.find((player) => player.id === this.localPlayerId);
+    const target = local?.alive
+      ? local
+      : this.snapshot.players.find((player) => player.alive && player.teamId != null && player.teamId === local?.teamId)
+        ?? this.snapshot.players.find((player) => player.alive);
+    const view = target ? this.playerViews.get(target.id) : undefined;
     if (!view) return;
     const camera = this.cameras.main;
     const zoom = Math.max(0.01, camera.zoom);

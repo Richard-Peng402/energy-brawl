@@ -18,4 +18,13 @@ describe("v4 six-player load simulation", () => {
       expect(report.capturePointObserved).toBe(true);
     }
   });
+
+  it.each(["reactor-core", "neon-docks", "crystal-ruins"] as const)(
+    "keeps six players wall-safe on %s",
+    (mapId) => {
+      const report = runV4LoadSimulation(5, "team3v3", mapId);
+      expect(validateV4LoadReport(report)).toEqual([]);
+      expect(report.mapId).toBe(mapId);
+    },
+  );
 });

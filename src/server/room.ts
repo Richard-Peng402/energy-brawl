@@ -8,6 +8,7 @@ import {
   SKILL_ACTION_MAX_JUMP,
 } from "../shared/constants";
 import { CHARACTER_CATALOG, getCharacter, isCharacterId, type CharacterId } from "../shared/character-catalog";
+import { resolveMapSelection, type MapId, type MapSelection } from "../shared/map-catalog";
 import { getModeDefinition, isMatchMode, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import type {
   Ack,
@@ -64,6 +65,16 @@ export class GameRoom {
   private pendingWinnerId: string | null = null;
   private pendingWinnerTeamId: TeamId | null = null;
   private matchMode: MatchMode = "solo";
+  private mapSelection: MapSelection = "reactor-core";
+  private activeMapId: MapId | null = null;
+
+  setMapSelection(selection: MapSelection): Ack {
+    if (this.world) return { ok: false, error: "对局开始后无法切换地图" };
+    const resolved = resolveMapSelection(selection, this.activeMapId);
+    this.mapSelection = selection;
+    this.activeMapId = selection === "random" ? null : resolved.id;
+    return { ok: true };
+  }
 
   setMatchMode(mode: MatchMode): Ack {
     if (this.world) return { ok: false, error: "对局开始后无法切换模式" };
@@ -102,6 +113,7 @@ export class GameRoom {
     if (this.world?.phase === "finished") return { ok: false, error: "当前阶段不可执行" };
 
     if (command.type === "setMode") return this.setMatchMode(command.mode);
+    if (command.type === "setMap") return this.setMapSelection(command.mapSelection);
     if (command.type === "swapTeams") return this.swapPlayerTeams(command.firstPlayerId, command.secondPlayerId);
     if (command.type === "forceTeamWinner") {
       if (this.matchMode === "solo") return { ok: false, error: "个人战没有团队胜者" };
@@ -247,7 +259,9 @@ export class GameRoom {
     this.fillBotSeats();
     assignBalancedTeams([...this.seats.values()], this.matchMode);
     if (hasDuplicateCharacterOnTeam([...this.seats.values()])) return { ok: false, error: "同队角色不能重复" };
-    this.world = createGameWorld([...this.seats.values()], this.clockMs, this.matchMode);
+    const map = resolveMapSelection(this.mapSelection, this.activeMapId);
+    this.activeMapId = map.id;
+    this.world = createGameWorld([...this.seats.values()], this.clockMs, this.matchMode, map.id);
     this.autoResetAt = null;
     this.pendingInputs.clear();
     this.pendingSkillActions.clear();
@@ -441,6 +455,8 @@ export class GameRoom {
       pendingWinnerId: this.pendingWinnerId,
       pendingWinnerTeamId: this.pendingWinnerTeamId,
       matchMode: this.matchMode,
+      mapSelection: this.mapSelection,
+      activeMapId: this.activeMapId,
       teamScores: this.world
         ? worldToSnapshot(this.world).teamScores
         : [...new Set([...this.seats.values()].map((seat) => seat.teamId).filter((teamId): teamId is TeamId => teamId !== null))].map((teamId) => ({

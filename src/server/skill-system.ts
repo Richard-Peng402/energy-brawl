@@ -10,7 +10,7 @@ import {
 } from "../shared/constants";
 import { circleHitsRect, distanceSquared } from "../shared/math";
 import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
-import type { SkillOrbSnapshot, SkillSlotSnapshot, Vec2 } from "../shared/protocol";
+import type { Rect, SkillOrbSnapshot, SkillSlotSnapshot, Vec2 } from "../shared/protocol";
 
 export interface SkillSystemState {
   orbs: Map<string, SkillOrbSnapshot>;
@@ -20,6 +20,8 @@ export interface SkillSystemState {
   lastSpawnAt: number;
   bag: SkillType[];
   random: () => number;
+  spawnPoints: readonly Vec2[];
+  walls: readonly Rect[];
 }
 
 export interface SkillHolder {
@@ -37,7 +39,7 @@ export const SPREAD_PROJECTILE_DAMAGE = 18;
 export const SPREAD_ANGLE_RADIANS = 12 * Math.PI / 180;
 export const HEAL_AMOUNT = 35;
 
-export function createSkillSystem(now = 0, random: () => number = Math.random): SkillSystemState {
+export function createSkillSystem(now = 0, random: () => number = Math.random, spawnPoints: readonly Vec2[] = SKILL_ORB_SPAWN_POINTS, walls: readonly Rect[] = WALLS): SkillSystemState {
   return {
     orbs: new Map(),
     nextOrbId: 1,
@@ -46,6 +48,8 @@ export function createSkillSystem(now = 0, random: () => number = Math.random): 
     lastSpawnAt: now,
     bag: shuffledBag(random),
     random,
+    spawnPoints,
+    walls,
   };
 }
 
@@ -112,8 +116,8 @@ export function acceptSkillAction(
 }
 
 function spawnSkillOrb(state: SkillSystemState, occupied: readonly Vec2[]): boolean {
-  for (let attempt = 0; attempt < SKILL_ORB_SPAWN_POINTS.length; attempt += 1) {
-    const point = SKILL_ORB_SPAWN_POINTS[state.nextPoint++ % SKILL_ORB_SPAWN_POINTS.length];
+  for (let attempt = 0; attempt < state.spawnPoints.length; attempt += 1) {
+    const point = state.spawnPoints[state.nextPoint++ % state.spawnPoints.length];
     if (!point || !isSafePoint(state, point, occupied)) continue;
     if (state.bag.length === 0) state.bag = shuffledBag(state.random);
     const type = state.bag.shift();
@@ -126,7 +130,7 @@ function spawnSkillOrb(state: SkillSystemState, occupied: readonly Vec2[]): bool
 }
 
 function isSafePoint(state: SkillSystemState, point: Vec2, occupied: readonly Vec2[]): boolean {
-  if (WALLS.some((wall) => circleHitsRect(point, SKILL_ORB_RADIUS, wall))) return false;
+  if (state.walls.some((wall) => circleHitsRect(point, SKILL_ORB_RADIUS, wall))) return false;
   const minDistanceSquared = SKILL_ORB_SAFE_DISTANCE * SKILL_ORB_SAFE_DISTANCE;
   if (occupied.some((candidate) => distanceSquared(candidate, point) < minDistanceSquared)) return false;
   return ![...state.orbs.values()].some((orb) => distanceSquared(orb, point) < minDistanceSquared);

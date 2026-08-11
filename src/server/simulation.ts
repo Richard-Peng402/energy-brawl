@@ -24,6 +24,7 @@ import {
   WALLS,
 } from "../shared/constants";
 import { getCharacter, MEDIC_ENERGY_HEAL, type CharacterId } from "../shared/character-catalog";
+import { getMapDefinition, type MapId } from "../shared/map-catalog";
 import { getModeDefinition, isCaptureMode, TEAM_IDS, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import { advanceCapturePoint, createCapturePointState, DEFAULT_CAPTURE_POINT_CONFIG, isCapturePointComplete, type CapturePointState } from "../shared/capture-point";
 import { applyExclusiveSkill, advanceExclusiveSkillEffects, clearExclusiveSkillState, isExclusiveEffectActive, type ExclusiveRuntimeState } from "./exclusive-skill-system";
@@ -75,6 +76,7 @@ export interface WorldPlayer extends PlayerSnapshot {
   regenAccumulatorMs: number;
   killStreak: number;
   exclusiveSkillState?: ExclusiveRuntimeState | null;
+  recentDamageSources: Map<string, number>;
 }
 
 export interface WorldProjectile extends ProjectileSnapshot {
@@ -105,6 +107,10 @@ export interface GameWorld {
   teamScores: Map<TeamId, number>;
   captureScores: Map<TeamId, number>;
   capturePoint: CapturePointState | null;
+  mapId: MapId;
+  mapWalls: StaticSpatialIndex;
+  mapSpawnPoints: readonly Vec2[];
+  mapEnergySpawnPoints: readonly Vec2[];
 }
 
 const EMPTY_INPUT: PlayerInput = {
@@ -116,13 +122,14 @@ const EMPTY_INPUT: PlayerInput = {
   firing: false,
 };
 
-const WALL_INDEX = new StaticSpatialIndex(WALLS);
-
-export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode: MatchMode = "solo"): GameWorld {
+export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode: MatchMode = "solo", mapId: MapId = "reactor-core"): GameWorld {
+  const map = getMapDefinition(mapId);
+  const mapWalls = new StaticSpatialIndex(map.walls);
+  const spawnPoints = map.spawnPointsByMode?.[matchMode] ?? map.spawnPoints;
   const players = new Map<string, WorldPlayer>();
   seeds.forEach((seed, index) => {
     const character = getCharacter(seed.characterId);
-    const spawn = SPAWN_POINTS[index % SPAWN_POINTS.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+    const spawn = spawnPoints[index % spawnPoints.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
     const maxHealth = Math.max(seed.stats?.maxHealth ?? character.maxHealth, seed.stats?.health ?? 0);
     const health = Math.min(seed.stats?.health ?? maxHealth, maxHealth);
     players.set(seed.id, {
@@ -147,6 +154,12 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
       score: seed.stats?.score ?? 0,
       kills: seed.stats?.kills ?? 0,
       energyCollected: seed.stats?.energyCollected ?? 0,
+      assists: 0,
+      deaths: 0,
+      damageDealt: 0,
+      healingDone: 0,
+      damageTaken: 0,
+      skillContribution: 0,
       alive: true,
       respawnAt: null,
       shieldUntil: now + SPAWN_SHIELD_MS,
@@ -165,6 +178,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
       exclusiveSkillCooldownMs: seed.stats?.exclusiveSkillCooldownMs ?? DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS,
       exclusiveSkillReadyAt: now,
       exclusiveSkillState: null,
+      recentDamageSources: new Map(),
     });
   });
 
@@ -180,7 +194,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
     players,
     projectiles: new Map(),
     energy: new Map(),
-    skillSystem: createSkillSystem(now),
+    skillSystem: createSkillSystem(now, Math.random, map.skillOrbSpawnPoints, map.walls),
     nextProjectileId: 1,
     nextEnergyId: 1,
     nextEnergySpawnAt: now,
@@ -195,6 +209,10 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
       TEAM_IDS.slice(0, getModeDefinition(matchMode).teamCount).map((teamId) => [teamId, 0] as const),
     ),
     capturePoint: isCaptureMode(matchMode) ? createCapturePointState() : null,
+    mapId,
+    mapWalls,
+    mapSpawnPoints: spawnPoints,
+    mapEnergySpawnPoints: map.energySpawnPoints,
   };
 
   while (world.energy.size < MAX_ENERGY) spawnEnergy(world);
@@ -294,6 +312,12 @@ export function damagePlayer(
   victim.skillShieldHealth -= absorbed;
   const healthDamage = reducedAmount - absorbed;
   if (healthDamage === 0) return true;
+  const roundedDamage = Math.max(0, Math.round(healthDamage));
+  victim.damageTaken = (victim.damageTaken ?? 0) + roundedDamage;
+  if (attacker && attacker.id !== victim.id) {
+    attacker.damageDealt = (attacker.damageDealt ?? 0) + roundedDamage;
+    victim.recentDamageSources.set(attacker.id, world.now);
+  }
   victim.health = Math.max(0, victim.health - healthDamage);
   if (victim.health > 0) return true;
 
@@ -305,6 +329,7 @@ export function damagePlayer(
   victim.skillShieldHealth = 0;
   victim.skillShieldUntil = 0;
   victim.killStreak = 0;
+  victim.deaths = (victim.deaths ?? 0) + 1;
   clearSkillSlot(victim);
   clearExclusiveSkillState(victim);
 
@@ -320,6 +345,12 @@ export function damagePlayer(
     if (world.killFeed.length > 6) world.killFeed.splice(0, world.killFeed.length - 6);
     addPlayerScore(world, attacker, KILL_SCORE + (world.holderId === victim.id ? HOLDER_KILL_BONUS : 0));
     attacker.kills += 1;
+    for (const [assistId, at] of victim.recentDamageSources) {
+      if (assistId === attacker.id || world.now - at > 6_000) continue;
+      const assister = world.players.get(assistId);
+      if (assister) assister.assists = (assister.assists ?? 0) + 1;
+    }
+    victim.recentDamageSources.clear();
     handleScoreChange(world, attacker.id);
   }
   return true;
@@ -333,7 +364,9 @@ export function collectEnergy(world: GameWorld, playerId: string, energyId: stri
   addPlayerScore(world, player, ENERGY_SCORE);
   player.energyCollected += 1;
   if (player.characterId === "medic") {
-    player.health = Math.min(player.maxHealth, player.health + MEDIC_ENERGY_HEAL);
+    const healed = Math.min(player.maxHealth - player.health, MEDIC_ENERGY_HEAL);
+    player.health += healed;
+    player.healingDone = (player.healingDone ?? 0) + healed;
   }
   world.nextEnergySpawnAt = Math.max(world.nextEnergySpawnAt, world.now + ENERGY_RESPAWN_MS);
   handleScoreChange(world, player.id);
@@ -353,7 +386,10 @@ export function applyWorldSkillAction(world: GameWorld, playerId: string, skillA
   const action = acceptSkillAction(player, skillActionSeq);
   if (!action.accepted || !action.skill) return action.accepted;
   const consumed = executeSkill(world, player, action.skill);
-  if (consumed) clearSkillSlot(player);
+  if (consumed) {
+    player.skillContribution = (player.skillContribution ?? 0) + 1;
+    clearSkillSlot(player);
+  }
   return true;
 }
 
@@ -363,10 +399,13 @@ export function applyWorldExclusiveSkill(world: GameWorld, playerId: string, dir
   if (!player) return false;
   const result = applyExclusiveSkill(player, world.now, direction);
   if (!result.ok) return false;
+  player.skillContribution = (player.skillContribution ?? 0) + 1;
   if (result.definition.id === "pulse-heal") {
     for (const ally of world.players.values()) {
       if (ally.id !== player.id && ally.alive && ally.teamId !== null && ally.teamId === player.teamId && distanceSquared(ally, player) <= 280 * 280) {
-        ally.health = Math.min(ally.maxHealth, ally.health + 30);
+        const healed = Math.min(ally.maxHealth - ally.health, 30);
+        ally.health += healed;
+        player.healingDone = (player.healingDone ?? 0) + healed;
       }
     }
   }
@@ -387,7 +426,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     holderId: world.holderId,
     holdRemainingMs: world.holdRemainingMs,
     finishedAt: world.finishedAt,
-    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, killStreak: _killStreak, ...player }) => player),
+    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, ...player }) => player),
     projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, ...projectile }) => projectile),
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
@@ -413,6 +452,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
       contestingTeams: [...world.capturePoint.contestingTeams],
       state: world.capturePoint.state,
     } : null,
+    mapId: world.mapId,
   };
 }
 
@@ -464,7 +504,7 @@ function executeDash(world: GameWorld, player: WorldPlayer): boolean {
     player,
     delta,
     PLAYER_RADIUS,
-    WALL_INDEX.query(movementBounds(player, delta)),
+    world.mapWalls.query(movementBounds(player, delta)),
     { width: ARENA_WIDTH, height: ARENA_HEIGHT },
     [...world.players.values()]
       .filter((candidate) => candidate.id !== player.id && candidate.alive)
@@ -501,7 +541,7 @@ function movePlayer(world: GameWorld, player: WorldPlayer, deltaMs: number): voi
   player.vy = direction.y * player.moveSpeed * speedMultiplier;
   const seconds = deltaMs / 1_000;
   const delta = { x: player.vx * seconds, y: player.vy * seconds };
-  const nearbyWalls = WALL_INDEX.query(movementBounds(player, delta));
+  const nearbyWalls = world.mapWalls.query(movementBounds(player, delta));
   const next = moveCircleSafely(
     player,
     delta,
@@ -560,7 +600,7 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
       projectile,
       delta,
       PROJECTILE_RADIUS,
-      WALL_INDEX.query(movementBounds(projectile, delta, PROJECTILE_RADIUS)),
+      world.mapWalls.query(movementBounds(projectile, delta, PROJECTILE_RADIUS)),
     );
     let targetHit: { player: WorldPlayer; time: number } | null = null;
     for (const player of world.players.values()) {
@@ -621,9 +661,9 @@ function replenishEnergy(world: GameWorld): void {
 }
 
 function spawnEnergy(world: GameWorld): void {
-  for (let attempt = 0; attempt < ENERGY_SPAWN_POINTS.length; attempt += 1) {
-    const pointIndex = world.nextEnergyPoint++ % ENERGY_SPAWN_POINTS.length;
-    const point = ENERGY_SPAWN_POINTS[pointIndex];
+  for (let attempt = 0; attempt < world.mapEnergySpawnPoints.length; attempt += 1) {
+    const pointIndex = world.nextEnergyPoint++ % world.mapEnergySpawnPoints.length;
+    const point = world.mapEnergySpawnPoints[pointIndex];
     if (!point) continue;
     const occupied = [...world.energy.values()].some((energy) => distanceSquared(energy, point) < 4);
     if (!occupied) {
@@ -674,9 +714,10 @@ function advanceCombatRegeneration(world: GameWorld, deltaMs: number): void {
 
 function chooseSafeSpawn(world: GameWorld, playerId: string): Vec2 {
   const enemies = [...world.players.values()].filter((player) => player.id !== playerId && player.alive);
-  if (enemies.length === 0) return SPAWN_POINTS[0] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+  const spawnPoints = world.mapSpawnPoints;
+  if (enemies.length === 0) return spawnPoints[0] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
 
-  return SPAWN_POINTS.reduce((best, candidate) => {
+  return spawnPoints.reduce((best, candidate) => {
     const candidateSafety = Math.min(...enemies.map((enemy) => distanceSquared(candidate, enemy)));
     const bestSafety = Math.min(...enemies.map((enemy) => distanceSquared(best, enemy)));
     return candidateSafety > bestSafety ? candidate : best;
@@ -769,7 +810,7 @@ function safePlayerPosition(world: GameWorld, player: WorldPlayer, delta: Vec2):
     player,
     delta,
     PLAYER_RADIUS,
-    WALL_INDEX.query(movementBounds(player, delta)),
+    world.mapWalls.query(movementBounds(player, delta)),
     { width: ARENA_WIDTH, height: ARENA_HEIGHT },
   );
 }
@@ -900,7 +941,10 @@ function finishMatch(world: GameWorld, winnerIds: string[]): void {
 }
 
 export function forceWorldWinner(world: GameWorld, playerId: string): boolean {
-  if (world.phase === "finished" || !world.players.has(playerId)) return false;
+  const player = world.players.get(playerId);
+  if (world.phase === "finished" || !player) return false;
+  // Keep the scoreboard and winnerIds consistent so every client renders the same winner.
+  player.score = Math.max(player.score, TARGET_SCORE);
   finishMatch(world, [playerId]);
   return true;
 }

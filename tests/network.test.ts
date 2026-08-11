@@ -63,6 +63,11 @@ describe("game network", () => {
       command: { type: "setMode", mode: "team3v3" },
     })).toEqual({ ok: true });
     await expect(modeState).resolves.toMatchObject({ matchMode: "team3v3" });
+    expect(await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "setMap", mapSelection: "neon-docks" },
+    })).toEqual({ ok: true });
+    expect(room.snapshot().mapSelection).toBe("neon-docks");
 
     const second = room.joinHuman("manual-blue", { nickname: "蓝方", characterId: "medic" });
     const before = new Map(room.snapshot().players.map((player) => [player.id, player.teamId]));
@@ -452,6 +457,7 @@ describe("game network", () => {
 
     await expect(transition).resolves.toMatchObject({ phase: "finished", winnerIds: [joined.data!.playerId] });
     expect(room.gameSnapshot()?.phase).toBe("finished");
+    expect(room.gameSnapshot()?.players.find((player) => player.id === joined.data!.playerId)?.score).toBeGreaterThanOrEqual(20);
   });
 });
 

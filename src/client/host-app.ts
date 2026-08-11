@@ -1,4 +1,5 @@
 import type { MatchMode } from "../shared/mode-catalog";
+import type { MapSelection } from "../shared/map-catalog";
 import type { AdminStat, GamePhase, GameSnapshot, RoomSnapshot, ServerInfo, TeamScoreSnapshot } from "../shared/protocol";
 import { GameNetworkClient } from "./network";
 import { ServerInfoRefreshController, type ServerInfoRefreshState } from "./server-info-refresh";
@@ -32,6 +33,9 @@ export class HostApp {
     this.find("#host-reset").addEventListener("click", () => void this.command("reset"));
     this.find<HTMLSelectElement>("#host-mode").addEventListener("change", (event) => {
       void this.admin({ type: "setMode", mode: (event.target as HTMLSelectElement).value as MatchMode });
+    });
+    this.find<HTMLSelectElement>("#host-map").addEventListener("change", (event) => {
+      void this.admin({ type: "setMap", mapSelection: (event.target as HTMLSelectElement).value as MapSelection });
     });
     this.find("#host-team-controls").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-team-action]");
@@ -135,6 +139,9 @@ export class HostApp {
     const modeSelect = this.find<HTMLSelectElement>("#host-mode");
     modeSelect.value = presentation.matchMode;
     modeSelect.disabled = !lobbyRulesEnabled;
+    const mapSelect = this.find<HTMLSelectElement>("#host-map");
+    mapSelect.value = room?.mapSelection ?? "reactor-core";
+    mapSelect.disabled = !lobbyRulesEnabled;
     this.find("#host-team-controls").innerHTML = presentation.matchMode === "solo"
       ? ""
       : presentation.teamScores.map((team) => {
@@ -246,6 +253,7 @@ function hostTemplate(): string {
     <section class="host-status-band">
       <div><span>房间状态</span><strong id="host-phase">大厅</strong></div>
       <label class="host-mode-control">模式<select id="host-mode"><option value="solo">个人战</option><option value="team3v3">3v3</option><option value="team2v2v2">2v2v2</option><option value="domination3v3">据点 3v3</option><option value="domination2v2v2">据点 2v2v2</option></select></label>
+      <label class="host-mode-control">地图<select id="host-map"><option value="reactor-core">反应堆核心</option><option value="neon-docks">霓虹港区</option><option value="crystal-ruins">晶脉遗迹</option><option value="random">随机轮换</option></select></label>
       <div><span>真人玩家</span><strong id="host-count">0 / 6</strong></div>
       <div class="host-actions">
         <button id="host-start" class="primary-button" type="button" disabled>开始对局</button>

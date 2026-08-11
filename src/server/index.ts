@@ -33,7 +33,7 @@ app.get("/api/info", async (_request, response) => {
   applyNoStoreHeaders(response);
   const snapshot = await topology.get();
   allowedLanAddresses = getAllowedLanAddresses(snapshot);
-  const baseInfo = buildServerInfo(snapshot, room.snapshot(), "4.2.3");
+  const baseInfo = buildServerInfo(snapshot, room.snapshot(), "4.3.0");
   const qrDataUrls = await Promise.all(baseInfo.joinUrls.map((url) => QRCode.toDataURL(url, { margin: 1, width: 320 })));
   const info = { ...baseInfo, qrDataUrls };
   response.json(info);

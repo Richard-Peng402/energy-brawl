@@ -9,6 +9,17 @@ const join = (room: GameRoom, socketId: string, nickname: string, characterId: C
   room.joinHuman(socketId, { nickname, characterId });
 
 describe("game room", () => {
+  it("selects a fixed map in the lobby and exposes it in game snapshots", () => {
+    const room = new GameRoom();
+    expect(room.setMapSelection("crystal-ruins")).toEqual({ ok: true });
+    join(room, "socket-map", "地图玩家", "blaze");
+    room.setReady("socket-map", true);
+
+    expect(room.startMatch()).toEqual({ ok: true });
+    expect(room.gameSnapshot()?.mapId).toBe("crystal-ruins");
+    expect(room.setMapSelection("neon-docks")).toMatchObject({ ok: false });
+  });
+
   it("selects a team mode only in the lobby and carries balanced teams into the match", () => {
     const room = new GameRoom();
     expect(room.setMatchMode("team3v3")).toEqual({ ok: true });
@@ -144,6 +155,7 @@ describe("game room", () => {
     room.startMatch();
     expect(room.applyHostAdminCommand({ type: "forceWinner", playerId: first.data!.playerId })).toEqual({ ok: true });
     expect(room.gameSnapshot()).toMatchObject({ phase: "finished", winnerIds: [first.data!.playerId], finishedAt: 0 });
+    expect(room.gameSnapshot()!.players.find((player) => player.id === first.data!.playerId)?.score).toBeGreaterThanOrEqual(20);
     expect(room.tick(LOBBY_RETURN_DELAY_MS)).toBe(true);
     expect(room.snapshot().phase).toBe("lobby");
   });

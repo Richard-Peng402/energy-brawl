@@ -20,6 +20,7 @@ import type {
 } from "../shared/protocol";
 import { isCharacterId } from "../shared/character-catalog";
 import { isMatchMode, TEAM_IDS } from "../shared/mode-catalog";
+import { MAP_CATALOG } from "../shared/map-catalog";
 import { GameRoom } from "./room";
 import { FixedStepAccumulator } from "./fixed-loop";
 import { RollingMetric } from "./performance";
@@ -278,6 +279,7 @@ function isHostAdminCommand(command: unknown): command is HostAdminCommand {
   if (!command || typeof command !== "object") return false;
   const candidate = command as Record<string, unknown>;
   if (candidate.type === "setMode") return isMatchMode(candidate.mode);
+  if (candidate.type === "setMap") return candidate.mapSelection === "random" || MAP_CATALOG.some((map) => map.id === candidate.mapSelection);
   if (candidate.type === "swapTeams") return typeof candidate.firstPlayerId === "string" && typeof candidate.secondPlayerId === "string";
   if (candidate.type === "forceTeamWinner") return TEAM_IDS.includes(candidate.teamId as never);
   if (typeof candidate.playerId !== "string") return false;

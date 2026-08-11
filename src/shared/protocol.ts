@@ -4,6 +4,7 @@ import type { SkillType } from "./skill-catalog";
 import type { ExclusiveSkillId } from "./exclusive-skill-catalog";
 import type { CapturePointStateName } from "./capture-point";
 import type { NetworkSnapshot } from "./network";
+import type { MapId, MapSelection } from "./map-catalog";
 
 export interface Vec2 {
   x: number;
@@ -50,6 +51,12 @@ export interface PlayerSnapshot extends Vec2 {
   projectileSpeed: number;
   score: number;
   kills: number;
+  assists?: number;
+  deaths?: number;
+  damageDealt?: number;
+  healingDone?: number;
+  damageTaken?: number;
+  skillContribution?: number;
   energyCollected: number;
   alive: boolean;
   respawnAt: number | null;
@@ -110,6 +117,8 @@ export interface RoomSnapshot {
   pendingWinnerId: string | null;
   pendingWinnerTeamId?: TeamId | null;
   matchMode?: MatchMode;
+  mapSelection?: MapSelection;
+  activeMapId?: MapId | null;
   teamScores?: TeamScoreSnapshot[];
   players: Array<
     Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready"> & AdminStats & { teamId?: TeamId | null }
@@ -131,6 +140,7 @@ export interface GameSnapshot {
   skillOrbs: SkillOrbSnapshot[];
   killFeed?: KillFeedEvent[];
   matchMode?: MatchMode;
+  mapId?: MapId;
   teamScores?: TeamScoreSnapshot[];
   captureScores?: TeamScoreSnapshot[];
   capturePoint?: CapturePointSnapshot | null;
@@ -199,6 +209,7 @@ export type HostAdminCommand =
   | { type: "kick"; playerId: string }
   | { type: "forceWinner"; playerId: string }
   | { type: "setMode"; mode: MatchMode }
+  | { type: "setMap"; mapSelection: MapSelection }
   | { type: "swapTeams"; firstPlayerId: string; secondPlayerId: string }
   | { type: "forceTeamWinner"; teamId: TeamId };
 

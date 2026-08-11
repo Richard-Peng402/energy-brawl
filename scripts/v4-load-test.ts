@@ -1,17 +1,20 @@
 import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 import { CHARACTER_CATALOG } from "../src/shared/character-catalog";
-import { PLAYER_RADIUS, PROJECTILE_RADIUS, SERVER_TICK_MS, WALLS } from "../src/shared/constants";
+import { PLAYER_RADIUS, PROJECTILE_RADIUS, SERVER_TICK_MS } from "../src/shared/constants";
+import { getMapDefinition, type MapId } from "../src/shared/map-catalog";
 import { circleHitsRect } from "../src/shared/math";
 import type { MatchMode } from "../src/shared/mode-catalog";
 import { GameRoom } from "../src/server/room";
 
 export type V4LoadMode = Extract<MatchMode, "team3v3" | "domination3v3" | "domination2v2v2">;
-export interface V4LoadReport { clients: number; mode: V4LoadMode; simulatedSeconds: number; ticks: number; exclusiveSkillRequests: number; stepP95Ms: number; wallViolations: number; capturePointObserved: boolean; finished: boolean; }
+export interface V4LoadReport { clients: number; mode: V4LoadMode; mapId: MapId; simulatedSeconds: number; ticks: number; exclusiveSkillRequests: number; stepP95Ms: number; wallViolations: number; capturePointObserved: boolean; finished: boolean; }
 
-export function runV4LoadSimulation(simulatedSeconds = 60, mode: V4LoadMode = "team3v3"): V4LoadReport {
+export function runV4LoadSimulation(simulatedSeconds = 60, mode: V4LoadMode = "team3v3", mapId: MapId = "reactor-core"): V4LoadReport {
   const room = new GameRoom();
   room.setMatchMode(mode);
+  room.setMapSelection(mapId);
+  const walls = getMapDefinition(mapId).walls;
   const sockets = CHARACTER_CATALOG.map((character, index) => `load-${index + 1}`);
   for (let index = 0; index < sockets.length; index += 1) {
     room.joinHuman(sockets[index]!, { nickname: `V4Load${index + 1}`, characterId: CHARACTER_CATALOG[index]!.id });
@@ -37,17 +40,18 @@ export function runV4LoadSimulation(simulatedSeconds = 60, mode: V4LoadMode = "t
     const snapshot = room.gameSnapshot();
     if (!snapshot) continue;
     capturePointObserved ||= snapshot.capturePoint !== null && snapshot.capturePoint !== undefined;
-    for (const player of snapshot.players) if (player.alive && WALLS.some((wall) => circleHitsRect(player, PLAYER_RADIUS, wall))) wallViolations += 1;
-    for (const projectile of snapshot.projectiles) if (WALLS.some((wall) => circleHitsRect(projectile, PROJECTILE_RADIUS, wall))) wallViolations += 1;
+    for (const player of snapshot.players) if (player.alive && walls.some((wall) => circleHitsRect(player, PLAYER_RADIUS, wall))) wallViolations += 1;
+    for (const projectile of snapshot.projectiles) if (walls.some((wall) => circleHitsRect(projectile, PROJECTILE_RADIUS, wall))) wallViolations += 1;
   }
   durations.sort((a, b) => a - b);
-  return { clients: sockets.length, mode, simulatedSeconds, ticks, exclusiveSkillRequests, stepP95Ms: durations[Math.ceil(durations.length * 0.95) - 1] ?? 0, wallViolations, capturePointObserved, finished: room.gameSnapshot()?.phase === "finished" };
+  return { clients: sockets.length, mode, mapId, simulatedSeconds, ticks, exclusiveSkillRequests, stepP95Ms: durations[Math.ceil(durations.length * 0.95) - 1] ?? 0, wallViolations, capturePointObserved, finished: room.gameSnapshot()?.phase === "finished" };
 }
 
 export function validateV4LoadReport(report: V4LoadReport): string[] {
   const errors: string[] = [];
   if (report.clients !== 6) errors.push("expected six clients");
   if (!["team3v3", "domination3v3", "domination2v2v2"].includes(report.mode)) errors.push("unsupported load mode");
+  if (!["reactor-core", "neon-docks", "crystal-ruins"].includes(report.mapId)) errors.push("unsupported map");
   if (report.mode.startsWith("domination") && !report.capturePointObserved) errors.push("capture point state was not observed");
   if (report.exclusiveSkillRequests < 6) errors.push("exclusive skills were not exercised");
   if (report.wallViolations !== 0) errors.push(`wall violations: ${report.wallViolations}`);
@@ -57,7 +61,7 @@ export function validateV4LoadReport(report: V4LoadReport): string[] {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const seconds = Number(process.env.V4_LOAD_SECONDS ?? 60);
-  const reports = (["team3v3", "domination3v3", "domination2v2v2"] as const).map((mode) => runV4LoadSimulation(seconds, mode));
+  const reports = (["reactor-core", "neon-docks", "crystal-ruins"] as const).flatMap((mapId) => (["team3v3", "domination3v3", "domination2v2v2"] as const).map((mode) => runV4LoadSimulation(seconds, mode, mapId)));
   const errors = reports.flatMap((report) => validateV4LoadReport(report).map((error) => `${report.mode}: ${error}`));
   console.log(JSON.stringify(reports, null, 2));
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }

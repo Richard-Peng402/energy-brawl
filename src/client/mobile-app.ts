@@ -430,7 +430,7 @@ export class MobileApp {
     this.find("#arena-screen").classList.toggle("is-hidden", !inGame);
 
     if (inGame && this.network.game) {
-      this.ensureRenderer();
+      this.ensureRenderer(this.network.game.mapId ?? "reactor-core");
       this.renderer?.setLocalPlayerId(this.network.playerId);
       this.renderer?.setSnapshot(this.network.game);
       this.renderHud(this.network.game);
@@ -690,7 +690,7 @@ export class MobileApp {
         .map(
           (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}">
             <span class="result-rank">${index + 1}</span><i style="--player-color:${player.color}"></i>
-            <b>${escapeHtml(player.nickname)}</b><span>${player.kills} 击败</span><span>${player.energyCollected} 能量</span><strong>${player.score}</strong>
+            <b>${escapeHtml(player.nickname)}</b><span>${player.kills} 击杀</span><span>${player.deaths ?? 0} 死亡</span><span>${player.assists ?? 0} 助攻</span><span>${player.damageDealt ?? 0} 伤害</span><span>${player.healingDone ?? 0} 治疗</span><span>${player.damageTaken ?? 0} 承伤</span><span>${player.skillContribution ?? 0} 技能</span><strong>${player.score}</strong>
           </div>`,
         )
         .join("");
@@ -699,8 +699,8 @@ export class MobileApp {
     this.find("#return-countdown").textContent = `${Math.ceil(countdown / 1_000)}s 后自动回大厅`;
   }
 
-  private ensureRenderer(): void {
-    if (!this.renderer) this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId, this.audio);
+  private ensureRenderer(mapId: GameSnapshot["mapId"]): void {
+    if (!this.renderer) this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId, this.audio, mapId);
   }
 
   private readonly inputLoop = (time: number): void => {

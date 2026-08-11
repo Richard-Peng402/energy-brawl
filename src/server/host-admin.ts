@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { MAX_EXCLUSIVE_SKILL_COOLDOWN_MS, MIN_EXCLUSIVE_SKILL_COOLDOWN_MS } from "../shared/constants";
 import { isMatchMode, TEAM_IDS } from "../shared/mode-catalog";
+import { MAP_CATALOG, resolveMapSelection } from "../shared/map-catalog";
 import type { Ack, AdminStat, GamePhase, HostAdminCommand } from "../shared/protocol";
 
 export interface HostAdminRequest {
@@ -66,6 +67,11 @@ export class HostAdminService {
     if (request.command.type === "setMode") {
       if (phase !== "lobby") return "只能在大厅修改模式";
       return isMatchMode(request.command.mode) ? null : "模式无效";
+    }
+    if (request.command.type === "setMap") {
+      if (phase !== "lobby") return "只能在大厅修改地图";
+      const mapSelection = (request.command as Extract<HostAdminCommand, { type: "setMap" }>).mapSelection;
+      return resolveMapSelection(mapSelection).id && (mapSelection === "random" || MAP_CATALOG.some((map) => map.id === mapSelection)) ? null : "地图无效";
     }
     if (request.command.type === "swapTeams") {
       if (phase !== "lobby") return "只能在大厅调整队伍";

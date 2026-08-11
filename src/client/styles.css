@@ -1155,12 +1155,14 @@ button:disabled {
 .result-row {
   min-height: 36px;
   display: grid;
-  grid-template-columns: 26px 12px minmax(90px, 1fr) 70px 70px 34px;
+  grid-template-columns: 26px 12px minmax(80px, 1fr) repeat(7, minmax(44px, auto)) 34px;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   border-bottom: 1px solid #303a40;
-  font-size: 11px;
+  font-size: 10px;
 }
+
+.result-row > span:not(.result-rank) { white-space: nowrap; color: #aebbc0; }
 
 .result-row.is-you {
   color: #fff1bc;
