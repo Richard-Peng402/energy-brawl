@@ -37,6 +37,18 @@ describe("input reconciler", () => {
     expect(reconciler.hardCorrectionCount).toBe(1);
   });
 
+  it("reports every reconciliation distance through the observer", () => {
+    const observed: Array<{ distance: number; hard: boolean }> = [];
+    const reconciler = new InputReconciler(
+      "reactor-core",
+      (distance, hard) => observed.push({ distance, hard }),
+    );
+    reconciler.reconcile(player({ x: 300, y: 300 }));
+    reconciler.reconcile(player({ x: 450, y: 300 }));
+
+    expect(observed.at(-1)).toEqual({ distance: 150, hard: true });
+  });
+
   it("consumes small visible corrections at no more than thirty units per second", () => {
     const result = consumePositionCorrection(
       { x: 300, y: 300 },

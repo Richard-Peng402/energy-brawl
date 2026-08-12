@@ -21,6 +21,7 @@ describe("fixed step accumulator", () => {
 
     expect(loop.advance(105, () => undefined)).toBe(3);
     expect(loop.droppedMs).toBe(70);
+    expect(loop.catchUpLimitHits).toBe(1);
     expect(loop.advance(110, () => undefined)).toBe(1);
   });
 

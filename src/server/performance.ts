@@ -24,6 +24,11 @@ export class RollingMetric {
     this.nextIndex = (this.nextIndex + 1) % this.capacity;
   }
 
+  clear(): void {
+    this.samples.length = 0;
+    this.nextIndex = 0;
+  }
+
   snapshot(): MetricSnapshot {
     if (this.samples.length === 0) return { count: 0, p50: 0, p95: 0, p99: 0, max: 0 };
     const sorted = [...this.samples].sort((left, right) => left - right);

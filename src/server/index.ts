@@ -23,7 +23,7 @@ const httpServer = createServer(app);
 const room = new GameRoom();
 const hostToken = process.env.NODE_ENV === "test" ? process.env.HOST_TOKEN?.trim() || randomBytes(18).toString("hex") : randomBytes(18).toString("hex");
 let allowedLanAddresses: string[] = [];
-const network = attachGameNetwork(httpServer, room, hostToken, () => allowedLanAddresses);
+const network = attachGameNetwork(httpServer, room, hostToken, () => allowedLanAddresses, packageJson.version);
 const topology = new NetworkSnapshotProvider(() => discoverNetworkSnapshot({ port, interfaces: networkInterfaces() }));
 const clientDirectory = path.resolve(process.cwd(), "dist");
 

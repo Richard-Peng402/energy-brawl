@@ -1,6 +1,6 @@
 {
   "name": "energy-brawl",
-  "version": "4.3.1",
+  "version": "4.3.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,6 +15,7 @@
     "load-test": "tsx scripts/load-test.ts",
     "load-test:v3": "tsx scripts/v3-load-test.ts",
     "load-test:v4": "tsx scripts/v4-load-test.ts",
+    "load-test:diagnostics": "tsx scripts/diagnostics-load-test.ts",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
     "doctor": "tsx scripts/release-doctor.ts",

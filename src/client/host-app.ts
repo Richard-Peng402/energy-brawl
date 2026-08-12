@@ -2,23 +2,33 @@ import type { MatchMode } from "../shared/mode-catalog";
 import type { MapSelection } from "../shared/map-catalog";
 import type { AdminStat, GamePhase, GameSnapshot, RoomSnapshot, ServerInfo, TeamScoreSnapshot } from "../shared/protocol";
 import { GameNetworkClient } from "./network";
+import { DiagnosticsReportStore } from "./diagnostics-report-store";
+import { diagnosticsRevision, renderDiagnosticsPlayers, resolveDiagnosticsPresentation } from "./host-diagnostics-view";
 import { ServerInfoRefreshController, type ServerInfoRefreshState } from "./server-info-refresh";
 
 export class HostApp {
   private readonly network = new GameNetworkClient(false);
   private readonly infoRefresh = new ServerInfoRefreshController();
   private readonly token = new URLSearchParams(window.location.search).get("token") ?? "";
+  private readonly diagnosticReports = new DiagnosticsReportStore(window.localStorage);
   private info: ServerInfo | null = null;
   private infoState: ServerInfoRefreshState = this.infoRefresh.state;
   private renderedNetworkRevision: string | null = null;
   private message = "";
   private editingPlayerId: string | null = null;
   private selectedSwapPlayerId: string | null = null;
+  private diagnosticsConnectionVersion = -1;
+  private renderedDiagnosticsRevision = "";
+  private savedDiagnosticReportId: string | null = null;
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = hostTemplate();
     this.bindActions();
-    this.network.subscribe(() => this.render());
+    this.network.subscribe(() => {
+      void this.syncDiagnosticsSubscription();
+      this.saveLatestDiagnosticReport();
+      this.render();
+    });
     this.infoRefresh.subscribe((state) => {
       this.infoState = state;
       this.info = state.info;
@@ -83,6 +93,44 @@ export class HostApp {
       this.find<HTMLDialogElement>("#stat-editor").close();
       void this.admin({ type: "setStat", playerId, stat, value });
     });
+    this.find<HTMLButtonElement>("[data-diagnostics-toggle]").addEventListener("click", () => {
+      const body = this.find<HTMLElement>("[data-diagnostics-body]");
+      const toggle = this.find<HTMLButtonElement>("[data-diagnostics-toggle]");
+      body.hidden = !body.hidden;
+      toggle.setAttribute("aria-expanded", String(!body.hidden));
+    });
+    this.find("[data-diagnostics-reports]").addEventListener("click", (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-diagnostics-action]");
+      if (!button) return;
+      const action = button.dataset.diagnosticsAction;
+      if (action === "export") this.diagnosticReports.download();
+      else if (action === "clear") {
+        this.diagnosticReports.clear();
+        this.renderDiagnostics(true);
+      } else if (action === "delete" && button.dataset.matchId) {
+        this.diagnosticReports.remove(button.dataset.matchId);
+        this.renderDiagnostics(true);
+      }
+    });
+  }
+
+  private async syncDiagnosticsSubscription(): Promise<void> {
+    if (!this.network.connected) {
+      return;
+    }
+    const connectionVersion = this.network.connectionVersion;
+    if (this.diagnosticsConnectionVersion === connectionVersion || !this.token) return;
+    this.diagnosticsConnectionVersion = connectionVersion;
+    const result = await this.network.subscribeHostDiagnostics(this.token);
+    if (!this.network.connected || this.network.connectionVersion !== connectionVersion) return;
+    if (!result.ok) this.message = result.error ?? "无法订阅性能诊断";
+  }
+
+  private saveLatestDiagnosticReport(): void {
+    const report = this.network.latestDiagnosticReport;
+    if (!report || report.matchId === this.savedDiagnosticReportId) return;
+    this.diagnosticReports.save(report);
+    this.savedDiagnosticReportId = report.matchId;
   }
 
   private openStatEditor(playerId: string): void {
@@ -160,6 +208,26 @@ export class HostApp {
     this.find<HTMLButtonElement>("#host-start").disabled = !hasToken || !room?.canStart || phase !== "lobby";
     this.find<HTMLButtonElement>("#host-end").disabled = !hasToken || (phase !== "playing" && phase !== "overtime");
     this.find<HTMLButtonElement>("#host-reset").disabled = !hasToken || phase === "lobby";
+    this.renderDiagnostics();
+  }
+
+  private renderDiagnostics(force = false): void {
+    const snapshot = this.network.hostDiagnostics;
+    const reports = this.diagnosticReports.list();
+    const revision = `${diagnosticsRevision(snapshot)}|${reports.map((report) => `${report.matchId}:${report.finishedAt}`).join(",")}`;
+    if (!force && revision === this.renderedDiagnosticsRevision) return;
+    this.renderedDiagnosticsRevision = revision;
+    const presentation = resolveDiagnosticsPresentation(snapshot);
+    const status = this.find("[data-diagnostics-status]");
+    status.textContent = snapshot?.matchId ? `${snapshot.mapId ?? "未知地图"} · ${snapshot.players.length} 名真人` : "等待对局";
+    const alerts = this.find("[data-diagnostics-alerts]");
+    alerts.textContent = String(presentation.totalAlerts);
+    alerts.classList.toggle("is-active", presentation.totalAlerts > 0);
+    this.find("[data-diagnostics-server]").innerHTML = snapshot?.server
+      ? `<span>服务端步进 P95 <b>${snapshot.server.stepP95Ms.toFixed(1)}ms</b></span><span>最大 <b>${snapshot.server.stepMaxMs.toFixed(1)}ms</b></span><span>追帧上限 <b>${snapshot.server.catchUpLimitHits}</b></span><span>样本 <b>${snapshot.server.acceptedSamples}/${snapshot.server.rejectedSamples}</b></span>`
+      : `<span>暂无服务端对局样本</span>`;
+    this.find("[data-diagnostics-players]").innerHTML = renderDiagnosticsPlayers(snapshot);
+    this.find("[data-diagnostics-reports]").innerHTML = `<div><b>本机最近报告 ${reports.length}/10</b><span><button type="button" data-diagnostics-action="export" ${reports.length ? "" : "disabled"}>导出 JSON</button><button type="button" data-diagnostics-action="clear" ${reports.length ? "" : "disabled"}>清空</button></span></div>${reports.map((report) => `<p><code>${escapeHtml(report.matchId.slice(0, 8))}</code><span>${new Date(report.finishedAt).toLocaleString()} · ${report.mapId} · 告警 ${report.totalAlerts}</span><button type="button" data-diagnostics-action="delete" data-match-id="${escapeHtml(report.matchId)}">删除</button></p>`).join("")}`;
   }
 
   private presentedPlayer(playerId: string): HostPlayer | undefined {
@@ -272,6 +340,16 @@ function hostTemplate(): string {
         <div class="section-heading"><span>六席状态</span><small id="host-message"></small></div>
         <div id="host-roster" class="host-roster"></div>
         <div id="host-team-controls" class="host-team-controls"></div>
+      </div>
+    </section>
+    <section class="host-diagnostics" data-diagnostics-root>
+      <button class="host-diagnostics-toggle" type="button" aria-expanded="false" data-diagnostics-toggle>
+        <span>性能诊断</span><b data-diagnostics-status>等待对局</b><i class="host-diagnostics-alerts" data-diagnostics-alerts>0</i>
+      </button>
+      <div class="host-diagnostics-body" data-diagnostics-body hidden>
+        <div class="host-diagnostics-server" data-diagnostics-server></div>
+        <div class="host-diagnostics-table-wrap"><table><thead><tr><th>玩家</th><th>连接</th><th>设备</th><th>网络</th><th>地址</th><th>RTT</th><th>操作 P95</th><th>最长帧</th><th>校正</th></tr></thead><tbody data-diagnostics-players></tbody></table></div>
+        <div class="host-diagnostics-reports" data-diagnostics-reports></div>
       </div>
     </section>
     <dialog id="stat-editor" class="stat-editor">

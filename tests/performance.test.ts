@@ -28,4 +28,12 @@ describe("rolling performance metric", () => {
 
     expect(metric.snapshot().count).toBe(0);
   });
+
+  it("clears the current metric window", () => {
+    const metric = new RollingMetric();
+    metric.add(12);
+    metric.clear();
+
+    expect(metric.snapshot()).toEqual({ count: 0, p50: 0, p95: 0, p99: 0, max: 0 });
+  });
 });

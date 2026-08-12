@@ -33,7 +33,10 @@ export class InputReconciler {
   private predictedPosition: Vec2 | null = null;
   hardCorrectionCount = 0;
 
-  constructor(private readonly mapId: MapId = "reactor-core") {}
+  constructor(
+    private readonly mapId: MapId = "reactor-core",
+    private readonly observeCorrection: (distance: number, hard: boolean) => void = () => {},
+  ) {}
 
   get pendingCount(): number {
     return this.pending.length;
@@ -80,7 +83,9 @@ export class InputReconciler {
 
     const previous = currentPosition ?? this.predictedPosition ?? authoritative;
     const correctionDistance = Math.hypot(position.x - previous.x, position.y - previous.y);
-    if (correctionDistance > HARD_CORRECTION_DISTANCE) this.hardCorrectionCount += 1;
+    const hard = correctionDistance > HARD_CORRECTION_DISTANCE;
+    if (hard) this.hardCorrectionCount += 1;
+    this.observeCorrection(correctionDistance, hard);
     this.predictedPosition = position;
     return { position, correctionDistance };
   }

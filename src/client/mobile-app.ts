@@ -7,6 +7,8 @@ import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
 import { didPickUpLocalSkill, selectLatestKillFeedback } from "./combat-feedback";
+import { ClientDiagnosticsCollector } from "./diagnostics-collector";
+import { collectDeviceProfile, type DeviceProfileNavigator } from "./device-profile";
 import { GameRenderer } from "./game-scene";
 import { buildCharacterSelection, GameNetworkClient, isCharacterSelectionDisabled } from "./network";
 import { MobileViewport } from "./mobile-viewport";
@@ -43,6 +45,10 @@ export class MobileApp {
   private readonly touchRouter: TouchRouter;
   private readonly viewport: MobileViewport;
   private readonly audio = new CombatAudio(window.localStorage);
+  private readonly diagnostics = new ClientDiagnosticsCollector(() => this.network.diagnosticsMatchId);
+  private diagnosticsWasConnected = false;
+  private diagnosticsHasConnected = false;
+  private diagnosticsTickActive = false;
   private renderer: GameRenderer | null = null;
   private rendererMapId: MapId | null = null;
   private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
@@ -90,8 +96,42 @@ export class MobileApp {
     this.bindArenaGestures();
     this.bindKeyboardControls();
     this.applyTouchControlLayout();
-    this.network.subscribe(() => this.render());
+    this.network.subscribe(() => {
+      this.syncDiagnosticsConnection();
+      this.render();
+    });
+    window.setInterval(() => void this.flushDiagnostics(), 1_000);
     requestAnimationFrame(this.inputLoop);
+  }
+
+  private syncDiagnosticsConnection(): void {
+    const connected = this.network.connected;
+    if (connected && !this.diagnosticsWasConnected) {
+      if (this.diagnosticsHasConnected) this.diagnostics.recordReconnect();
+      this.diagnosticsHasConnected = true;
+    }
+    this.diagnosticsWasConnected = connected;
+    this.diagnostics.setConnected(connected);
+    if (!connected) return;
+    const profile = collectDeviceProfile(
+      navigator as unknown as DeviceProfileNavigator,
+      window.screen,
+      window.devicePixelRatio || 1,
+    );
+    this.diagnostics.setNetwork(profile.network);
+    this.network.sendDiagnosticsProfile(profile);
+  }
+
+  private async flushDiagnostics(): Promise<void> {
+    if (this.diagnosticsTickActive) return;
+    this.diagnosticsTickActive = true;
+    try {
+      this.diagnostics.setRtt(await this.network.measureDiagnosticsRtt());
+      const sample = this.diagnostics.flush(Date.now());
+      if (sample) this.network.sendDiagnosticsSample(sample);
+    } finally {
+      this.diagnosticsTickActive = false;
+    }
   }
 
   private bindActions(): void {
@@ -761,7 +801,11 @@ export class MobileApp {
       this.renderer = null;
     }
     if (!this.renderer) {
-      this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId, this.audio, mapId);
+      this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId, this.audio, mapId, {
+        onFrame: (deltaMs) => this.diagnostics.recordFrame(deltaMs),
+        onCorrection: (distancePx, hard) => this.diagnostics.recordCorrection(distancePx, hard),
+        onAuthoritativeInput: (lastProcessedInput) => this.diagnostics.acknowledgeInputs(lastProcessedInput, performance.now()),
+      });
       this.rendererMapId = mapId;
     }
   }
@@ -808,6 +852,7 @@ export class MobileApp {
         };
         const deltaMs = this.lastInputSentAt > 0 ? Math.min(100, time - this.lastInputSentAt) : 33;
         this.renderer?.addLocalInput(input, deltaMs);
+        this.diagnostics.recordInputSent(input.seq, time);
         this.network.sendInput(input);
         this.lastInputSentAt = time;
       }

@@ -55,6 +55,7 @@ describe("diagnostic contract", () => {
   it("rejects non-finite and oversized samples", () => {
     expect(isClientDiagnosticSample(sample({ frameMaxMs: Number.NaN }))).toBe(false);
     expect(isClientDiagnosticSample(sample({ matchId: "x".repeat(129) }))).toBe(false);
+    expect(isClientDiagnosticSample({ ...sample(), sampledAt: null })).toBe(false);
   });
 
   it("validates a bounded anonymized report", () => {
@@ -73,5 +74,7 @@ describe("diagnostic contract", () => {
     };
     expect(isDiagnosticReport(report)).toBe(true);
     expect(isDiagnosticReport({ ...report, matchId: "x".repeat(129) })).toBe(false);
+    expect(isDiagnosticReport({ ...report, finishedAt: null })).toBe(false);
+    expect(isDiagnosticReport({ ...report, server: { samples: [{ sampledAt: null, stepP95Ms: 1, stepMaxMs: 2, steps: 1, catchUpLimitHits: 0, humans: 1, bots: 5, projectiles: 0, skillEffects: 0, acceptedSamples: 1, rejectedSamples: 0 }], alertCounts: {} } })).toBe(false);
   });
 });

@@ -1694,6 +1694,73 @@ button:disabled {
   color: #ffffff;
 }
 
+.host-diagnostics {
+  max-width: 1280px;
+  margin: 0 auto 50px;
+  border: 1px solid #445159;
+  border-radius: 6px;
+  background: #171d22;
+}
+
+.host-diagnostics-toggle {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: auto 1fr 28px;
+  align-items: center;
+  gap: 14px;
+  border: 0;
+  padding: 0 18px;
+  background: #1c2328;
+  color: #f4f7f8;
+  text-align: left;
+  cursor: pointer;
+}
+
+.host-diagnostics-toggle > b { color: #98a7ae; font-size: 12px; font-weight: 600; }
+
+.host-diagnostics-alerts {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #303a40;
+  color: #aebbc2;
+  font-style: normal;
+  font-size: 11px;
+}
+
+.host-diagnostics-alerts.is-active { background: #a93135; color: #ffffff; }
+.host-diagnostics-body { border-top: 1px solid #303a40; }
+
+.host-diagnostics-server {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 18px;
+  color: #98a7ae;
+  font-size: 12px;
+}
+
+.host-diagnostics-server b { color: #dce6ea; }
+.host-diagnostics-table-wrap { overflow-x: auto; border-top: 1px solid #303a40; border-bottom: 1px solid #303a40; }
+.host-diagnostics-table-wrap table { width: 100%; min-width: 1020px; border-collapse: collapse; font-size: 11px; }
+.host-diagnostics-table-wrap th { height: 34px; padding: 0 10px; color: #8f9ca2; text-align: left; font-weight: 700; }
+.host-diagnostics-table-wrap td { height: 46px; padding: 0 10px; border-top: 1px solid #283137; color: #c9d3d7; }
+.host-diagnostics-table-wrap td:first-child { display: grid; align-content: center; }
+.host-diagnostics-table-wrap td small { color: #78878e; }
+.host-diagnostics-table-wrap tr.is-warning { box-shadow: inset 3px 0 #f2c14e; }
+.host-diagnostics-table-wrap tr.is-critical { box-shadow: inset 3px 0 #ff5a5f; }
+.host-diagnostics-empty { text-align: center; color: #7f8d93 !important; }
+
+.host-diagnostics-reports { padding: 12px 18px; }
+.host-diagnostics-reports > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.host-diagnostics-reports p { min-height: 34px; display: grid; grid-template-columns: 80px 1fr auto; align-items: center; gap: 10px; margin: 6px 0 0; border-top: 1px solid #283137; color: #9eabb1; font-size: 11px; }
+.host-diagnostics-reports button { border: 1px solid #526068; border-radius: 3px; padding: 5px 8px; background: #222a30; color: #d9e2e6; cursor: pointer; }
+.host-diagnostics-reports button + button { margin-left: 6px; }
+
 .stat-editor {
   width: min(460px, calc(100vw - 36px));
   border: 1px solid #5a6972;
@@ -1971,7 +2038,8 @@ button:disabled {
 
 @media (max-width: 900px) {
   .host-header,
-  .host-main {
+  .host-main,
+  .host-diagnostics {
     padding-left: 20px;
     padding-right: 20px;
   }
@@ -2008,6 +2076,9 @@ button:disabled {
     justify-content: flex-start;
     grid-row: 3;
   }
+
+  .host-diagnostics { margin-left: 20px; margin-right: 20px; padding-left: 0; padding-right: 0; }
+  .host-diagnostics-server { align-items: flex-start; flex-direction: column; gap: 5px; padding-top: 10px; padding-bottom: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

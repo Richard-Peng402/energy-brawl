@@ -109,6 +109,18 @@ const SKILL_COLORS: Readonly<Record<SkillType, number>> = {
 const arenaTextureKey = (mapId: MapId, kind: "floor" | "wall" | "decal" | "light"): string => `arena:${mapId}:${kind}`;
 const arenaPropTextureKey = (mapId: MapId, index: number): string => `arena:${mapId}:prop:${index}`;
 
+export interface GameDiagnosticHooks {
+  onFrame(deltaMs: number): void;
+  onCorrection(distancePx: number, hard: boolean): void;
+  onAuthoritativeInput(lastProcessedInput: number): void;
+}
+
+const NOOP_DIAGNOSTIC_HOOKS: GameDiagnosticHooks = {
+  onFrame: () => {},
+  onCorrection: () => {},
+  onAuthoritativeInput: () => {},
+};
+
 export class GameRenderer {
   private readonly scene: ArenaScene;
   private readonly game: Phaser.Game;
@@ -116,9 +128,15 @@ export class GameRenderer {
   private renderMetrics: RenderMetrics;
   private resizeObserver: ResizeObserver | null = null;
 
-  constructor(container: HTMLElement, localPlayerId: string | null, audio: CombatAudio, mapId: MapId = "reactor-core") {
+  constructor(
+    container: HTMLElement,
+    localPlayerId: string | null,
+    audio: CombatAudio,
+    mapId: MapId = "reactor-core",
+    diagnosticHooks: GameDiagnosticHooks = NOOP_DIAGNOSTIC_HOOKS,
+  ) {
     this.container = container;
-    this.scene = new ArenaScene(localPlayerId, audio, mapId);
+    this.scene = new ArenaScene(localPlayerId, audio, mapId, diagnosticHooks);
     const width = Math.max(1, container.clientWidth || VIEW_WIDTH);
     const height = Math.max(1, container.clientHeight || VIEW_HEIGHT);
     this.renderMetrics = resolveRenderMetrics(width, height, window.devicePixelRatio || 1);
@@ -228,9 +246,14 @@ class ArenaScene extends Phaser.Scene {
   private projectilePool: ReusableObjectPool<MovingView> | null = null;
   private ready = false;
 
-  constructor(private localPlayerId: string | null, private readonly audio: CombatAudio, private readonly mapId: MapId) {
+  constructor(
+    private localPlayerId: string | null,
+    private readonly audio: CombatAudio,
+    private readonly mapId: MapId,
+    private readonly diagnosticHooks: GameDiagnosticHooks,
+  ) {
     super({ key: "arena" });
-    this.inputReconciler = new InputReconciler(mapId);
+    this.inputReconciler = new InputReconciler(mapId, (distance, hard) => this.diagnosticHooks.onCorrection(distance, hard));
   }
 
   preload(): void {
@@ -288,6 +311,7 @@ class ArenaScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    this.diagnosticHooks.onFrame(delta);
     const now = performance.now();
     const latest = this.snapshot;
     const sample = latest
@@ -495,6 +519,7 @@ class ArenaScene extends Phaser.Scene {
     for (const player of snapshot.players) {
       const view = this.playerViews.get(player.id) ?? this.createPlayerView(player);
       if (player.id === this.localPlayerId) {
+        this.diagnosticHooks.onAuthoritativeInput(player.lastProcessedInput);
         localPlayerRespawned = shouldSnapCameraOnRespawn(view.wasAlive, player.alive);
         if (localPlayerRespawned) {
           view.container.setPosition(player.x, player.y);

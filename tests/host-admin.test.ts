@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { HostAdminCommand } from "../src/shared/protocol";
-import { HostAdminService } from "../src/server/host-admin";
+import { authorizeHostAccess, HostAdminService } from "../src/server/host-admin";
 
 const setScore = (value: number): HostAdminCommand => ({ type: "setStat", playerId: "player-1", stat: "score", value });
 
 describe("secure host admin authorization", () => {
+  it("shares loopback and constant-time token authorization with host diagnostics", () => {
+    expect(authorizeHostAccess("127.0.0.1", "secret", "secret")).toEqual({ ok: true });
+    expect(authorizeHostAccess("192.168.1.8", "secret", "secret").ok).toBe(false);
+    expect(authorizeHostAccess("::1", "wrong", "secret").ok).toBe(false);
+  });
+
   it.each(["127.0.0.1", "::1", "::ffff:127.0.0.1"])("authorizes lobby commands from loopback %s", (remoteAddress) => {
     const service = new HostAdminService("secret", () => 1_000);
 

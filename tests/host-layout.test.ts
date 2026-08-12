@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8");
+const hostApp = readFileSync(new URL("../src/client/host-app.ts", import.meta.url), "utf8");
 
 describe("host dashboard layout", () => {
   it("keeps all five status-band items on one desktop row", () => {
@@ -17,6 +18,14 @@ describe("host dashboard layout", () => {
 
     expect(commandButtons).toContain("flex: 0 0 auto");
     expect(commandButtons).toContain("white-space: nowrap");
+  });
+
+  it("places a collapsed full-width diagnostics section below the main host layout", () => {
+    expect(hostApp.indexOf('class="host-diagnostics"')).toBeGreaterThan(hostApp.indexOf('class="host-main"'));
+    expect(hostApp).toContain("data-diagnostics-body hidden");
+    expect(styles).toContain(".host-diagnostics-table-wrap");
+    expect(styles).toContain("overflow-x: auto");
+    expect(styles).toContain(".host-diagnostics-alerts");
   });
 });
 

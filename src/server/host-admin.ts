@@ -60,8 +60,8 @@ export class HostAdminService {
   }
 
   private validate(request: HostAdminRequest, phase: GamePhase, playerExists: boolean): string | null {
-    if (!isLoopbackAddress(request.remoteAddress)) return "房主命令只允许本机调用";
-    if (!safeTokenEqual(request.token, this.token)) return "房主权限无效";
+    const access = authorizeHostAccess(request.remoteAddress, request.token, this.token);
+    if (!access.ok) return access.error ?? "房主权限无效";
     if (phase === "finished") return "当前阶段不可执行";
     if (!request.command || typeof request.command !== "object") return "命令格式无效";
     if (request.command.type === "setMode") {
@@ -102,6 +102,12 @@ export function isLoopbackAddress(address: string | undefined): boolean {
   if (!address) return false;
   const normalized = address.toLowerCase().replace(/^\[|\]$/g, "");
   return normalized === "::1" || normalized === "127.0.0.1" || normalized === "::ffff:127.0.0.1";
+}
+
+export function authorizeHostAccess(remoteAddress: string | undefined, actualToken: string, expectedToken: string): Ack {
+  if (!isLoopbackAddress(remoteAddress)) return { ok: false, error: "房主命令只允许本机调用" };
+  if (!safeTokenEqual(actualToken, expectedToken)) return { ok: false, error: "房主权限无效" };
+  return { ok: true };
 }
 
 function safeTokenEqual(actual: string, expected: string): boolean {

@@ -2,6 +2,12 @@ import { io, type Socket } from "socket.io-client";
 
 import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
 import type {
+  ClientDiagnosticSample,
+  DeviceDiagnosticProfile,
+  DiagnosticReport,
+  HostDiagnosticsSnapshot,
+} from "../shared/diagnostics";
+import type {
   Ack,
   ClientToServerEvents,
   GameSnapshot,
@@ -57,23 +63,36 @@ export class GameNetworkClient {
   snapshotMode: PerformanceHint["snapshotMode"] = "full";
   room: RoomSnapshot | null = null;
   game: GameSnapshot | null = null;
+  diagnosticsMatchId: string | null = null;
+  hostDiagnostics: HostDiagnosticsSnapshot | null = null;
+  latestDiagnosticReport: DiagnosticReport | null = null;
   playerId: string | null = localStorage.getItem(PLAYER_KEY);
   notice = "";
   private readonly listeners = new Set<NetworkListener>();
+  private diagnosticsProfileSent = false;
+  private connectionGeneration = 0;
+
+  get connectionVersion(): number {
+    return this.connectionGeneration;
+  }
 
   constructor(autoReconnectPlayer = true) {
     this.socket = io({ transports: ["websocket", "polling"] });
     this.socket.on("connect", () => {
+      this.connectionGeneration += 1;
       this.connected = true;
       this.playerSessionReady = false;
       this.snapshotMode = "full";
+      this.diagnosticsProfileSent = false;
       this.notice = "";
       this.notify();
       if (autoReconnectPlayer) void this.tryReconnect();
     });
     this.socket.on("disconnect", () => {
+      this.connectionGeneration += 1;
       this.connected = false;
       this.playerSessionReady = false;
+      this.hostDiagnostics = null;
       this.notify();
     });
     this.socket.on("roomState", (room) => {
@@ -87,6 +106,18 @@ export class GameNetworkClient {
     });
     this.socket.on("notice", (message) => {
       this.notice = message;
+      this.notify();
+    });
+    this.socket.on("diagnosticsSession", ({ matchId }) => {
+      this.diagnosticsMatchId = matchId;
+      this.notify();
+    });
+    this.socket.on("hostDiagnostics", (snapshot) => {
+      this.hostDiagnostics = snapshot;
+      this.notify();
+    });
+    this.socket.on("diagnosticReport", (report) => {
+      this.latestDiagnosticReport = report;
       this.notify();
     });
   }
@@ -132,6 +163,46 @@ export class GameNetworkClient {
     this.snapshotMode = hint.snapshotMode;
     this.socket.emit("performanceHint", hint);
     this.notify();
+  }
+
+  sendDiagnosticsProfile(profile: DeviceDiagnosticProfile): void {
+    if (!this.connected || this.diagnosticsProfileSent) return;
+    this.socket.emit("diagnosticsProfile", profile);
+    this.diagnosticsProfileSent = true;
+  }
+
+  sendDiagnosticsSample(sample: ClientDiagnosticSample): void {
+    if (!this.connected) return;
+    this.socket.volatile.emit("diagnosticsSample", sample);
+  }
+
+  measureDiagnosticsRtt(
+    now: () => number = performance.now.bind(performance),
+    timeoutMs = 750,
+  ): Promise<number | null> {
+    if (!this.connected) return Promise.resolve(null);
+    const sentAt = now();
+    return new Promise((resolve) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(null);
+      }, timeoutMs);
+      this.socket.emit("diagnosticsPing", sentAt, () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(Math.max(0, now() - sentAt));
+      });
+    });
+  }
+
+  async subscribeHostDiagnostics(token: string): Promise<Ack> {
+    const generation = this.connectionGeneration;
+    const result = await new Promise<Ack>((resolve) => this.socket.emit("subscribeHostDiagnostics", { token }, resolve));
+    if (!this.connected || generation !== this.connectionGeneration) return { ok: false, error: "连接已更新，请重新订阅" };
+    return result;
   }
 
   async hostCommand(token: string, command: HostCommand): Promise<Ack> {
