@@ -1364,7 +1364,7 @@ button:disabled {
 
 .host-status-band {
   display: grid;
-  grid-template-columns: 180px 180px 180px 1fr;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(170px, 0.9fr) minmax(170px, 0.9fr) minmax(120px, 0.65fr) minmax(330px, 1.5fr);
   gap: 1px;
   max-width: 1280px;
   min-height: 82px;
@@ -1416,6 +1416,11 @@ button:disabled {
   align-items: center;
   justify-content: flex-end !important;
   gap: 10px;
+}
+
+.host-actions > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .icon-command {
