@@ -122,6 +122,15 @@ export const SKILL_ICON_ASSETS = {
   heal: path("skills/heal.svg"),
 } as const;
 
+export const EXCLUSIVE_SKILL_ICON_ASSETS: Readonly<Record<CharacterId, string>> = {
+  blaze: "/assets/v4/fx/skills/blaze.svg",
+  medic: "/assets/v4/fx/skills/medic.svg",
+  fortress: "/assets/v4/fx/skills/fortress.svg",
+  arc: "/assets/v4/fx/skills/arc.svg",
+  phase: "/assets/v4/fx/skills/phase.svg",
+  runner: "/assets/v4/fx/skills/runner.svg",
+};
+
 export const PROJECTILE_FX_ASSETS = {
   core: path("fx/projectiles/projectile-core.png"),
   trace: path("fx/projectiles/projectile-trace.png"),
