@@ -5,6 +5,12 @@ import type { ExclusiveSkillId } from "./exclusive-skill-catalog";
 import type { CapturePointStateName } from "./capture-point";
 import type { NetworkSnapshot } from "./network";
 import type { MapId, MapSelection } from "./map-catalog";
+import type {
+  ClientDiagnosticSample,
+  DeviceDiagnosticProfile,
+  DiagnosticReport,
+  HostDiagnosticsSnapshot,
+} from "./diagnostics";
 
 export interface Vec2 {
   x: number;
@@ -220,6 +226,10 @@ export interface ClientToServerEvents {
   setReady: (ready: boolean, acknowledge: (result: Ack) => void) => void;
   returnToLobby: (acknowledge: (result: Ack) => void) => void;
   performanceHint: (hint: PerformanceHint) => void;
+  diagnosticsProfile: (profile: DeviceDiagnosticProfile) => void;
+  diagnosticsSample: (sample: ClientDiagnosticSample) => void;
+  diagnosticsPing: (sentAt: number, acknowledge: (sentAt: number) => void) => void;
+  subscribeHostDiagnostics: (payload: { token: string }, acknowledge: (result: Ack) => void) => void;
   playerInput: (input: PlayerInput) => void;
   useSkill: (payload: UseSkillPayload) => void;
   useExclusiveSkill: (payload: UseExclusiveSkillPayload) => void;
@@ -232,6 +242,9 @@ export interface ServerToClientEvents {
   gameState: (snapshot: GameSnapshot | null) => void;
   skillEvent: (event: ExclusiveSkillEvent) => void;
   notice: (message: string) => void;
+  diagnosticsSession: (session: { matchId: string | null }) => void;
+  hostDiagnostics: (snapshot: HostDiagnosticsSnapshot) => void;
+  diagnosticReport: (report: DiagnosticReport) => void;
 }
 
 export interface ServerInfo {
