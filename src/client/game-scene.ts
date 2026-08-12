@@ -163,6 +163,18 @@ export class GameRenderer {
     this.scene.setLocalAim(input);
   }
 
+  getLocalAimFromClientPoint(clientX: number, clientY: number): Vec2 | null {
+    const bounds = this.container.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) return null;
+    const screenX = (clientX - bounds.left) * (this.game.scale.width / bounds.width);
+    const screenY = (clientY - bounds.top) * (this.game.scale.height / bounds.height);
+    return this.scene.getLocalAimFromScreenPoint(screenX, screenY);
+  }
+
+  resolvePointerAim(clientX: number, clientY: number, bounds: DOMRect): Vec2 {
+    return this.scene.resolvePointerAim(clientX, clientY, bounds);
+  }
+
   addLocalInput(input: PlayerInput, deltaMs: number): void {
     this.scene.addLocalInput(input, deltaMs);
   }
@@ -333,6 +345,29 @@ class ArenaScene extends Phaser.Scene {
 
   setLocalAim(input: Vec2): void {
     this.localAim = input;
+  }
+
+  getLocalAimFromScreenPoint(screenX: number, screenY: number): Vec2 | null {
+    const view = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : undefined;
+    if (!view || !this.ready) return null;
+    const world = this.cameras.main.getWorldPoint(screenX, screenY);
+    const x = world.x - view.container.x;
+    const y = world.y - view.container.y;
+    const length = Math.hypot(x, y);
+    if (length < 8) return { x: 0, y: 0 };
+    return { x: x / length, y: y / length };
+  }
+
+  resolvePointerAim(clientX: number, clientY: number, bounds: DOMRect): Vec2 {
+    const view = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : undefined;
+    const camera = this.cameras.main;
+    if (!view || camera.width <= 0 || camera.height <= 0 || bounds.width <= 0 || bounds.height <= 0) return { x: 0, y: 0 };
+    const screenX = (view.container.x - camera.worldView.x) * camera.zoom * (bounds.width / camera.width);
+    const screenY = (view.container.y - camera.worldView.y) * camera.zoom * (bounds.height / camera.height);
+    const dx = clientX - bounds.left - screenX;
+    const dy = clientY - bounds.top - screenY;
+    const length = Math.hypot(dx, dy);
+    return length > 0.001 ? { x: dx / length, y: dy / length } : { x: 0, y: 0 };
   }
 
   setExclusiveSkillPreview(state: SkillIndicatorState | null): void {
