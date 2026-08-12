@@ -621,6 +621,98 @@ button:disabled {
   object-fit: contain;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .arena-screen,
+  .game-root,
+  .game-root canvas {
+    cursor: crosshair;
+  }
+
+  .touch-zone,
+  .virtual-stick {
+    display: none;
+  }
+
+  .desktop-control-hint {
+    display: grid;
+  }
+
+  [data-skill-button],
+  [data-exclusive-skill-button] {
+    width: 146px;
+    min-height: 82px;
+    border-radius: 14px;
+    padding: 8px 11px;
+    background: linear-gradient(145deg, rgb(25 34 43 / 96%), rgb(7 12 18 / 94%));
+  }
+
+  [data-exclusive-skill-button] {
+    right: 182px;
+    bottom: 28px;
+  }
+
+  #skill-button {
+    right: 28px;
+    bottom: 28px;
+  }
+
+  [data-skill-button] kbd,
+  [data-exclusive-skill-button] kbd {
+    position: absolute;
+    top: 7px;
+    right: 8px;
+    min-width: 22px;
+    padding: 3px 5px;
+    border: 1px solid rgb(255 255 255 / 25%);
+    border-radius: 4px;
+    background: rgb(0 0 0 / 36%);
+    color: #fff4c7;
+    font-size: 11px;
+    font-weight: 950;
+  }
+
+  .desktop-control-hint {
+    position: absolute;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    display: none;
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 14px;
+    border: 1px solid rgb(119 222 255 / 24%);
+    border-radius: 999px;
+    background: rgb(4 10 16 / 76%);
+    color: #bfd2da;
+    font-size: 11px;
+    font-weight: 800;
+    pointer-events: none;
+    box-shadow: 0 8px 26px rgb(0 0 0 / 26%);
+  }
+
+  .desktop-control-hint kbd {
+    margin-right: 4px;
+    padding: 2px 6px;
+    border: 1px solid rgb(242 193 78 / 68%);
+    border-radius: 4px;
+    background: rgb(242 193 78 / 12%);
+    color: #fff0b0;
+    font-size: 10px;
+  }
+
+  .mouse-icon {
+    display: inline-block;
+    width: 12px;
+    height: 17px;
+    margin-right: 4px;
+    vertical-align: -4px;
+    border: 1px solid #9edfff;
+    border-radius: 7px;
+    box-shadow: inset 0 5px 0 rgb(255 255 255 / 10%);
+  }
+}
+
 .hud-layer,
 .control-layer {
   position: absolute;

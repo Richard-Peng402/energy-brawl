@@ -3,7 +3,7 @@ import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import { getExclusiveSkill } from "../shared/exclusive-skill-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
-import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
+import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
 import { didPickUpLocalSkill, selectLatestKillFeedback } from "./combat-feedback";
 import { GameRenderer } from "./game-scene";
@@ -30,6 +30,7 @@ import { moveTouchControl, touchControlStyle, type MovableTouchControl } from ".
 import { TouchRouter } from "./touch-router";
 import { VirtualStick } from "./virtual-stick";
 import { CHARACTER_PREVIEW_CLASSES, getCharacterPreviewMotion } from "./character-preview";
+import { resolveHeldSkillAim, resolveMouseAim, type PointerAim } from "./mouse-aim";
 
 const NAME_KEY = "energy-brawl.nickname";
 
@@ -51,6 +52,9 @@ export class MobileApp {
   private readonly exclusiveSkillIndicator = new SkillIndicatorController();
   private controlSettings: ControlSettings = loadControlSettings(window.localStorage);
   private readonly pressedKeys = new Set<string>();
+  private mouseAim: PointerAim = { x: 0, y: 0, magnitude: 0 };
+  private mouseFiring = false;
+  private exclusiveKeyboardPreview = false;
   private keyCaptureAction: ControlAction | null = null;
   private layoutEditing = false;
   private layoutDrag: { pointerId: number; control: MovableTouchControl } | null = null;
@@ -131,6 +135,12 @@ export class MobileApp {
     });
     const exclusiveButton = this.find<HTMLButtonElement>("#exclusive-skill-button");
     exclusiveButton.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" && event.button === 2) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.cancelExclusiveSkillPreview(-1);
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       if (this.layoutEditing) {
@@ -282,10 +292,16 @@ export class MobileApp {
       event.preventDefault();
       this.pressedKeys.add(event.code);
       if (!event.repeat && event.code === this.controlSettings.keys.skill) this.useSkill();
-      if (!event.repeat && event.code === this.controlSettings.keys.exclusiveSkill) this.useExclusiveSkillFromKeyboard();
+      if (!event.repeat && event.code === this.controlSettings.keys.exclusiveSkill) this.beginExclusiveSkillFromKeyboard();
     });
-    window.addEventListener("keyup", (event) => this.pressedKeys.delete(event.code));
-    window.addEventListener("blur", () => this.pressedKeys.clear());
+    window.addEventListener("keyup", (event) => {
+      this.pressedKeys.delete(event.code);
+      if (event.code === this.controlSettings.keys.exclusiveSkill) this.releaseExclusiveSkillPreview(-1);
+    });
+    window.addEventListener("blur", () => {
+      this.pressedKeys.clear();
+      this.cancelExclusiveSkillPreview(-1);
+    });
   }
 
   private openControlSettings(): void {
@@ -314,6 +330,8 @@ export class MobileApp {
     const scale = this.find<HTMLInputElement>("#touch-scale");
     scale.value = String(this.controlSettings.touch.scale);
     this.find("#touch-scale-value").textContent = `${Math.round(this.controlSettings.touch.scale * 100)}%`;
+    this.find("#desktop-exclusive-key").textContent = formatKeyCode(this.controlSettings.keys.exclusiveSkill);
+    this.find("#desktop-skill-key").textContent = formatKeyCode(this.controlSettings.keys.skill);
     const editLayout = this.find<HTMLButtonElement>("#controls-edit-layout");
     const phase = this.network.room?.phase;
     const canEditLayout = phase === "playing" || phase === "overtime" || phase === "finished";
@@ -377,28 +395,63 @@ export class MobileApp {
     this.persistControlSettings();
   }
 
-  private useExclusiveSkillFromKeyboard(): void {
-    const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
-    const serverTime = this.network.game?.serverTime ?? 0;
-    if (!this.acceptingInput || !own || !canPressExclusiveSkill(own, serverTime)) return;
-    this.sendExclusiveSkill({ x: Math.cos(own.angle), y: Math.sin(own.angle) });
+  private beginExclusiveSkillFromKeyboard(): void {
+    this.exclusiveKeyboardPreview = this.beginExclusiveSkillPreview(-1);
   }
 
   private bindArenaGestures(): void {
     const arena = this.find("#arena-screen");
     arena.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse") {
+        if (event.button === 2) {
+          event.preventDefault();
+          this.cancelExclusiveSkillPreview(-1);
+          return;
+        }
+        if (event.button !== 0) return;
+        if ((event.target as HTMLElement).closest("button,dialog,input,select,textarea")) return;
+        this.mouseAim = this.resolvePointerAim(event.clientX, event.clientY, arena);
+        this.mouseFiring = true;
+        event.preventDefault();
+        return;
+      }
       const target = event.target as HTMLElement;
       const role = this.touchRouter.pointerDown(event, Boolean(target.closest?.("[data-skill-button]")));
       if (role && arena.setPointerCapture) arena.setPointerCapture(event.pointerId);
     });
-    arena.addEventListener("pointermove", (event) => this.touchRouter.pointerMove(event));
+    arena.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "mouse") {
+        this.mouseAim = this.resolvePointerAim(event.clientX, event.clientY, arena);
+        return;
+      }
+      this.touchRouter.pointerMove(event);
+    });
     const release = (event: PointerEvent) => {
+      if (event.pointerType === "mouse") {
+        if (event.button === 0) this.mouseFiring = false;
+        return;
+      }
       this.touchRouter.pointerUp(event.pointerId);
       if (arena.hasPointerCapture?.(event.pointerId)) arena.releasePointerCapture(event.pointerId);
     };
     arena.addEventListener("pointerup", release);
     arena.addEventListener("pointercancel", release);
     arena.addEventListener("lostpointercapture", (event) => this.touchRouter.pointerUp(event.pointerId));
+    arena.addEventListener("pointerleave", (event) => {
+      if (event.pointerType === "mouse") this.mouseFiring = false;
+    });
+    arena.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      if (this.exclusivePreviewActive) this.cancelExclusiveSkillPreview(-1);
+    });
+    window.addEventListener("pointerup", (event) => {
+      if (event.pointerType === "mouse" && event.button === 0) this.mouseFiring = false;
+    });
+    window.addEventListener("contextmenu", (event) => {
+      if (!this.exclusivePreviewActive) return;
+      event.preventDefault();
+      this.cancelExclusiveSkillPreview(-1);
+    });
     arena.addEventListener("gesturestart", (event) => event.preventDefault());
     arena.addEventListener("dblclick", (event) => event.preventDefault());
     let lastTouchEndAt = 0;
@@ -643,7 +696,7 @@ export class MobileApp {
     button.classList.toggle("is-ready", mode === "ready" || mode === "anchor-return");
     button.classList.toggle("is-anchor-return", mode === "anchor-return");
     const status = mode === "anchor-return" ? "返回锚点" : mode === "cooldown" ? `${(remaining / 1_000).toFixed(1)}s` : mode === "ready" ? "就绪" : "等待复活";
-    button.innerHTML = `<span class="exclusive-skill-mark">✦</span><span><b>${skill.name}</b><small>${status}</small></span>`;
+    button.innerHTML = `<img class="exclusive-skill-icon" src="${EXCLUSIVE_SKILL_ICON_ASSETS[player.characterId]}" alt="" /><span><b>${skill.name}</b><small>${status}</small></span><kbd>${formatKeyCode(this.controlSettings.keys.exclusiveSkill)}</kbd>`;
     button.setAttribute("aria-label", `${skill.name} · ${skill.description}`);
   }
 
@@ -657,8 +710,8 @@ export class MobileApp {
     this.lastSkillType = type;
     button.dataset.skillType = type ?? "empty";
     button.innerHTML = type
-      ? `<img src="${SKILL_ICON_ASSETS[type]}" alt="" /><span><b>${SKILL_CATALOG[type].name}</b><small>一次</small></span>`
-      : `<span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span>`;
+      ? `<img src="${SKILL_ICON_ASSETS[type]}" alt="" /><span><b>${SKILL_CATALOG[type].name}</b><small>一次</small></span><kbd>${formatKeyCode(this.controlSettings.keys.skill)}</kbd>`
+      : `<span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span><kbd>${formatKeyCode(this.controlSettings.keys.skill)}</kbd>`;
     button.setAttribute("aria-label", type ? `使用${SKILL_CATALOG[type].name}` : "技能槽为空");
     if (didPickUpLocalSkill(previous, type)) this.audio.playPickup();
     if (type && previous !== type) this.showToast(`获得技能：${SKILL_CATALOG[type].name}`);
@@ -703,6 +756,12 @@ export class MobileApp {
     if (!this.renderer) this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId, this.audio, mapId);
   }
 
+  private resolvePointerAim(clientX: number, clientY: number, arena: HTMLElement): PointerAim {
+    const rendererAim = this.renderer?.resolvePointerAim(clientX, clientY, arena.getBoundingClientRect());
+    if (rendererAim && (rendererAim.x !== 0 || rendererAim.y !== 0)) return { ...rendererAim, magnitude: 1 };
+    return resolveMouseAim(clientX, clientY, arena.getBoundingClientRect());
+  }
+
   private readonly inputLoop = (time: number): void => {
     const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
     const ownPlayer = this.network.game?.players.find((player) => player.id === this.network.playerId);
@@ -720,7 +779,11 @@ export class MobileApp {
       const keyboardAim = keyboard.firing && ownPlayer
         ? { x: Math.cos(ownPlayer.angle), y: Math.sin(ownPlayer.angle), magnitude: 1 }
         : { x: 0, y: 0, magnitude: 0 };
-      const aim = touchAim.magnitude > 0.08 ? touchAim : keyboardAim;
+      const aim = touchAim.magnitude > 0.08
+        ? touchAim
+        : this.mouseAim.magnitude > 0.08
+          ? this.mouseAim
+          : keyboardAim;
       this.renderer?.setLocalInput(move);
       this.renderer?.setLocalAim(aim);
       this.updateExclusiveSkillPreview();
@@ -731,7 +794,7 @@ export class MobileApp {
           moveY: move.y,
           aimX: aim.x,
           aimY: aim.y,
-          firing: aim.magnitude > 0.15,
+          firing: (this.mouseFiring || keyboard.firing || touchAim.magnitude > 0.15) && aim.magnitude > 0.15,
         };
         const deltaMs = this.lastInputSentAt > 0 ? Math.min(100, time - this.lastInputSentAt) : 33;
         this.renderer?.addLocalInput(input, deltaMs);
@@ -753,6 +816,8 @@ export class MobileApp {
     this.touchRouter.resetAll();
     this.exclusiveSkillStick.reset();
     this.pressedKeys.clear();
+    this.mouseFiring = false;
+    this.exclusiveKeyboardPreview = false;
     this.cancelExclusiveSkillPreview(-1);
     this.renderer?.resetLocalInputs();
     this.renderer?.setLocalInput({ x: 0, y: 0 });
@@ -778,35 +843,44 @@ export class MobileApp {
     this.network.sendSkillAction(this.skillActionSequence);
   };
 
-  private beginExclusiveSkillPreview(pointerId: number): void {
+  private beginExclusiveSkillPreview(pointerId: number): boolean {
     const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
     const serverTime = this.network.game?.serverTime ?? 0;
-    if (!this.acceptingInput || !own) { this.exclusiveSkillStick.reset(); this.showToast("暂时无法使用专属技能"); return; }
+    if (!this.acceptingInput || !own) { this.exclusiveSkillStick.reset(); this.showToast("暂时无法使用专属技能"); return false; }
     if (!canPressExclusiveSkill(own, serverTime)) {
       this.exclusiveSkillStick.reset();
       const remaining = Math.max(0, (own.exclusiveSkillReadyAt ?? 0) - serverTime);
       this.showToast(own.alive ? `专属技能冷却 ${Math.ceil(remaining / 1_000)} 秒` : "等待复活");
-      return;
+      return false;
     }
     const skillId = own.characterId as SkillIndicatorSkill;
     const profile = getSkillIndicatorProfile(skillId);
-    const direction = resolveSkillStickDirection(this.exclusiveSkillStick.getValue(), { x: Math.cos(own.angle), y: Math.sin(own.angle) });
+    const fallbackDirection = { x: Math.cos(own.angle), y: Math.sin(own.angle) };
+    const direction = pointerId === -1
+      ? resolveHeldSkillAim(this.mouseAim, fallbackDirection)
+      : resolveSkillStickDirection(this.exclusiveSkillStick.getValue(), fallbackDirection);
     this.exclusiveSkillIndicator.begin(skillId, { x: own.x, y: own.y }, profile.range);
     this.exclusiveSkillIndicator.update(direction);
     this.exclusivePreviewPointerId = pointerId;
     this.exclusivePreviewActive = true;
     this.find("#exclusive-skill-button").classList.add("is-aiming");
     const hint = this.find("#skill-aim-hint");
-    hint.textContent = isDisplacementSkill(own.characterId) ? "拖动技能摇杆选择位移方向，松手释放" : "拖动技能摇杆调整技能方向，松手释放";
+    hint.textContent = pointerId === -1
+      ? "按住专属技能键，移动鼠标瞄准，松开释放"
+      : isDisplacementSkill(own.characterId) ? "拖动技能摇杆选择位移方向，松手释放" : "拖动技能摇杆调整技能方向，松手释放";
     hint.classList.remove("is-hidden");
     this.renderer?.setExclusiveSkillPreview(this.exclusiveSkillIndicator.snapshot());
+    return true;
   }
 
   private updateExclusiveSkillPreview(): void {
     if (!this.exclusivePreviewActive) return;
     const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
     if (!own) return;
-    const direction = resolveSkillStickDirection(this.exclusiveSkillStick.getValue(), { x: Math.cos(own.angle), y: Math.sin(own.angle) });
+    const fallbackDirection = { x: Math.cos(own.angle), y: Math.sin(own.angle) };
+    const direction = this.exclusiveKeyboardPreview
+      ? resolveHeldSkillAim(this.mouseAim, fallbackDirection)
+      : resolveSkillStickDirection(this.exclusiveSkillStick.getValue(), fallbackDirection);
     this.exclusiveSkillIndicator.update(direction);
     this.renderer?.setExclusiveSkillPreview(this.exclusiveSkillIndicator.snapshot());
   }
@@ -814,11 +888,15 @@ export class MobileApp {
   private releaseExclusiveSkillPreview(pointerId: number): void {
     if (!this.exclusivePreviewActive || this.exclusivePreviewPointerId !== pointerId) return;
     const own = this.network.game?.players.find((player) => player.id === this.network.playerId);
-    const direction = resolveSkillStickDirection(this.exclusiveSkillStick.getValue(), own ? { x: Math.cos(own.angle), y: Math.sin(own.angle) } : { x: 1, y: 0 });
+    const fallbackDirection = own ? { x: Math.cos(own.angle), y: Math.sin(own.angle) } : { x: 1, y: 0 };
+    const direction = this.exclusiveKeyboardPreview
+      ? resolveHeldSkillAim(this.mouseAim, fallbackDirection)
+      : resolveSkillStickDirection(this.exclusiveSkillStick.getValue(), fallbackDirection);
     this.exclusiveSkillIndicator.update(direction);
     const preview = this.exclusiveSkillIndicator.release();
     this.exclusivePreviewActive = false;
     this.exclusivePreviewPointerId = null;
+    this.exclusiveKeyboardPreview = false;
     this.exclusiveSkillStick.end(pointerId);
     this.find("#exclusive-skill-button").classList.remove("is-aiming");
     this.find("#skill-aim-hint").classList.add("is-hidden");
@@ -831,6 +909,7 @@ export class MobileApp {
     this.exclusiveSkillIndicator.cancel();
     this.exclusivePreviewActive = false;
     this.exclusivePreviewPointerId = null;
+    this.exclusiveKeyboardPreview = false;
     this.exclusiveSkillStick.reset();
     this.find("#exclusive-skill-button").classList.remove("is-aiming");
     this.find("#skill-aim-hint").classList.add("is-hidden");
@@ -908,11 +987,12 @@ function mobileTemplate(): string {
           <div id="leaderboard" class="leaderboard"></div>
            <button class="control-settings-button arena-controls" data-controls-open type="button">键位</button><button class="sound-button arena-sound" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>
           <div id="respawn-state" class="respawn-state is-hidden"></div>
-          <div id="skill-aim-hint" class="skill-aim-hint is-hidden">拖动技能摇杆选择方向，松手释放</div>
+           <div id="skill-aim-hint" class="skill-aim-hint is-hidden">拖动技能摇杆选择方向，松手释放</div>
+           <div class="desktop-control-hint" aria-hidden="true"><span><kbd>WASD</kbd> 移动</span><span><i class="mouse-icon"></i> 移动瞄准 · 左键射击</span><span>长按 <kbd id="desktop-exclusive-key">E</kbd> 瞄准专属技能</span><span><kbd id="desktop-skill-key">Q</kbd> 一次性技能</span></div>
         </div>
         <div class="control-layer">
-          <button id="exclusive-skill-button" class="skill-button exclusive-skill-button" data-exclusive-skill-button type="button" aria-label="专属技能"><span class="exclusive-skill-mark">✦</span><span><b>专属技能</b><small>等待状态</small></span></button>
-          <button id="skill-button" class="skill-button" data-skill-button data-skill-type="empty" type="button" aria-label="技能槽为空" aria-disabled="true"><span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span></button>
+          <button id="exclusive-skill-button" class="skill-button exclusive-skill-button" data-exclusive-skill-button type="button" aria-label="专属技能"><span class="exclusive-skill-mark">✦</span><span><b>专属技能</b><small>等待状态</small></span><kbd>E</kbd></button>
+          <button id="skill-button" class="skill-button" data-skill-button data-skill-type="empty" type="button" aria-label="技能槽为空" aria-disabled="true"><span class="skill-empty-mark">◇</span><span><b>技能槽</b><small>等待拾取</small></span><kbd>Q</kbd></button>
           <div id="exclusive-skill-stick" class="virtual-stick exclusive-skill-stick"><div class="stick-mark">SKILL</div><div class="stick-knob"></div></div>
           <div id="move-stick" class="virtual-stick move-stick"><div class="stick-mark">MOVE</div><div class="stick-knob"></div></div>
           <div id="aim-stick" class="virtual-stick aim-stick"><div class="stick-mark">FIRE</div><div class="stick-knob"></div></div>
@@ -925,7 +1005,7 @@ function mobileTemplate(): string {
       <dialog id="controls-dialog" class="controls-dialog">
         <div class="controls-dialog-heading"><div><span class="eyebrow">PLAYER CONTROLS</span><h2>自定义键位</h2></div><button id="controls-close" type="button" aria-label="关闭">×</button></div>
         <div class="controls-dialog-grid">
-          <section><h3>电脑按键</h3><p>点击按键后，按下你想使用的新键；发生冲突时自动交换。</p><div id="key-binding-list" class="key-binding-list"></div><button id="controls-reset-keys" class="secondary-control-button" type="button">恢复默认按键</button></section>
+          <section><h3>电脑按键</h3><p>鼠标移动控制瞄准，按住左键持续射击；长按专属技能键并移动鼠标，松键后朝瞄准位置释放。点击按键后按下新键即可重映射，冲突键位会自动交换。</p><div id="key-binding-list" class="key-binding-list"></div><button id="controls-reset-keys" class="secondary-control-button" type="button">恢复默认按键</button></section>
           <section><h3>手机触控布局</h3><p>移动和攻击摇杆保持浮动；两个技能按钮可以自由拖动。</p><label class="touch-scale-label"><span>按钮大小 <b id="touch-scale-value">100%</b></span><input id="touch-scale" type="range" min="0.75" max="1.35" step="0.05" value="1" /></label><button id="controls-edit-layout" class="primary-button" type="button">进入布局编辑</button></section>
         </div>
       </dialog>
