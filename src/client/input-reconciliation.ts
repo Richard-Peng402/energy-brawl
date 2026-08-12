@@ -1,4 +1,5 @@
 import type { PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import type { MapId } from "../shared/map-catalog";
 import { predictLocalPosition } from "./prediction";
 
 export interface TimedInput {
@@ -31,6 +32,8 @@ export class InputReconciler {
   private readonly pending: TimedInput[] = [];
   private predictedPosition: Vec2 | null = null;
   hardCorrectionCount = 0;
+
+  constructor(private readonly mapId: MapId = "reactor-core") {}
 
   get pendingCount(): number {
     return this.pending.length;
@@ -70,6 +73,7 @@ export class InputReconciler {
           { x: entry.input.moveX, y: entry.input.moveY },
           entry.deltaMs,
           authoritative.moveSpeed,
+          this.mapId,
         );
       }
     }

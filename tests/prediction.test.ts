@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ARENA_SCALE, PLAYER_RADIUS, PLAYER_SPEED } from "../src/shared/constants";
 import { predictLocalPosition } from "../src/client/prediction";
+import { MAP_CATALOG } from "../src/shared/map-catalog";
 
 describe("local movement prediction", () => {
   it("applies normalized input immediately using server movement speed", () => {
@@ -32,5 +33,18 @@ describe("local movement prediction", () => {
     const next = predictLocalPosition({ x: 200, y: 200 }, { x: 1, y: 0 }, 100, 282);
 
     expect(next.x - 200).toBeCloseTo(28.2);
+  });
+
+  it.each(MAP_CATALOG)("uses $name walls for local prediction", (map) => {
+    const wall = map.id === "crystal-ruins" ? map.walls[4]! : map.walls[0]!;
+    const start = {
+      x: wall.x - PLAYER_RADIUS - 20,
+      y: wall.y + wall.height / 2,
+    };
+
+    const next = predictLocalPosition(start, { x: 1, y: 0 }, 300, PLAYER_SPEED, map.id);
+
+    expect(next.x).toBeLessThanOrEqual(wall.x - PLAYER_RADIUS);
+    expect(next.y).toBeCloseTo(start.y);
   });
 });

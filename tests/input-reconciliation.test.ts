@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PLAYER_SPEED } from "../src/shared/constants";
+import { PLAYER_RADIUS, PLAYER_SPEED } from "../src/shared/constants";
 import type { PlayerSnapshot } from "../src/shared/protocol";
 import { consumePositionCorrection, InputReconciler } from "../src/client/input-reconciliation";
 
@@ -64,6 +64,16 @@ describe("input reconciler", () => {
     for (let seq = 1; seq <= 241; seq += 1) reconciler.add(input(seq, 1, 0), 33);
 
     expect(reconciler.pendingCount).toBe(0);
+  });
+
+  it("replays pending input against the active map walls", () => {
+    const reconciler = new InputReconciler("crystal-ruins");
+    reconciler.add(input(1, 1, 0), 300);
+
+    const result = reconciler.reconcile(player({ x: 1_200, y: 328, lastProcessedInput: 0 }));
+
+    expect(result.position.x).toBeLessThanOrEqual(1_250 - PLAYER_RADIUS);
+    expect(result.position.y).toBeCloseTo(328);
   });
 });
 

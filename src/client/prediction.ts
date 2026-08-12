@@ -3,16 +3,24 @@ import {
   ARENA_WIDTH,
   PLAYER_RADIUS,
   PLAYER_SPEED,
-  WALLS,
 } from "../shared/constants";
 import { moveCircleSafely } from "../shared/collision";
+import { MAP_CATALOG, type MapId } from "../shared/map-catalog";
 import { StaticSpatialIndex } from "../shared/spatial-index";
 import { clamp, normalize } from "../shared/math";
 import type { Vec2 } from "../shared/protocol";
 
-const WALL_INDEX = new StaticSpatialIndex(WALLS);
+const WALL_INDICES = new Map(
+  MAP_CATALOG.map((map) => [map.id, new StaticSpatialIndex(map.walls)] as const),
+);
 
-export function predictLocalPosition(position: Vec2, input: Vec2, deltaMs: number, moveSpeed = PLAYER_SPEED): Vec2 {
+export function predictLocalPosition(
+  position: Vec2,
+  input: Vec2,
+  deltaMs: number,
+  moveSpeed = PLAYER_SPEED,
+  mapId: MapId = "reactor-core",
+): Vec2 {
   if (!Number.isFinite(deltaMs) || deltaMs <= 0) return { ...position };
 
   const direction = normalize({
@@ -23,7 +31,8 @@ export function predictLocalPosition(position: Vec2, input: Vec2, deltaMs: numbe
   const delta = { x: direction.x * distance, y: direction.y * distance };
   const minX = Math.min(position.x, position.x + delta.x) - PLAYER_RADIUS;
   const minY = Math.min(position.y, position.y + delta.y) - PLAYER_RADIUS;
-  const walls = WALL_INDEX.query({
+  const wallIndex = WALL_INDICES.get(mapId) ?? WALL_INDICES.get("reactor-core")!;
+  const walls = wallIndex.query({
     x: minX,
     y: minY,
     width: Math.abs(delta.x) + PLAYER_RADIUS * 2,

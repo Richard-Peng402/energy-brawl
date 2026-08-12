@@ -197,7 +197,7 @@ class ArenaScene extends Phaser.Scene {
   private readonly exclusiveEffectRevisions = new Map<string, string>();
   private readonly exclusiveEffectViews = new Map<string, ExclusiveEffectView>();
   private readonly snapshotBuffer = new SnapshotBuffer<GameSnapshot>();
-  private readonly inputReconciler = new InputReconciler();
+  private readonly inputReconciler: InputReconciler;
   private snapshot: GameSnapshot | null = null;
   private localInput: Vec2 = { x: 0, y: 0 };
   private localAim: Vec2 = { x: 0, y: 0 };
@@ -218,6 +218,7 @@ class ArenaScene extends Phaser.Scene {
 
   constructor(private localPlayerId: string | null, private readonly audio: CombatAudio, private readonly mapId: MapId) {
     super({ key: "arena" });
+    this.inputReconciler = new InputReconciler(mapId);
   }
 
   preload(): void {
@@ -289,7 +290,7 @@ class ArenaScene extends Phaser.Scene {
       const player = latest?.players.find((candidate) => candidate.id === id);
       if (id === this.localPlayerId && this.localPlayerCanMove()) {
         const moveSpeed = player?.moveSpeed;
-        const predicted = predictLocalPosition(view.container, this.localInput, delta, moveSpeed);
+        const predicted = predictLocalPosition(view.container, this.localInput, delta, moveSpeed, this.mapId);
         view.container.setPosition(predicted.x, predicted.y);
         this.consumeCorrection(view.container, delta);
       } else if (id === this.localPlayerId) {
