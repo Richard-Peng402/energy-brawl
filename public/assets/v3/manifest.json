@@ -115,7 +115,9 @@
       "license": "CC-BY-SA 3.0",
       "sourceUrl": "https://opengameart.org/content/top-down-sci-fi-shooter-some-random-guys-terrain-texture",
       "outputFiles": [
-        "/assets/v3/arena/floor.png"
+        "/assets/v3/arena/floor.png",
+        "/assets/v3/arena/maps/reactor-core/floor.png",
+        "/assets/v3/arena/maps/crystal-ruins/floor.png"
       ]
     },
     {
@@ -126,7 +128,23 @@
       "outputFiles": [
         "/assets/v3/arena/wall.png",
         "/assets/v3/arena/decal.png",
-        "/assets/v3/arena/light.png"
+        "/assets/v3/arena/light.png",
+        "/assets/v3/arena/maps/reactor-core/wall.png",
+        "/assets/v3/arena/maps/reactor-core/decal.png",
+        "/assets/v3/arena/maps/reactor-core/prop-1.png",
+        "/assets/v3/arena/maps/reactor-core/prop-2.png",
+        "/assets/v3/arena/maps/reactor-core/prop-3.png",
+        "/assets/v3/arena/maps/neon-docks/floor.png",
+        "/assets/v3/arena/maps/neon-docks/wall.png",
+        "/assets/v3/arena/maps/neon-docks/decal.png",
+        "/assets/v3/arena/maps/neon-docks/prop-1.png",
+        "/assets/v3/arena/maps/neon-docks/prop-2.png",
+        "/assets/v3/arena/maps/neon-docks/prop-3.png",
+        "/assets/v3/arena/maps/crystal-ruins/wall.png",
+        "/assets/v3/arena/maps/crystal-ruins/decal.png",
+        "/assets/v3/arena/maps/crystal-ruins/prop-1.png",
+        "/assets/v3/arena/maps/crystal-ruins/prop-2.png",
+        "/assets/v3/arena/maps/crystal-ruins/prop-3.png"
       ]
     },
     {
@@ -140,7 +158,10 @@
         "/assets/v3/fx/projectiles/muzzle-flare.png",
         "/assets/v3/fx/projectiles/impact-burst.png",
         "/assets/v3/fx/projectiles/impact-spark.png",
-        "/assets/v3/fx/projectiles/impact-smoke.png"
+        "/assets/v3/fx/projectiles/impact-smoke.png",
+        "/assets/v3/arena/maps/reactor-core/light.png",
+        "/assets/v3/arena/maps/neon-docks/light.png",
+        "/assets/v3/arena/maps/crystal-ruins/light.png"
       ]
     },
     {

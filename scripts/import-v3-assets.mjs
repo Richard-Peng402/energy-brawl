@@ -29,8 +29,19 @@ const userCharacterOutputs = characterIds.flatMap((id) => [
   runtime(`characters/${id}/combat.png`),
   ...characterDirections.map((direction) => runtime(`characters/${id}/directions/${direction}.png`)),
 ]);
-const arenaFloorOutput = [runtime("arena/floor.png")];
-const arenaStructureOutputs = ["wall", "decal", "light"].map((name) => runtime(`arena/${name}.png`));
+const mapIds = ["reactor-core", "neon-docks", "crystal-ruins"];
+const terrainTextureMaps = new Set(["reactor-core", "crystal-ruins"]);
+const arenaFloorOutput = [
+  runtime("arena/floor.png"),
+  ...[...terrainTextureMaps].map((id) => runtime(`arena/maps/${id}/floor.png`)),
+];
+const arenaStructureOutputs = [
+  ...["wall", "decal", "light"].map((name) => runtime(`arena/${name}.png`)),
+  ...mapIds.flatMap((id) => ["floor", "wall", "decal", "prop-1", "prop-2", "prop-3"]
+    .filter((name) => !(name === "floor" && terrainTextureMaps.has(id)))
+    .map((name) => runtime(`arena/maps/${id}/${name}.png`))),
+];
+const arenaLightOutputs = mapIds.map((id) => runtime(`arena/maps/${id}/light.png`));
 const projectileOutputs = [
   "projectile-core", "projectile-trace", "muzzle-flare", "impact-burst", "impact-spark", "impact-smoke",
 ].map((name) => runtime(`fx/projectiles/${name}.png`));
@@ -77,7 +88,7 @@ const manifestEntries = [
     author: "Kenney",
     license: "CC0 1.0",
     sourceUrl: "https://kenney.nl/assets/particle-pack",
-    outputFiles: projectileOutputs,
+    outputFiles: [...projectileOutputs, ...arenaLightOutputs],
   },
   {
     source: "User-provided weapon art",

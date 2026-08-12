@@ -7,6 +7,8 @@ import path from "node:path";
 import express from "express";
 import QRCode from "qrcode";
 
+import packageJson from "../../package.json";
+
 import { attachGameNetwork } from "./network";
 import { listenOnAvailablePort } from "./port";
 import { GameRoom } from "./room";
@@ -33,7 +35,7 @@ app.get("/api/info", async (_request, response) => {
   applyNoStoreHeaders(response);
   const snapshot = await topology.get();
   allowedLanAddresses = getAllowedLanAddresses(snapshot);
-  const baseInfo = buildServerInfo(snapshot, room.snapshot(), "4.3.0");
+  const baseInfo = buildServerInfo(snapshot, room.snapshot(), packageJson.version);
   const qrDataUrls = await Promise.all(baseInfo.joinUrls.map((url) => QRCode.toDataURL(url, { margin: 1, width: 320 })));
   const info = { ...baseInfo, qrDataUrls };
   response.json(info);

@@ -1,6 +1,6 @@
 {
   "name": "energy-brawl",
-  "version": "4.3.0",
+  "version": "4.3.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,6 +18,7 @@
     "test": "vitest",
     "typecheck": "tsc --noEmit",
     "doctor": "tsx scripts/release-doctor.ts",
+    "smoke:maps": "node scripts/map-visual-smoke.mjs",
     "smoke:clean-clone": "tsx scripts/clean-clone-smoke.ts"
   },
   "dependencies": {

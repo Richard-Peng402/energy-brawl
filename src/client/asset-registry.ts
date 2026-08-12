@@ -1,6 +1,7 @@
 import manifest from "../../public/assets/v3/manifest.json";
 
 import type { CharacterId } from "../shared/character-catalog";
+import type { MapId } from "../shared/map-catalog";
 
 export const APPROVED_ASSET_SOURCES = [
   "local://user-provided-character-art",
@@ -83,6 +84,32 @@ export const ARENA_ASSETS = {
   light: path("arena/light.png"),
   sigil: path("arena/sigil.svg"),
 } as const;
+
+export interface ArenaMapAssetBundle {
+  floor: string;
+  wall: string;
+  decal: string;
+  light: string;
+  props: readonly [string, string, string];
+}
+
+const arenaMap = (id: MapId): ArenaMapAssetBundle => ({
+  floor: path(`arena/maps/${id}/floor.png`),
+  wall: path(`arena/maps/${id}/wall.png`),
+  decal: path(`arena/maps/${id}/decal.png`),
+  light: path(`arena/maps/${id}/light.png`),
+  props: [
+    path(`arena/maps/${id}/prop-1.png`),
+    path(`arena/maps/${id}/prop-2.png`),
+    path(`arena/maps/${id}/prop-3.png`),
+  ],
+});
+
+export const MAP_ARENA_ASSETS: Readonly<Record<MapId, ArenaMapAssetBundle>> = {
+  "reactor-core": arenaMap("reactor-core"),
+  "neon-docks": arenaMap("neon-docks"),
+  "crystal-ruins": arenaMap("crystal-ruins"),
+};
 
 export const PICKUP_ASSETS = {
   energyCore: path("pickups/energy-core.svg"),

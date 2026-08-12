@@ -11,6 +11,7 @@ import {
   CHARACTER_ASSETS,
   CHARACTER_DIRECTION_ASSETS,
   CHARACTER_DIRECTIONS,
+  MAP_ARENA_ASSETS,
   PROJECTILE_FX_ASSETS,
   PICKUP_ASSETS,
   SKILL_ICON_ASSETS,
@@ -54,6 +55,7 @@ import { getSkillIndicatorProfile } from "./skill-indicator";
 import { getExclusiveEffectProfile } from "./skill-effects";
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
+import { getMapVisualProfile } from "./map-visuals";
 
 interface PlayerView {
   container: Phaser.GameObjects.Container;
@@ -104,6 +106,8 @@ const SKILL_COLORS: Readonly<Record<SkillType, number>> = {
   spread: 0xff6b70,
   heal: 0x56e09a,
 };
+const arenaTextureKey = (mapId: MapId, kind: "floor" | "wall" | "decal" | "light"): string => `arena:${mapId}:${kind}`;
+const arenaPropTextureKey = (mapId: MapId, index: number): string => `arena:${mapId}:prop:${index}`;
 
 export class GameRenderer {
   private readonly scene: ArenaScene;
@@ -217,12 +221,14 @@ class ArenaScene extends Phaser.Scene {
   }
 
   preload(): void {
+    const arenaAssets = MAP_ARENA_ASSETS[this.mapId];
     this.load.svg("energy-core", PICKUP_ASSETS.energyCore, { width: 96, height: 96 });
     this.load.svg("arena-sigil", ARENA_ASSETS.sigil, { width: 240, height: 240 });
-    this.load.image("arena-floor-v3", ARENA_ASSETS.floor);
-    this.load.image("arena-wall-v3", ARENA_ASSETS.wall);
-    this.load.image("arena-decal-v3", ARENA_ASSETS.decal);
-    this.load.image("arena-light-v3", ARENA_ASSETS.light);
+    this.load.image(arenaTextureKey(this.mapId, "floor"), arenaAssets.floor);
+    this.load.image(arenaTextureKey(this.mapId, "wall"), arenaAssets.wall);
+    this.load.image(arenaTextureKey(this.mapId, "decal"), arenaAssets.decal);
+    this.load.image(arenaTextureKey(this.mapId, "light"), arenaAssets.light);
+    arenaAssets.props.forEach((asset, index) => this.load.image(arenaPropTextureKey(this.mapId, index), asset));
     this.load.image("fx-projectile-core", PROJECTILE_FX_ASSETS.core);
     this.load.image("fx-projectile-trace", PROJECTILE_FX_ASSETS.trace);
     this.load.image("fx-muzzle-flare", PROJECTILE_FX_ASSETS.muzzle);
@@ -354,6 +360,11 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private drawArena(): void {
+    const profile = getMapVisualProfile(this.mapId);
+    const floorTexture = arenaTextureKey(this.mapId, "floor");
+    const wallTexture = arenaTextureKey(this.mapId, "wall");
+    const decalTexture = arenaTextureKey(this.mapId, "decal");
+    const lightTexture = arenaTextureKey(this.mapId, "light");
     const perimeterPadding = VIEW_WIDTH;
     this.add
       .rectangle(
@@ -361,32 +372,35 @@ class ArenaScene extends Phaser.Scene {
         ARENA_HEIGHT / 2,
         ARENA_WIDTH + perimeterPadding * 2,
         ARENA_HEIGHT + perimeterPadding * 2,
-        0x030711,
+        profile.backgroundColor,
         1,
       )
       .setDepth(-20);
-    const perimeterGrid = this.add.graphics().setDepth(-19).lineStyle(2, 0x24587a, 0.07);
+    const perimeterGrid = this.add.graphics().setDepth(-19).lineStyle(2, profile.perimeterGridColor, 0.085);
     for (let x = -perimeterPadding; x <= ARENA_WIDTH + perimeterPadding; x += 160) {
       perimeterGrid.lineBetween(x, -perimeterPadding, x, ARENA_HEIGHT + perimeterPadding);
     }
     for (let y = -perimeterPadding; y <= ARENA_HEIGHT + perimeterPadding; y += 160) {
       perimeterGrid.lineBetween(-perimeterPadding, y, ARENA_WIDTH + perimeterPadding, y);
     }
-    this.add.tileSprite(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, ARENA_WIDTH, ARENA_HEIGHT, "arena-floor-v3").setDepth(-10).setTint(0x7185b0);
+    this.add.tileSprite(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, ARENA_WIDTH, ARENA_HEIGHT, floorTexture)
+      .setDepth(-10)
+      .setAlpha(profile.floorAlpha)
+      .setTint(profile.floorTint);
     const grid = this.add.graphics();
-    grid.setDepth(-8).lineStyle(2, 0x6ce5ff, 0.045);
+    grid.setDepth(-8).lineStyle(2, profile.gridColor, profile.gridAlpha);
     for (let x = 0; x <= ARENA_WIDTH; x += 80) grid.lineBetween(x, 0, x, ARENA_HEIGHT);
     for (let y = 0; y <= ARENA_HEIGHT; y += 80) grid.lineBetween(0, y, ARENA_WIDTH, y);
 
     const lanes = this.add.graphics().setDepth(-7);
-    lanes.lineStyle(5, 0xffad42, 0.32);
+    lanes.lineStyle(5, profile.accentColor, 0.32);
     lanes.strokeCircle(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, 178);
-    lanes.lineStyle(4, 0x44e1ff, 0.22);
+    lanes.lineStyle(4, profile.primaryColor, 0.22);
     lanes.strokeRoundedRect(110, 90, ARENA_WIDTH - 220, ARENA_HEIGHT - 180, 70);
-    lanes.lineStyle(18, 0x209dff, 0.09);
+    lanes.lineStyle(18, profile.primaryColor, 0.09);
     lanes.lineBetween(180, ARENA_HEIGHT / 2, 720, ARENA_HEIGHT / 2);
     lanes.lineBetween(ARENA_WIDTH - 720, ARENA_HEIGHT / 2, ARENA_WIDTH - 180, ARENA_HEIGHT / 2);
-    lanes.lineStyle(10, 0xff5a5f, 0.07);
+    lanes.lineStyle(10, profile.accentColor, 0.075);
     lanes.strokeRoundedRect(820, 405, 520, 405, 48);
 
     const decalPositions = [
@@ -397,23 +411,32 @@ class ArenaScene extends Phaser.Scene {
       [360, ARENA_HEIGHT - 310, 0.72],
     ] as const;
     for (const [x, y, scale] of decalPositions) {
-      this.add.image(x, y, "arena-decal-v3").setDepth(-6).setScale(scale).setAlpha(0.54).setTint(0x74dfff);
+      this.add.image(x, y, decalTexture).setDepth(-6).setScale(scale).setAlpha(profile.decalAlpha).setTint(profile.decalTint);
     }
     this.add.image(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, "arena-sigil").setDepth(-5).setAlpha(0.18).setScale(1.55);
     for (const [x, y] of [[420, 360], [ARENA_WIDTH - 420, 360], [420, ARENA_HEIGHT - 360], [ARENA_WIDTH - 420, ARENA_HEIGHT - 360]] as const) {
-      const light = this.add.image(x, y, "arena-light-v3").setDepth(-4).setScale(3.4).setAlpha(0.42).setTint(0x3adfff).setBlendMode(Phaser.BlendModes.ADD);
-      this.tweens.add({ targets: light, alpha: 0.1, scale: 2.6, duration: 1_800, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+      const light = this.add.image(x, y, lightTexture).setDepth(-4).setScale(0.68).setAlpha(0.3).setTint(profile.lightTint).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: light, alpha: 0.12, scale: 0.82, duration: 1_800, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+    }
+    for (const decoration of profile.decorations) {
+      const prop = this.add.image(decoration.x, decoration.y, arenaPropTextureKey(this.mapId, decoration.prop))
+        .setDepth(-3.4)
+        .setScale(decoration.scale)
+        .setRotation(decoration.rotation ?? 0)
+        .setAlpha(decoration.alpha ?? 0.94);
+      if (decoration.tint) prop.setTint(decoration.tint);
     }
     const map = getMapDefinition(this.mapId);
-    const wallTint = map.theme === "neon" ? 0x7c6cff : map.theme === "crystal" ? 0x8f7dff : 0x7393a8;
     for (const wall of map.walls) {
       this.add.rectangle(wall.x + wall.width / 2 + 12, wall.y + wall.height / 2 + 13, wall.width, wall.height, 0x000000, 0.4).setDepth(-2);
-      this.add.tileSprite(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, "arena-wall-v3")
-        .setDepth(-1)
-        .setTint(wallTint);
+      this.add.rectangle(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, profile.wallFill, 0.98).setDepth(-1.8);
+      this.add.tileSprite(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, wallTexture)
+        .setDepth(-1.4)
+        .setAlpha(profile.wallTextureAlpha)
+        .setTint(profile.wallTint);
       this.add.rectangle(wall.x + wall.width / 2, wall.y + wall.height / 2, wall.width, wall.height, 0x000000, 0)
         .setDepth(0)
-        .setStrokeStyle(5, 0x8bdcf2, 0.92);
+        .setStrokeStyle(5, profile.wallStrokeColor, 0.92);
     }
     this.add
       .rectangle(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, ARENA_WIDTH - 10, ARENA_HEIGHT - 10)

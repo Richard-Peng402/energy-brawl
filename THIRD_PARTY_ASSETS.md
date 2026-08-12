@@ -21,14 +21,16 @@
 - 来源：<https://opengameart.org/content/top-down-sci-fi-shooter-some-random-guys-terrain-texture>
 - 许可证：[CC-BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/)
 - 运行时文件：`public/assets/v3/arena/floor.png`
-- 修改：裁切、缩放并用于现有地图的非碰撞地表层。
+- 修改：裁切、缩放并用于通用地表、反应堆核心和晶脉遗迹的非碰撞地表层；两张地图分别使用冷灰与紫色渲染配置。
 
 ## Kenney
 
 - 作者：Kenney
 - 来源：[Sci-Fi RTS](https://kenney.nl/assets/sci-fi-rts)、[Particle Pack](https://kenney.nl/assets/particle-pack)
 - 许可证：CC0 1.0（对应下载包中的 `License.txt`）
-- 运行时文件：地图墙体/装饰/灯光，以及子弹核心、拖尾、枪口闪光、命中爆裂、火花和烟雾。
+- 运行时文件：地图墙体/装饰/灯光、霓虹港区 Retina 地板、三张主题地图的环境道具，以及子弹核心、拖尾、枪口闪光、命中爆裂、火花和烟雾。
+- 地图输出：`public/assets/v3/arena/maps/reactor-core/`、`neon-docks/`、`crystal-ruins/`。反应堆使用工业设施与能源设备，霓虹港区使用港区建筑与灯柱，晶脉遗迹使用晶体和发光岩石；只改变非碰撞渲染层。
+- 修改：按地图重新命名、组合、缩放和着色；保留原始 PNG 尺寸，不做有损压缩。许可证副本保存在 `public/assets/v3/arena/maps/KENNEY-LICENSE.txt`。
 - CC0 不要求署名；此处保留来源记录以便复核。
 
 ## 项目或用户提供的素材

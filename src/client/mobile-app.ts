@@ -2,6 +2,7 @@ import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog
 import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import { getExclusiveSkill } from "../shared/exclusive-skill-catalog";
+import type { MapId } from "../shared/map-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
@@ -42,6 +43,7 @@ export class MobileApp {
   private readonly viewport: MobileViewport;
   private readonly audio = new CombatAudio(window.localStorage);
   private renderer: GameRenderer | null = null;
+  private rendererMapId: MapId | null = null;
   private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
   private hasSelectedCharacter = false;
   private lastLobbyPreviewCharacterId: CharacterId | null = null;
@@ -444,6 +446,7 @@ export class MobileApp {
       if (this.renderer) {
         this.renderer.destroy();
         this.renderer = null;
+        this.rendererMapId = null;
       }
       this.lastLeaderboardRevision = "";
       this.lastKillFeedRevision = "";
@@ -699,8 +702,15 @@ export class MobileApp {
     this.find("#return-countdown").textContent = `${Math.ceil(countdown / 1_000)}s 后自动回大厅`;
   }
 
-  private ensureRenderer(mapId: GameSnapshot["mapId"]): void {
-    if (!this.renderer) this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId, this.audio, mapId);
+  private ensureRenderer(mapId: MapId): void {
+    if (this.renderer && this.rendererMapId !== mapId) {
+      this.renderer.destroy();
+      this.renderer = null;
+    }
+    if (!this.renderer) {
+      this.renderer = new GameRenderer(this.find("#game-root"), this.network.playerId, this.audio, mapId);
+      this.rendererMapId = mapId;
+    }
   }
 
   private readonly inputLoop = (time: number): void => {
