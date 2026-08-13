@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { applyExclusiveSkill, advanceExclusiveSkillEffects, canUseExclusiveSkill, type ExclusiveSkillPlayer } from "../src/server/exclusive-skill-system";
+import { getExclusiveSkillBalance } from "../src/shared/exclusive-skill-balance";
 
 const player = (characterId: ExclusiveSkillPlayer["characterId"]): ExclusiveSkillPlayer => ({ id: characterId, characterId, x: 300, y: 300, angle: 0, health: 50, maxHealth: 100, alive: true, teamId: "red", moveSpeed: 250, fireCooldownMs: 450, damage: 25 });
 
 describe("authoritative exclusive skills", () => {
+  it("defines the approved v4.5 skill counters", () => {
+    expect(getExclusiveSkillBalance("breach")).toMatchObject({ dashDistance: 340, durationMs: 5_000, dashDurationMs: 180 });
+    expect(getExclusiveSkillBalance("pulse-heal")).toMatchObject({ selfHeal: 28, allyHeal: 34, radius: 280, pulseDurationMs: 350 });
+    expect(getExclusiveSkillBalance("mobile-bulwark")).toMatchObject({ frontalDamageMultiplier: 0.55, allyDamageMultiplier: 0.75, suppressionFireCooldownMultiplier: 1.25, durationMs: 4_000 });
+    expect(getExclusiveSkillBalance("capacitor-overload")).toMatchObject({ fireCooldownMultiplier: 0.7, moveSpeedMultiplier: 1.15, durationMs: 4_000 });
+    expect(getExclusiveSkillBalance("phase-shift")).toMatchObject({ dashDistance: 400, fireLockDurationMs: 250, revealDurationMs: 1_200 });
+    expect(getExclusiveSkillBalance("afterimage-run")).toMatchObject({ moveSpeedMultiplier: 1.28, damageMultiplier: 1.15, durationMs: 4_000 });
+  });
+
   it("describes and applies all six character skills with independent cooldown", () => {
     for (const id of ["blaze", "medic", "fortress", "arc", "phase", "runner"] as const) {
       const state = player(id);
