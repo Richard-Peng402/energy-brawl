@@ -58,6 +58,10 @@ export interface GameNetwork {
   close: () => Promise<void>;
 }
 
+export interface GameNetworkOptions {
+  autoPoll?: boolean;
+}
+
 export function attachGameNetwork(
   httpServer: HttpServer,
   room: GameRoom,
@@ -65,6 +69,7 @@ export function attachGameNetwork(
   allowedLanAddresses: () => readonly string[] = () => [],
   gameVersion = "unknown",
   diagnosticsNow: () => number = Date.now,
+  options: GameNetworkOptions = {},
 ): GameNetwork {
   const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(httpServer, {
     cors: { origin: true, credentials: false },
@@ -380,10 +385,10 @@ export function attachGameNetwork(
 
   const poll = (nowMs: number): number => fixedLoop.advance(nowMs, advance);
 
-  const interval = setInterval(() => {
+  const interval = options.autoPoll === false ? null : setInterval(() => {
     poll(performance.now());
   }, 4);
-  interval.unref();
+  interval?.unref();
 
   return {
     io,
@@ -391,7 +396,7 @@ export function attachGameNetwork(
     poll,
     diagnosticsTiming: () => diagnosticsDuration.snapshot(),
     close: async () => {
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
       finishDiagnostics("shutdown");
       await new Promise<void>((resolve) => io.close(() => resolve()));
     },

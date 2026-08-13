@@ -33,7 +33,9 @@ afterEach(async () => {
 async function createHarness(): Promise<{ client: TestClient; network: GameNetwork; room: GameRoom; url: string }> {
   const server = createServer();
   const room = new GameRoom();
-  const network = attachGameNetwork(server, room, "test-host-token");
+  const network = attachGameNetwork(server, room, "test-host-token", undefined, undefined, undefined, {
+    autoPoll: false,
+  });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Test server did not bind to a TCP port");
@@ -357,6 +359,12 @@ describe("game network", () => {
     expect(network.poll(pollStart + SERVER_TICK_MS * 20)).toBe(3);
 
     expect(room.gameSnapshot()!.serverTime - before).toBeCloseTo(SERVER_TICK_MS * 3);
+  });
+
+  it("keeps manually clocked tests isolated from the production auto-poll timer", async () => {
+    const { network } = await createHarness();
+    expect(network.poll(1_000)).toBe(0);
+    expect(network.poll(1_000 + SERVER_TICK_MS * 20)).toBe(3);
   });
 
   it("applies a loopback host admin command before acknowledging it", async () => {

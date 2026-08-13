@@ -1,5 +1,16 @@
 # 更新记录
 
+## [4.4.3] - 2026-08-13
+
+### Fixed
+
+- 修复 Windows GitHub Actions 中网络测试和后台自动轮询共享固定循环而产生的时序竞争；测试夹具关闭自动轮询，生产默认行为保持不变。
+- 升级 Clean clone 工作流的 checkout/setup-node Actions 到 v5，移除 Node 20 Actions 运行时弃用警告。
+
+### Verification
+
+- 失败的网络测试连续运行 10 次全部通过；全量 406 项测试、TypeScript 类型检查和干净克隆素材检查通过。
+
 ## [4.4.2] - 2026-08-13
 
 ### Fixed
