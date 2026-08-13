@@ -792,7 +792,7 @@ export class MobileApp {
       this.find("#result-list").innerHTML = `<div class="result-table-head"><span>#</span><span>玩家</span><span>K/D/A</span><span>伤害</span><span>治疗</span><span>承伤</span><span>技能</span><span>积分</span></div>` + ranking
         .map(
           (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}${player.id === snapshot.matchMvpId ? " is-mvp" : ""}">
-            <span class="result-rank">${index + 1}</span><span class="result-player"><i style="--player-color:${player.color}"></i><b>${escapeHtml(player.nickname)}</b></span>
+            <span class="result-rank">${index + 1}</span><span class="result-player"><i style="--player-color:${player.color}"></i><em class="result-team">${teamLabel(player.teamId)}</em><b>${escapeHtml(player.nickname)}</b></span>
             <span>${player.kills}/${player.deaths ?? 0}/${player.assists ?? 0}</span><span>${Math.round(player.damageDealt ?? 0)}</span><span>${Math.round(player.healingDone ?? 0)}</span><span>${Math.round(player.damageTaken ?? 0)}</span><span>${player.skillContribution ?? 0}</span><strong>${player.score}</strong>
           </div>`,
         )

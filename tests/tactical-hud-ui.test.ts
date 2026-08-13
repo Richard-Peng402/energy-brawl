@@ -29,6 +29,12 @@ describe("v4.4 tactical HUD UI", () => {
     expect(app).toContain("teamLabel(own?.teamId)");
   });
 
+  it("keeps team identity visible in the post-match result table", () => {
+    expect(app).toContain("result-team");
+    expect(app).toContain("teamLabel(player.teamId)");
+    expect(styles).toContain(".result-team");
+  });
+
   it("keeps radar and cues outside both landscape touch-stick zones", () => {
     const compact = extractBlock(styles, "@media (max-width: 720px) and (orientation: landscape)");
     expect(compact).toContain(".tactical-radar");

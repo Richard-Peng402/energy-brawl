@@ -5,6 +5,7 @@ import { GameNetworkClient } from "./network";
 import { DiagnosticsReportStore } from "./diagnostics-report-store";
 import { diagnosticsRevision, renderDiagnosticsPlayers, resolveDiagnosticsPresentation } from "./host-diagnostics-view";
 import { ServerInfoRefreshController, type ServerInfoRefreshState } from "./server-info-refresh";
+import { teamLabel } from "./team-label";
 
 export class HostApp {
   private readonly network = new GameNetworkClient(false);
@@ -199,7 +200,7 @@ export class HostApp {
     this.find("#host-roster").innerHTML = Array.from({ length: 6 }, (_, index) => players[index])
       .map((player, index) =>
         player
-          ? `<div class="host-seat${pendingWinnerId === player.id ? " is-preset-winner" : ""}"><span class="seat-index">${index + 1}</span><i style="--player-color:${player.color}"></i><div class="host-player-name"><b>${escapeHtml(player.nickname)}</b><small>${pendingWinnerId === player.id ? "已预设胜者" : player.isBot ? "AI" : player.connected ? "在线" : "离线"}</small></div><span class="host-player-stats">生命 ${player.health}/${player.maxHealth} · 伤害 ${player.damage} · 积分 ${player.score} · 击杀 ${player.kills} · 能量 ${player.energyCollected} · 移速 ${player.moveSpeed} · 弹速 ${player.projectileSpeed} · 射击 ${player.fireCooldownMs}ms</span><div class="host-player-actions">${adminEnabled ? `<button type="button" data-admin-action="setStat" data-player-id="${player.id}">改数值</button><button type="button" data-admin-action="kick" data-player-id="${player.id}">踢出</button><button type="button" data-admin-action="forceWinner" data-player-id="${player.id}">${phase === "lobby" ? "预设获胜" : "强制获胜"}</button>` : ""}</div></div>`
+          ? `<div class="host-seat${pendingWinnerId === player.id ? " is-preset-winner" : ""}"><span class="seat-index">${index + 1}</span><i style="--player-color:${player.color}"></i><div class="host-player-name"><b>${escapeHtml(player.nickname)}</b><small><em class="host-player-team">${teamLabel(player.teamId)}</em>${pendingWinnerId === player.id ? "已预设胜者" : player.isBot ? "AI" : player.connected ? "在线" : "离线"}</small></div><span class="host-player-stats">生命 ${player.health}/${player.maxHealth} · 伤害 ${player.damage} · 积分 ${player.score} · 击杀 ${player.kills} · 能量 ${player.energyCollected} · 移速 ${player.moveSpeed} · 弹速 ${player.projectileSpeed} · 射击 ${player.fireCooldownMs}ms</span><div class="host-player-actions">${adminEnabled ? `<button type="button" data-admin-action="setStat" data-player-id="${player.id}">改数值</button><button type="button" data-admin-action="kick" data-player-id="${player.id}">踢出</button><button type="button" data-admin-action="forceWinner" data-player-id="${player.id}">${phase === "lobby" ? "预设获胜" : "强制获胜"}</button>` : ""}</div></div>`
           : `<div class="host-seat is-empty"><span class="seat-index">${index + 1}</span><i></i><b>空位</b><span>等待玩家</span><strong>—</strong></div>`,
       )
       .join("");

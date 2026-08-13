@@ -27,6 +27,13 @@ describe("host dashboard layout", () => {
     expect(styles).toContain("overflow-x: auto");
     expect(styles).toContain(".host-diagnostics-alerts");
   });
+
+  it("shows every team player's identity in the host roster", () => {
+    expect(hostApp).toContain('import { teamLabel } from "./team-label"');
+    expect(hostApp).toContain("host-player-team");
+    expect(hostApp).toContain("teamLabel(player.teamId)");
+    expect(styles).toContain(".host-player-team");
+  });
 });
 
 function extractBlock(css: string, header: string): string {

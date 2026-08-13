@@ -1382,6 +1382,13 @@ button:disabled {
 .result-row > span:not(.result-rank) { white-space: nowrap; color: #aebbc0; }
 .result-player { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .result-player b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-team {
+  flex: 0 0 auto;
+  color: #a8dfff;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 900;
+}
 
 .result-row.is-you {
   color: #fff1bc;
@@ -1796,6 +1803,18 @@ button:disabled {
 .host-player-name small {
   color: #8f9ca2;
   font-size: 11px;
+}
+
+.host-player-team {
+  display: inline-block;
+  margin-right: 7px;
+  border: 1px solid rgb(168 223 255 / 35%);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: #a8dfff;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .host-player-stats {
