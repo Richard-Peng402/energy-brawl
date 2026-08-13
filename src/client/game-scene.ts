@@ -55,7 +55,7 @@ import { predictLocalPosition } from "./prediction";
 import { shouldAdvanceSnapshotAnchor, SnapshotBuffer } from "./snapshot-buffer";
 import type { SkillIndicatorState } from "./skill-indicator";
 import { getSkillIndicatorProfile } from "./skill-indicator";
-import { getExclusiveEffectProfile } from "./skill-effects";
+import { combatCameraImpulse, getExclusiveEffectProfile, getStatusEffectVisualProfile } from "./skill-effects";
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
@@ -255,6 +255,7 @@ class ArenaScene extends Phaser.Scene {
   private projectileImagePools: Record<"muzzle" | "trail" | "impact" | "spark" | "smoke", FixedObjectPool<Phaser.GameObjects.Image>> | null = null;
   private projectilePool: ReusableObjectPool<MovingView> | null = null;
   private ready = false;
+  private lastCameraImpulseAt = -Infinity;
 
   constructor(
     private localPlayerId: string | null,
@@ -362,7 +363,9 @@ class ArenaScene extends Phaser.Scene {
       snapshot.finishedAt === this.snapshot.finishedAt &&
       snapshot.winnerIds.join(",") === this.snapshot.winnerIds.join(",")
     ) return;
-    this.onCombatFeedback(selectCombatFeedbackEvents(this.snapshot, snapshot, this.localPlayerId));
+    const feedbackEvents = selectCombatFeedbackEvents(this.snapshot, snapshot, this.localPlayerId);
+    this.playCombatFeedback(feedbackEvents);
+    this.onCombatFeedback(feedbackEvents);
     const advancesAnchor = shouldAdvanceSnapshotAnchor(this.snapshot?.serverTime ?? null, snapshot.serverTime);
     this.snapshot = snapshot;
     this.snapshotBuffer.push(snapshot);
@@ -584,6 +587,7 @@ class ArenaScene extends Phaser.Scene {
       view.lastHealth = player.health;
       view.wasAlive = player.alive;
       this.updatePlayerVisual(view, player, now);
+      this.syncCombatStateVisual(view, player, snapshot.serverTime, identity);
       this.syncExclusiveSkillEffect(player);
     }
 
@@ -592,6 +596,32 @@ class ArenaScene extends Phaser.Scene {
     this.syncEnergy(snapshot);
     this.syncSkillOrbs(snapshot);
     this.syncCapturePoint(snapshot.capturePoint ?? null);
+  }
+
+  private syncCombatStateVisual(view: PlayerView, player: PlayerSnapshot, serverTime: number, identity: string): void {
+    const states = (player.combatStates ?? []).filter((state) => state.expiresAt > serverTime);
+    const priority = ["phase-fire-lock", "bulwark-suppression", "phase-reveal"] as const;
+    const active = priority.map((id) => states.find((state) => state.id === id)).find(Boolean);
+    view.name.setText(`${player.isBot ? `${identity} · AI` : identity}${active ? ` · ${getStatusEffectVisualProfile(active.id).label}` : ""}`);
+    const playerColor = Phaser.Display.Color.HexStringToColor(player.color).color;
+    view.ring.setStrokeStyle(4, playerColor, 0.78);
+    view.weapon.clearTint();
+    if (!active) return;
+    const profile = getStatusEffectVisualProfile(active.id);
+    view.ring.setStrokeStyle(active.id === "phase-reveal" ? 7 : 5, profile.color, 0.98).setAlpha(0.92);
+    if (active.id === "phase-reveal") view.sprite.setTint(profile.color);
+    if (active.id === "phase-fire-lock") view.weapon.setTint(profile.color).setAlpha(0.58);
+  }
+
+  private playCombatFeedback(events: readonly CombatFeedbackEvent[]): void {
+    const event = events.find((candidate) => candidate.type === "death") ?? events.find((candidate) => candidate.type === "hurt");
+    if (!event) return;
+    const profile = combatCameraImpulse(event.type);
+    const now = performance.now();
+    if (now - this.lastCameraImpulseAt < profile.throttleMs) return;
+    this.lastCameraImpulseAt = now;
+    const logicalWidth = this.cameras.main.width / Math.max(1, window.devicePixelRatio || 1);
+    this.cameras.main.shake(profile.durationMs, profile.maxCssPx / Math.max(1, logicalWidth), false);
   }
 
   private syncCapturePoint(point: CapturePointSnapshot | null): void {

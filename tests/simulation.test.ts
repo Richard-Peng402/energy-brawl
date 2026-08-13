@@ -81,6 +81,43 @@ describe("authoritative simulation", () => {
     expect(fortress.health).toBe(fortress.maxHealth - 20);
   });
 
+  it("applies Fortress ally protection and an authoritative purifiable suppression state", () => {
+    const world = createGameWorld([
+      { id: "fortress", nickname: "堡垒", characterId: "fortress", isBot: false, teamId: "red" },
+      { id: "ally", nickname: "队友", characterId: "medic", isBot: false, teamId: "red" },
+      { id: "enemy", nickname: "敌人", characterId: "blaze", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    const fortress = world.players.get("fortress")!;
+    const ally = world.players.get("ally")!;
+    const enemy = world.players.get("enemy")!;
+    for (const player of world.players.values()) player.shieldUntil = 0;
+    fortress.x = 1_000; fortress.y = 800; fortress.angle = 0;
+    ally.x = 900; ally.y = 800;
+    enemy.x = 1_100; enemy.y = 800;
+    expect(applyWorldExclusiveSkill(world, fortress.id, { x: 1, y: 0 })).toBe(true);
+    stepWorld(world, 20);
+    damagePlayer(world, ally.id, enemy.id, 20);
+    expect(ally.health).toBe(ally.maxHealth - 15);
+    const snapshot = worldToSnapshot(world);
+    expect(snapshot.players.find((player) => player.id === enemy.id)?.combatStates).toContainEqual(expect.objectContaining({ id: "bulwark-suppression" }));
+  });
+
+  it("moves Blaze through a swept 180ms dash instead of teleporting", () => {
+    const world = createGameWorld([
+      { id: "blaze", nickname: "烈锋", characterId: "blaze", isBot: false },
+      { id: "enemy", nickname: "敌人", characterId: "medic", isBot: false },
+    ], 0, "solo");
+    const blaze = world.players.get("blaze")!;
+    blaze.x = 300; blaze.y = 300; blaze.shieldUntil = 0;
+    expect(applyWorldExclusiveSkill(world, blaze.id, { x: 1, y: 0 })).toBe(true);
+    expect(blaze.x).toBe(300);
+    stepWorld(world, 90);
+    expect(blaze.x).toBeGreaterThan(430);
+    expect(blaze.x).toBeLessThan(640);
+    stepWorld(world, 90);
+    expect(blaze.x).toBeCloseTo(640, 0);
+  });
+
   it("does not heal teammates with Pulse Heal in solo mode", () => {
     const world = createGameWorld([
       { id: "medic", nickname: "医师", characterId: "medic", isBot: false, teamId: null },

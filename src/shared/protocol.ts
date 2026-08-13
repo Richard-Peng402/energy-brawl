@@ -38,6 +38,9 @@ export interface PerformanceHint {
   frameP95Ms: number;
 }
 
+export type CombatStateId = "bulwark-suppression" | "phase-reveal" | "phase-fire-lock";
+export interface CombatStateSnapshot { id: CombatStateId; startedAt: number; expiresAt: number; }
+
 export interface PlayerSnapshot extends Vec2 {
   id: string;
   nickname: string;
@@ -79,6 +82,7 @@ export interface PlayerSnapshot extends Vec2 {
   exclusiveSkillCooldownMs?: number;
   exclusiveSkillReadyAt?: number;
   exclusiveSkillState?: { skillId: ExclusiveSkillId; startedAt: number; expiresAt: number; anchor?: Vec2; usedDash?: boolean } | null;
+  combatStates?: readonly CombatStateSnapshot[];
 }
 
 export type AdminStat =

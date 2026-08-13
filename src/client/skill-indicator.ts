@@ -1,4 +1,5 @@
 import type { Vec2 } from "../shared/protocol";
+import { getExclusiveSkill } from "../shared/exclusive-skill-catalog";
 
 export type SkillIndicatorSkill = "blaze" | "medic" | "fortress" | "arc" | "phase" | "runner";
 export interface SkillIndicatorState { skillId: SkillIndicatorSkill | null; origin: Vec2; direction: Vec2; range: number; visible: boolean; }
@@ -12,11 +13,11 @@ export interface SkillIndicatorProfile {
 }
 
 const INDICATOR_PROFILES: Readonly<Record<SkillIndicatorSkill, SkillIndicatorProfile>> = {
-  blaze: { shape: "dash-line", range: 360, thickness: 16, color: 0xffa63d },
-  medic: { shape: "heal-radius", range: 280, thickness: 14, color: 0x62f5be },
-  fortress: { shape: "front-cone", range: 280, thickness: 18, color: 0x63d9ff },
+  blaze: { shape: "dash-line", range: getExclusiveSkill("blaze").balance.dashDistance ?? 340, thickness: 16, color: 0xffa63d },
+  medic: { shape: "heal-radius", range: getExclusiveSkill("medic").balance.radius ?? 280, thickness: 14, color: 0x62f5be },
+  fortress: { shape: "front-cone", range: getExclusiveSkill("fortress").balance.suppressionRadius ?? 240, thickness: 18, color: 0x63d9ff },
   arc: { shape: "buff-aura", range: 120, thickness: 14, color: 0xffd45e },
-  phase: { shape: "phase-line", range: 420, thickness: 16, color: 0xa77bff },
+  phase: { shape: "phase-line", range: getExclusiveSkill("phase").balance.dashDistance ?? 400, thickness: 16, color: 0xa77bff },
   runner: { shape: "afterimage-lane", range: 220, thickness: 14, color: 0xff6d94 },
 };
 

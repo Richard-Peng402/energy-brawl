@@ -10,7 +10,7 @@ export interface ExclusiveSkillPlayer {
   exclusiveSkillCooldownMs?: number; exclusiveSkillReadyAt?: number;
   exclusiveSkillState?: ExclusiveRuntimeState | null;
 }
-export interface ExclusiveRuntimeState { skillId: ExclusiveSkillId; startedAt: number; expiresAt: number; anchor?: Vec2; usedDash?: boolean; }
+export interface ExclusiveRuntimeState { skillId: ExclusiveSkillId; startedAt: number; expiresAt: number; anchor?: Vec2; usedDash?: boolean; movementFrom?: Vec2; movementTarget?: Vec2; movementStartedAt?: number; movementEndsAt?: number; returning?: boolean; }
 export type ExclusiveResult = { ok: true; definition: ExclusiveSkillDefinition; origin: Vec2; target: Vec2; state: ExclusiveRuntimeState | null } | { ok: false; error: string };
 
 export function canUseExclusiveSkill(player: ExclusiveSkillPlayer, now: number): boolean {
@@ -23,8 +23,18 @@ export function applyExclusiveSkill(player: ExclusiveSkillPlayer, now: number, d
     const origin = { x: player.x, y: player.y };
     const target = player.exclusiveSkillState.anchor;
     if (!isSafePosition(target)) return { ok: false, error: "锚点位置已不安全" };
-    player.x = target.x; player.y = target.y; player.exclusiveSkillState = null;
-    return { ok: true, definition, origin, target, state: null };
+    const state: ExclusiveRuntimeState = {
+      ...player.exclusiveSkillState,
+      startedAt: now,
+      expiresAt: now + (definition.balance.dashDurationMs ?? 180),
+      movementFrom: origin,
+      movementTarget: target,
+      movementStartedAt: now,
+      movementEndsAt: now + (definition.balance.dashDurationMs ?? 180),
+      returning: true,
+    };
+    player.exclusiveSkillState = state;
+    return { ok: true, definition, origin, target, state };
   }
   if (!canUseExclusiveSkill(player, now)) return { ok: false, error: "技能冷却中或角色已阵亡" };
   const directionLength = Math.hypot(direction.x, direction.y);
@@ -40,10 +50,13 @@ export function applyExclusiveSkill(player: ExclusiveSkillPlayer, now: number, d
     expiresAt: now + Math.max(300, definition.balance.durationMs),
     anchor: definition.id === "breach" ? origin : undefined,
     usedDash: false,
+    movementFrom: definition.id === "breach" ? origin : undefined,
+    movementTarget: definition.id === "breach" ? target : undefined,
+    movementStartedAt: definition.id === "breach" ? now : undefined,
+    movementEndsAt: definition.id === "breach" ? now + (definition.balance.dashDurationMs ?? 180) : undefined,
   };
   player.exclusiveSkillState = state;
   if (definition.id === "breach") {
-    player.x = target.x; player.y = target.y;
     if (state) state.usedDash = true;
   } else if (definition.id === "phase-shift") {
     player.x = target.x; player.y = target.y;

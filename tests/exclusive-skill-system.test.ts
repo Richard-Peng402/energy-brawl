@@ -31,7 +31,7 @@ describe("authoritative exclusive skills", () => {
     const created = applyExclusiveSkill(state, 0, { x: 1, y: 0 });
     expect(created).toMatchObject({ ok: true, definition: { id: "breach" }, state: { anchor: { x: 300, y: 300 }, usedDash: true } });
     const returned = applyExclusiveSkill(state, 1_000, { x: 0, y: 0 });
-    expect(returned).toMatchObject({ ok: true, target: { x: 300, y: 300 }, state: null });
+    expect(returned).toMatchObject({ ok: true, target: { x: 300, y: 300 }, state: { returning: true, movementEndsAt: 1_180 } });
   });
 
   it("expires timed effects and rejects dead players", () => {

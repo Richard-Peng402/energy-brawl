@@ -280,11 +280,12 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
       if (player.respawnAt !== null && world.now >= player.respawnAt) respawnPlayer(world, player);
       continue;
     }
-    movePlayer(world, player, simulationDelta);
-    updateAimAndFire(world, player);
+    if (!advanceExclusiveMovement(world, player)) movePlayer(world, player, simulationDelta);
   }
 
   resolvePlayerSeparation(world);
+  refreshBulwarkSuppression(world);
+  for (const player of world.players.values()) if (player.alive) updateAimAndFire(world, player);
   advanceProjectiles(world, simulationDelta);
   if (isFinished(world)) return;
   advanceCombatRegeneration(world, simulationDelta);
@@ -322,7 +323,9 @@ export function damagePlayer(
   if (attacker && attacker.id !== victim.id) markCombat(attacker, world.now);
 
   if (victim.skillShieldUntil <= world.now) victim.skillShieldHealth = 0;
-  const reducedAmount = attacker && isExclusiveEffectActive(victim, "mobile-bulwark", world.now) && isInFront(victim, attacker) ? amount * 0.55 : amount;
+  const selfProtected = attacker && isExclusiveEffectActive(victim, "mobile-bulwark", world.now) && isInFront(victim, attacker);
+  const allyProtected = attacker && findProtectingBulwark(world, victim, attacker) !== null;
+  const reducedAmount = amount * (selfProtected ? 0.55 : allyProtected ? 0.75 : 1);
   const absorbed = Math.min(victim.skillShieldHealth, reducedAmount);
   victim.skillShieldHealth -= absorbed;
   const healthDamage = reducedAmount - absorbed;
@@ -455,7 +458,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     finishedAt: world.finishedAt,
     matchMvpId: world.matchMvpId,
     matchMvpScore: world.matchMvpScore,
-    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, ...player }) => player),
+    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, statusEffects, ...player }) => ({ ...player, combatStates: [...statusEffects.values()].map(({ id, startedAt, expiresAt }) => ({ id, startedAt, expiresAt })) })),
     projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, ...projectile }) => projectile),
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
@@ -560,7 +563,50 @@ function isInFront(defender: WorldPlayer, attacker: WorldPlayer): boolean {
   const deltaY = attacker.y - defender.y;
   const length = Math.hypot(deltaX, deltaY);
   if (length === 0) return true;
-  return (Math.cos(defender.angle) * deltaX + Math.sin(defender.angle) * deltaY) / length >= 0;
+  return (Math.cos(defender.angle) * deltaX + Math.sin(defender.angle) * deltaY) / length >= Math.cos(70 * Math.PI / 180);
+}
+
+function findProtectingBulwark(world: GameWorld, ally: WorldPlayer, attacker: WorldPlayer): WorldPlayer | null {
+  if (world.matchMode === "solo" || ally.teamId === null || attacker.teamId === ally.teamId) return null;
+  for (const fortress of world.players.values()) {
+    if (fortress.id === ally.id || !fortress.alive || fortress.teamId !== ally.teamId || !isExclusiveEffectActive(fortress, "mobile-bulwark", world.now)) continue;
+    if (distanceSquared(fortress, ally) > 190 * 190 || !isInFront(fortress, attacker)) continue;
+    const allyDirection = { x: ally.x - fortress.x, y: ally.y - fortress.y };
+    if (Math.cos(fortress.angle) * allyDirection.x + Math.sin(fortress.angle) * allyDirection.y <= 0) return fortress;
+  }
+  return null;
+}
+
+function refreshBulwarkSuppression(world: GameWorld): void {
+  const activeFortresses = [...world.players.values()].filter((player) => player.alive && player.teamId !== null && isExclusiveEffectActive(player, "mobile-bulwark", world.now));
+  for (const player of world.players.values()) {
+    player.statusEffects.delete("bulwark-suppression");
+    if (!player.alive || player.teamId === null) continue;
+    if (activeFortresses.some((fortress) => fortress.teamId !== player.teamId && distanceSquared(fortress, player) <= 240 * 240)) {
+      addStatusEffect(player.statusEffects, "bulwark-suppression", world.now, 100);
+    }
+  }
+}
+
+function advanceExclusiveMovement(world: GameWorld, player: WorldPlayer): boolean {
+  const state = player.exclusiveSkillState;
+  if (state?.skillId !== "breach" || !state.movementFrom || !state.movementTarget || state.movementStartedAt === undefined || state.movementEndsAt === undefined) return false;
+  const duration = Math.max(1, state.movementEndsAt - state.movementStartedAt);
+  const progress = clamp((world.now - state.movementStartedAt) / duration, 0, 1);
+  const desired = { x: state.movementFrom.x + (state.movementTarget.x - state.movementFrom.x) * progress, y: state.movementFrom.y + (state.movementTarget.y - state.movementFrom.y) * progress };
+  const delta = { x: desired.x - player.x, y: desired.y - player.y };
+  const next = moveCircleUntilBlocked(player, delta, PLAYER_RADIUS, world.mapWalls.query(movementBounds(player, delta)), { width: ARENA_WIDTH, height: ARENA_HEIGHT });
+  player.vx = delta.x * 1_000 / duration;
+  player.vy = delta.y * 1_000 / duration;
+  player.x = next.x;
+  player.y = next.y;
+  const blocked = Math.hypot(next.x - desired.x, next.y - desired.y) > 0.5;
+  if (progress >= 1 || blocked) {
+    player.vx = 0; player.vy = 0;
+    if (state.returning) player.exclusiveSkillState = null;
+    else { delete state.movementFrom; delete state.movementTarget; delete state.movementStartedAt; delete state.movementEndsAt; }
+  }
+  return true;
 }
 
 function movePlayer(world: GameWorld, player: WorldPlayer, deltaMs: number): void {
@@ -592,7 +638,7 @@ function updateAimAndFire(world: GameWorld, player: WorldPlayer): void {
       const runnerDamage = isExclusiveEffectActive(player, "afterimage-run", world.now) ? player.damage * 1.15 : player.damage;
       spawnProjectile(world, player, player.angle, runnerDamage);
       const overloadMultiplier = isExclusiveEffectActive(player, "capacitor-overload", world.now) ? 0.7 : 1;
-      const fortressSlow = [...world.players.values()].some((enemy) => enemy.alive && enemy.teamId != null && enemy.teamId !== player.teamId && isExclusiveEffectActive(enemy, "mobile-bulwark", world.now) && distanceSquared(enemy, player) <= 240 * 240) ? 1.25 : 1;
+      const fortressSlow = hasActiveStatusEffect(player.statusEffects, "bulwark-suppression", world.now) ? 1.25 : 1;
       player.nextFireAt = world.now + player.fireCooldownMs * overloadMultiplier * fortressSlow;
     }
   }

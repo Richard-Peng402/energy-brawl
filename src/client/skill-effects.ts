@@ -1,4 +1,6 @@
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
+import type { StatusEffectId } from "../server/status-effects";
+import type { CombatFeedbackEventType } from "./combat-feedback";
 
 export interface ExclusiveEffectProfile {
   persistent: boolean;
@@ -20,4 +22,21 @@ const EFFECT_PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveEffectProfile>
 
 export function getExclusiveEffectProfile(skillId: ExclusiveSkillId): ExclusiveEffectProfile {
   return { ...EFFECT_PROFILES[skillId] };
+}
+
+export interface StatusEffectVisualProfile { color: number; label: string; pulseMs: number; }
+const STATUS_VISUALS: Readonly<Record<StatusEffectId, StatusEffectVisualProfile>> = {
+  "bulwark-suppression": { color: 0x63d9ff, label: "火力压制", pulseMs: 620 },
+  "phase-reveal": { color: 0xc77dff, label: "显形", pulseMs: 420 },
+  "phase-fire-lock": { color: 0xff8d70, label: "武器锁定", pulseMs: 250 },
+};
+
+export function getStatusEffectVisualProfile(id: StatusEffectId): StatusEffectVisualProfile {
+  return { ...STATUS_VISUALS[id] };
+}
+
+export interface CombatCameraImpulse { maxCssPx: number; durationMs: number; throttleMs: number; }
+export function combatCameraImpulse(type: CombatFeedbackEventType): CombatCameraImpulse {
+  if (type === "death") return { maxCssPx: 10, durationMs: 160, throttleMs: 300 };
+  return { maxCssPx: type === "hurt" ? 6 : 4, durationMs: type === "hurt" ? 90 : 80, throttleMs: 300 };
 }

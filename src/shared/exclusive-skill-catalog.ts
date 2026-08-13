@@ -28,3 +28,15 @@ export const EXCLUSIVE_SKILL_CATALOG: readonly ExclusiveSkillDefinition[] = [
 const BY_CHARACTER = new Map(EXCLUSIVE_SKILL_CATALOG.map((skill) => [skill.characterId, skill]));
 export function getExclusiveSkill(characterId: CharacterId): ExclusiveSkillDefinition { return BY_CHARACTER.get(characterId)!; }
 export function isExclusiveSkillId(value: unknown): value is ExclusiveSkillId { return typeof value === "string" && EXCLUSIVE_SKILL_CATALOG.some((skill) => skill.id === value); }
+
+export function getExclusiveSkillCounterSummary(characterId: CharacterId): string {
+  const { id, balance } = getExclusiveSkill(characterId);
+  switch (id) {
+    case "breach": return `突进 ${balance.dashDistance} · 位移 ${balance.dashDurationMs}ms · 锚点 ${Math.round((balance.anchorDurationMs ?? 0) / 1_000)}秒`;
+    case "pulse-heal": return `自身 +${balance.selfHeal} · 队友 +${balance.allyHeal} · 半径 ${balance.radius} · 净化压制`;
+    case "mobile-bulwark": return `正面减伤 ${Math.round((1 - (balance.frontalDamageMultiplier ?? 1)) * 100)}% · 队友减伤 ${Math.round((1 - (balance.allyDamageMultiplier ?? 1)) * 100)}% · 敌方射速压制 25%`;
+    case "capacitor-overload": return `射击间隔 -${Math.round((1 - (balance.fireCooldownMultiplier ?? 1)) * 100)}% · 移速 +${Math.round(((balance.moveSpeedMultiplier ?? 1) - 1) * 100)}%`;
+    case "phase-shift": return `折跃 ${balance.dashDistance} · 武器锁定 ${balance.fireLockDurationMs}ms · 显形 ${(balance.revealDurationMs ?? 0) / 1_000}秒`;
+    case "afterimage-run": return `移速 +${Math.round(((balance.moveSpeedMultiplier ?? 1) - 1) * 100)}% · 伤害 +${Math.round(((balance.damageMultiplier ?? 1) - 1) * 100)}%`;
+  }
+}

@@ -1,4 +1,6 @@
-export type StatusEffectId = "bulwark-suppression" | "phase-reveal" | "phase-fire-lock";
+import type { CombatStateId } from "../shared/protocol";
+
+export type StatusEffectId = CombatStateId;
 
 export interface StatusEffect {
   id: StatusEffectId;

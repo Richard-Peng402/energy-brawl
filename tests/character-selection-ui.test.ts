@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { getExclusiveSkillCounterSummary } from "../src/shared/exclusive-skill-catalog";
 
 const appSource = readFileSync(new URL("../src/client/mobile-app.ts", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8");
@@ -19,5 +20,14 @@ describe("animated character selection stage", () => {
     expect(styles).toContain("@keyframes preview-impact-burst");
     expect(styles).toContain("@keyframes preview-title-enter");
     expect(styles).toContain("image-rendering: pixelated");
+  });
+
+  it("shows exact shared skill counters and counterplay in the dossier", () => {
+    expect(getExclusiveSkillCounterSummary("blaze")).toContain("340");
+    expect(getExclusiveSkillCounterSummary("fortress")).toContain("45%");
+    expect(getExclusiveSkillCounterSummary("phase")).toContain("250ms");
+    expect(getExclusiveSkillCounterSummary("runner")).toContain("28%");
+    expect(appSource).toContain("getExclusiveSkillCounterSummary");
+    expect(appSource).toContain("技能参数");
   });
 });

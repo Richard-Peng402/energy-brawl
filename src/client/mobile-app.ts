@@ -1,7 +1,7 @@
 import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
 import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
-import { getExclusiveSkill } from "../shared/exclusive-skill-catalog";
+import { getExclusiveSkill, getExclusiveSkillCounterSummary } from "../shared/exclusive-skill-catalog";
 import type { MapId } from "../shared/map-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
@@ -607,7 +607,7 @@ export class MobileApp {
     }
     const selected = cards.find((character) => character.id === this.selectedCharacterId) ?? cards[0]!;
     const exclusiveSkill = getExclusiveSkill(selected.id);
-    this.find("#character-detail").innerHTML = `<div class="character-detail-heading"><div><strong>${selected.name}</strong><span>${selected.role}</span></div><p><b>${selected.passiveName}</b> · ${selected.passiveDescription}</p><p><b>${exclusiveSkill.name}</b> · ${exclusiveSkill.description}（冷却 ${exclusiveSkill.cooldownMs / 1_000} 秒）</p></div>
+    this.find("#character-detail").innerHTML = `<div class="character-detail-heading"><div><strong>${selected.name}</strong><span>${selected.role}</span></div><p><b>${selected.passiveName}</b> · ${selected.passiveDescription}</p><p><b>${exclusiveSkill.name}</b> · ${exclusiveSkill.description}（冷却 ${exclusiveSkill.cooldownMs / 1_000} 秒）</p><p><b>技能参数</b> · ${getExclusiveSkillCounterSummary(selected.id)}</p></div>
       <div class="character-traits"><span class="trait-good">优势 ${selected.advantage}</span><span class="trait-cost">代价 ${selected.tradeoff}</span></div>
       <div class="character-stats" aria-label="${selected.name}精确数值"><span>生命 <b>${selected.maxHealth}</b></span><span>伤害 <b>${selected.damage}</b></span><span>移速 <b>${selected.moveSpeed}</b></span><span>射速 <b>${selected.fireCooldownMs}ms</b></span><span>弹速 <b>${selected.projectileSpeed}</b></span></div>`;
     this.renderLobbyCharacterPreview(selected);
