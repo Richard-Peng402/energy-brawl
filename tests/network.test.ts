@@ -112,8 +112,8 @@ describe("game network", () => {
       canStart: false,
       pendingWinnerId: null,
       players: [
-        { id: "human", nickname: "真人", characterId: "blaze" as const, color: "#f00", isBot: false, connected: true, ready: false, health: 94, maxHealth: 94, damage: 27, moveSpeed: 265, fireCooldownMs: 450, projectileSpeed: 620, score: 0, kills: 0, energyCollected: 0 },
-        { id: "bot", nickname: "AI", characterId: "medic" as const, color: "#0f0", isBot: true, connected: true, ready: true, health: 104, maxHealth: 104, damage: 23, moveSpeed: 250, fireCooldownMs: 480, projectileSpeed: 600, score: 0, kills: 0, energyCollected: 0 },
+        { id: "human", nickname: "真人", characterId: "blaze" as const, color: "#f00", isBot: false, connected: true, ready: false, health: 104, maxHealth: 104, damage: 24, moveSpeed: 272, fireCooldownMs: 600, projectileSpeed: 660, score: 0, kills: 0, energyCollected: 0 },
+        { id: "bot", nickname: "AI", characterId: "medic" as const, color: "#0f0", isBot: true, connected: true, ready: true, health: 108, maxHealth: 108, damage: 18, moveSpeed: 255, fireCooldownMs: 560, projectileSpeed: 620, score: 0, kills: 0, energyCollected: 0 },
       ],
     };
 
@@ -126,10 +126,10 @@ describe("game network", () => {
       role: "续航支援",
       passiveName: "能量回流",
       passiveDescription: "拾取普通能量球恢复 12 点生命。",
-      advantage: "能量球治疗 12",
-      tradeoff: "单发伤害 23",
+      advantage: "最大生命 108",
+      tradeoff: "单发伤害 18",
       maxHealth: expect.any(Number),
-      damage: 23,
+      damage: 18,
       moveSpeed: expect.any(Number),
       fireCooldownMs: expect.any(Number),
       projectileSpeed: expect.any(Number),

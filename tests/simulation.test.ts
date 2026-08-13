@@ -94,6 +94,19 @@ describe("authoritative simulation", () => {
     expect(medic.health).toBe(78);
     expect(ally.health).toBe(40);
   });
+
+  it("applies exclusive damage and movement multipliers after host stat overrides", () => {
+    const world = createGameWorld([
+      { id: "runner", nickname: "疾行", characterId: "runner", isBot: false, stats: { damage: 40, moveSpeed: 400 } },
+      { id: "target", nickname: "目标", characterId: "medic", isBot: false },
+    ], 0, "solo");
+    const runner = world.players.get("runner")!;
+    expect(applyWorldExclusiveSkill(world, runner.id, { x: 1, y: 0 })).toBe(true);
+    runner.input = { seq: 1, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: true };
+    stepWorld(world, 100);
+    expect(runner.vx).toBeCloseTo(512, 5);
+    expect(world.projectiles.values().next().value?.damage).toBeCloseTo(46, 5);
+  });
   it("spawns neon energy outside every wall", () => {
     const world = createGameWorld([
       { id: "player", nickname: "player", characterId: "blaze", isBot: false },
