@@ -1,5 +1,5 @@
 import type { SkillType } from "../shared/skill-catalog";
-import type { KillFeedEvent, Vec2 } from "../shared/protocol";
+import type { GameSnapshot, KillFeedEvent, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import type { CombatEffectKind } from "./effect-pool";
 
 export const PROJECTILE_VIEW_CAPACITY = 256;
@@ -76,4 +76,39 @@ export function selectLatestKillFeedback(
     && age >= 0
     && age <= 2_000;
   return { event, streakToPlay: isNewRecentLocalKill ? event.streak : null };
+}
+
+export type CombatFeedbackEventType = "hurt" | "low-health" | "death" | "kill";
+
+export interface CombatFeedbackEvent {
+  type: CombatFeedbackEventType;
+  key: string;
+  at: number;
+  sourceId?: string;
+  streak?: number;
+}
+
+export function selectCombatFeedbackEvents(
+  previous: GameSnapshot | null,
+  next: GameSnapshot,
+  localPlayerId: string | null,
+): CombatFeedbackEvent[] {
+  if (!previous || !localPlayerId) return [];
+  const before = previous.players.find((player) => player.id === localPlayerId);
+  const after = next.players.find((player) => player.id === localPlayerId);
+  if (!before || !after) return [];
+  const events: CombatFeedbackEvent[] = [];
+  if (after.alive && ((after.lastDamagedAt ?? -1) > (before.lastDamagedAt ?? -1) || after.health < before.health)) {
+    events.push({ type: "hurt", key: `hurt:${after.lastDamagedAt ?? next.serverTime}`, at: next.serverTime, sourceId: after.lastDamageSourceId ?? undefined });
+  }
+  const beforeLow = before.health > before.maxHealth * 0.3;
+  const afterLow = after.health > 0 && after.health <= after.maxHealth * 0.3;
+  if (beforeLow && afterLow) events.push({ type: "low-health", key: `low-health:${next.serverTime}`, at: next.serverTime });
+  if (before.alive && !after.alive) events.push({ type: "death", key: `death:${after.respawnAt ?? next.serverTime}`, at: next.serverTime });
+  const previousKillId = previous.killFeed?.at(-1)?.id;
+  const kill = next.killFeed?.at(-1);
+  if (kill && kill.id !== previousKillId && kill.killerId === localPlayerId) {
+    events.push({ type: "kill", key: `kill:${kill.id}`, at: kill.at, sourceId: kill.victimId, streak: kill.streak });
+  }
+  return events;
 }

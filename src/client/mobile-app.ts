@@ -6,7 +6,8 @@ import type { MapId } from "../shared/map-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
-import { didPickUpLocalSkill, selectLatestKillFeedback } from "./combat-feedback";
+import { didPickUpLocalSkill, selectLatestKillFeedback, type CombatFeedbackEvent } from "./combat-feedback";
+import { CombatHaptics, type HapticsMode } from "./combat-haptics";
 import { ClientDiagnosticsCollector } from "./diagnostics-collector";
 import { collectDeviceProfile, type DeviceProfileNavigator } from "./device-profile";
 import { GameRenderer } from "./game-scene";
@@ -38,6 +39,19 @@ import { buildRadarFrame, buildTacticalCues } from "./tactical-radar";
 import { teamLabel } from "./team-label";
 
 const NAME_KEY = "energy-brawl.nickname";
+const HAPTICS_MODE_KEY = "energy-brawl.haptics-mode";
+
+function normalizeHapticsMode(value: string | null | undefined): HapticsMode {
+  return value === "off" || value === "light" || value === "strong" ? value : "standard";
+}
+
+function loadHapticsMode(storage: Pick<Storage, "getItem">): HapticsMode {
+  try { return normalizeHapticsMode(storage.getItem(HAPTICS_MODE_KEY)); } catch { return "standard"; }
+}
+
+function saveHapticsMode(storage: Pick<Storage, "setItem">, mode: HapticsMode): void {
+  try { storage.setItem(HAPTICS_MODE_KEY, mode); } catch { /* Storage may be unavailable. */ }
+}
 
 export class MobileApp {
   private readonly network = new GameNetworkClient(true);
@@ -47,6 +61,10 @@ export class MobileApp {
   private readonly touchRouter: TouchRouter;
   private readonly viewport: MobileViewport;
   private readonly audio = new CombatAudio(window.localStorage);
+  private readonly haptics = new CombatHaptics({
+    mode: loadHapticsMode(window.localStorage),
+    onFallback: (type) => this.showCombatFallback(type),
+  });
   private readonly diagnostics = new ClientDiagnosticsCollector(() => this.network.diagnosticsMatchId);
   private diagnosticsWasConnected = false;
   private diagnosticsHasConnected = false;
@@ -103,6 +121,8 @@ export class MobileApp {
       this.render();
     });
     window.setInterval(() => void this.flushDiagnostics(), 1_000);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange, { passive: true });
+    window.addEventListener("pagehide", this.handlePageHide, { passive: true });
     requestAnimationFrame(this.inputLoop);
   }
 
@@ -282,6 +302,11 @@ export class MobileApp {
       this.applyTouchControlLayout();
       this.find("#touch-scale-value").textContent = `${Math.round(this.controlSettings.touch.scale * 100)}%`;
     });
+    this.find<HTMLSelectElement>("#haptics-mode").addEventListener("change", (event) => {
+      const mode = normalizeHapticsMode((event.target as HTMLSelectElement).value);
+      this.haptics.setMode(mode);
+      saveHapticsMode(window.localStorage, mode);
+    });
     this.find("#key-binding-list").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-bind-action]");
       if (!button) return;
@@ -376,6 +401,7 @@ export class MobileApp {
     this.find("#touch-scale-value").textContent = `${Math.round(this.controlSettings.touch.scale * 100)}%`;
     this.find("#desktop-exclusive-key").textContent = formatKeyCode(this.controlSettings.keys.exclusiveSkill);
     this.find("#desktop-skill-key").textContent = formatKeyCode(this.controlSettings.keys.skill);
+    this.find<HTMLSelectElement>("#haptics-mode").value = this.haptics.currentMode;
     const editLayout = this.find<HTMLButtonElement>("#controls-edit-layout");
     const phase = this.network.room?.phase;
     const canEditLayout = phase === "playing" || phase === "overtime" || phase === "finished";
@@ -534,6 +560,7 @@ export class MobileApp {
       this.renderTacticalHud(this.network.game);
       this.renderResults(this.network.game);
     } else {
+      this.haptics.stop();
       if (this.layoutEditing) this.setLayoutEditing(false);
       this.find("#results-overlay").classList.add("is-hidden");
       this.skillActionSequence = 0;
@@ -837,10 +864,30 @@ export class MobileApp {
         onFrame: (deltaMs) => this.diagnostics.recordFrame(deltaMs),
         onCorrection: (distancePx, hard) => this.diagnostics.recordCorrection(distancePx, hard),
         onAuthoritativeInput: (lastProcessedInput) => this.diagnostics.acknowledgeInputs(lastProcessedInput, performance.now()),
-      });
+      }, (events) => this.handleCombatFeedback(events));
       this.rendererMapId = mapId;
     }
   }
+
+  private handleCombatFeedback(events: readonly CombatFeedbackEvent[]): void {
+    this.haptics.handleEvents(events);
+  }
+
+  private showCombatFallback(type: CombatFeedbackEvent["type"]): void {
+    const arena = this.find("#arena-screen");
+    arena.dataset.combatFeedback = type;
+    window.setTimeout(() => {
+      if (arena.dataset.combatFeedback === type) delete arena.dataset.combatFeedback;
+    }, type === "kill" ? 420 : 220);
+  }
+
+  private readonly handleVisibilityChange = (): void => {
+    if (document.hidden) this.haptics.stop();
+  };
+
+  private readonly handlePageHide = (): void => {
+    this.haptics.stop();
+  };
 
   private resolvePointerAim(clientX: number, clientY: number, arena: HTMLElement): PointerAim {
     const rendererAim = this.renderer?.resolvePointerAim(clientX, clientY, arena.getBoundingClientRect());
@@ -1095,7 +1142,7 @@ function mobileTemplate(): string {
         <div class="controls-dialog-heading"><div><span class="eyebrow">PLAYER CONTROLS</span><h2>自定义键位</h2></div><button id="controls-close" type="button" aria-label="关闭">×</button></div>
         <div class="controls-dialog-grid">
           <section><h3>电脑按键</h3><p>鼠标移动控制瞄准，按住左键持续射击；长按专属技能键并移动鼠标，松键后朝瞄准位置释放。点击按键后按下新键即可重映射，冲突键位会自动交换。</p><div id="key-binding-list" class="key-binding-list"></div><button id="controls-reset-keys" class="secondary-control-button" type="button">恢复默认按键</button></section>
-          <section><h3>手机触控布局</h3><p>移动和攻击摇杆保持浮动；两个技能按钮可以自由拖动。</p><label class="touch-scale-label"><span>按钮大小 <b id="touch-scale-value">100%</b></span><input id="touch-scale" type="range" min="0.75" max="1.35" step="0.05" value="1" /></label><button id="controls-edit-layout" class="primary-button" type="button">进入布局编辑</button></section>
+          <section><h3>手机触控布局</h3><p>移动和攻击摇杆保持浮动；两个技能按钮可以自由拖动。</p><label class="touch-scale-label"><span>按钮大小 <b id="touch-scale-value">100%</b></span><input id="touch-scale" type="range" min="0.75" max="1.35" step="0.05" value="1" /></label><label class="touch-scale-label"><span>战斗震动</span><select id="haptics-mode"><option value="standard">标准</option><option value="light">轻微</option><option value="strong">强烈</option><option value="off">关闭</option></select></label><button id="controls-edit-layout" class="primary-button" type="button">进入布局编辑</button></section>
         </div>
       </dialog>
       <div id="toast" class="toast" role="status"></div>

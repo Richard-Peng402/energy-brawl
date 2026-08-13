@@ -30,6 +30,8 @@ import {
   shouldRenderProjectileImageEffect,
   shouldShowProjectileTrace,
   type TrailMemory,
+  selectCombatFeedbackEvents,
+  type CombatFeedbackEvent,
 } from "./combat-feedback";
 import {
   FixedObjectPool,
@@ -116,6 +118,8 @@ export interface GameDiagnosticHooks {
   onAuthoritativeInput(lastProcessedInput: number): void;
 }
 
+export type CombatFeedbackHandler = (events: readonly CombatFeedbackEvent[]) => void;
+
 const NOOP_DIAGNOSTIC_HOOKS: GameDiagnosticHooks = {
   onFrame: () => {},
   onCorrection: () => {},
@@ -135,9 +139,10 @@ export class GameRenderer {
     audio: CombatAudio,
     mapId: MapId = "reactor-core",
     diagnosticHooks: GameDiagnosticHooks = NOOP_DIAGNOSTIC_HOOKS,
+    onCombatFeedback: CombatFeedbackHandler = () => {},
   ) {
     this.container = container;
-    this.scene = new ArenaScene(localPlayerId, audio, mapId, diagnosticHooks);
+    this.scene = new ArenaScene(localPlayerId, audio, mapId, diagnosticHooks, onCombatFeedback);
     const width = Math.max(1, container.clientWidth || VIEW_WIDTH);
     const height = Math.max(1, container.clientHeight || VIEW_HEIGHT);
     this.renderMetrics = resolveRenderMetrics(width, height, window.devicePixelRatio || 1);
@@ -256,6 +261,7 @@ class ArenaScene extends Phaser.Scene {
     private readonly audio: CombatAudio,
     private readonly mapId: MapId,
     private readonly diagnosticHooks: GameDiagnosticHooks,
+    private readonly onCombatFeedback: CombatFeedbackHandler,
   ) {
     super({ key: "arena" });
     this.inputReconciler = new InputReconciler(mapId, (distance, hard) => this.diagnosticHooks.onCorrection(distance, hard));
@@ -356,6 +362,7 @@ class ArenaScene extends Phaser.Scene {
       snapshot.finishedAt === this.snapshot.finishedAt &&
       snapshot.winnerIds.join(",") === this.snapshot.winnerIds.join(",")
     ) return;
+    this.onCombatFeedback(selectCombatFeedbackEvents(this.snapshot, snapshot, this.localPlayerId));
     const advancesAnchor = shouldAdvanceSnapshotAnchor(this.snapshot?.serverTime ?? null, snapshot.serverTime);
     this.snapshot = snapshot;
     this.snapshotBuffer.push(snapshot);

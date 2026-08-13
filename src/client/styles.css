@@ -635,6 +635,16 @@ button:disabled {
   background: #101419;
 }
 
+/* Visual fallback for iOS Safari, which does not expose the Vibration API. */
+.arena-screen[data-combat-feedback="hurt"] .game-root { animation: combat-feedback-hurt 120ms ease-out; }
+.arena-screen[data-combat-feedback="low-health"] .game-root { animation: combat-feedback-low 220ms ease-out; }
+.arena-screen[data-combat-feedback="death"] .game-root { animation: combat-feedback-death 260ms ease-out; }
+.arena-screen[data-combat-feedback="kill"] .game-root { animation: combat-feedback-kill 320ms ease-out; }
+@keyframes combat-feedback-hurt { 0%, 100% { filter: none; } 45% { filter: brightness(1.35) saturate(1.25); } }
+@keyframes combat-feedback-low { 0%, 100% { filter: none; } 50% { filter: saturate(1.4) contrast(1.08); } }
+@keyframes combat-feedback-death { 0%, 100% { filter: none; } 50% { filter: brightness(.78) saturate(.8); } }
+@keyframes combat-feedback-kill { 0%, 100% { filter: none; } 30% { filter: brightness(1.3) saturate(1.35); } }
+
 .game-root canvas {
   display: block;
   width: 100% !important;

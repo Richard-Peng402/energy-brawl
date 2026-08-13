@@ -1,0 +1,69 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { CombatHaptics, type HapticsMode } from "../src/client/combat-haptics";
+import type { CombatFeedbackEvent } from "../src/client/combat-feedback";
+
+const event = (type: CombatFeedbackEvent["type"], key: string, streak?: number): CombatFeedbackEvent => ({
+  type,
+  key,
+  at: 1_000,
+  streak,
+});
+
+describe("combat haptics", () => {
+  it("maps local combat feedback to bounded vibration patterns", () => {
+    const vibrate = vi.fn(() => true);
+    const haptics = new CombatHaptics({ vibrate, now: () => 1_000 });
+
+    haptics.handleEvents([
+      event("hurt", "hurt:1"),
+      event("low-health", "low:1"),
+      event("kill", "kill:1", 5),
+    ]);
+
+    expect(vibrate).toHaveBeenCalledTimes(3);
+    for (const call of vibrate.mock.calls as unknown as Array<[number | readonly number[]]>) {
+      const pattern = call[0];
+      const values: number[] = Array.isArray(pattern) ? [...pattern] : [pattern];
+      expect(values.every((value) => value <= 120)).toBe(true);
+      expect(values.reduce((sum, value) => sum + value, 0)).toBeLessThanOrEqual(300);
+    }
+  });
+
+  it("deduplicates event keys and throttles repeated hit feedback", () => {
+    const vibrate = vi.fn(() => true);
+    let now = 1_000;
+    const haptics = new CombatHaptics({ vibrate, now: () => now });
+
+    haptics.handleEvents([event("hurt", "hurt:1")]);
+    haptics.handleEvents([event("hurt", "hurt:1"), event("hurt", "hurt:2")]);
+    expect(vibrate).toHaveBeenCalledTimes(1);
+    now += 141;
+    haptics.handleEvents([event("hurt", "hurt:3")]);
+    expect(vibrate).toHaveBeenCalledTimes(2);
+  });
+
+  it.each<HapticsMode>(["off", "light", "standard", "strong"])("supports %s mode", (mode) => {
+    const vibrate = vi.fn(() => true);
+    const haptics = new CombatHaptics({ vibrate, mode, now: () => 1_000 });
+    haptics.handleEvents([event("kill", `kill:${mode}`, 1)]);
+    expect(vibrate).toHaveBeenCalledTimes(mode === "off" ? 0 : 1);
+  });
+
+  it("does not throw when vibration is unavailable and exposes fallback feedback", () => {
+    const fallback = vi.fn();
+    const haptics = new CombatHaptics({ onFallback: fallback, now: () => 1_000 });
+    expect(() => haptics.handleEvents([event("hurt", "hurt:fallback")])).not.toThrow();
+    expect(fallback).toHaveBeenCalledWith("hurt");
+  });
+
+  it("stops active vibration on lifecycle changes and death", () => {
+    const vibrate = vi.fn(() => true);
+    const haptics = new CombatHaptics({ vibrate, now: () => 1_000 });
+    haptics.handleEvents([event("hurt", "hurt:stop")]);
+    haptics.stop();
+    expect(vibrate).toHaveBeenLastCalledWith(0);
+    haptics.handleEvents([event("death", "death:stop")]);
+    expect(vibrate).toHaveBeenCalledWith([110, 40, 110]);
+  });
+});
