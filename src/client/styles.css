@@ -721,6 +721,12 @@ button:disabled {
   pointer-events: none;
 }
 
+.hud-layer {
+  --leaderboard-top: max(58px, calc(env(safe-area-inset-top) + 52px));
+  --leaderboard-height: 110px;
+  --radar-gap: 10px;
+}
+
 .self-status {
   position: absolute;
   top: max(58px, calc(env(safe-area-inset-top) + 52px));
@@ -881,7 +887,7 @@ button:disabled {
 
 .leaderboard {
   position: absolute;
-  top: max(58px, calc(env(safe-area-inset-top) + 52px));
+  top: var(--leaderboard-top);
   right: max(18px, env(safe-area-inset-right));
   width: 178px;
   border: 1px solid rgb(255 255 255 / 16%);
@@ -1211,6 +1217,64 @@ button:disabled {
   font-weight: 950;
 }
 
+.tactical-radar {
+  position: absolute;
+  z-index: 18;
+  top: calc(var(--leaderboard-top) + var(--leaderboard-height) + var(--radar-gap));
+  right: max(18px, env(safe-area-inset-right));
+  width: 148px;
+  height: 148px;
+  border: 1px solid rgb(150 200 220 / 42%);
+  border-radius: 6px;
+  background: #071016;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 34%), inset 0 0 18px rgb(71 180 220 / 8%);
+  pointer-events: none;
+}
+
+.tactical-cues {
+  position: absolute;
+  z-index: 19;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tactical-cue {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  transform: translate(var(--cue-x), var(--cue-y)) translate(-50%, -50%);
+  color: var(--cue-color);
+  text-shadow: 0 2px 3px #000;
+}
+
+.tactical-cue i {
+  font-style: normal;
+  font-size: 22px;
+  line-height: 1;
+  transform: rotate(var(--cue-angle));
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--cue-color) 72%, transparent));
+}
+
+.tactical-cue span {
+  border-radius: 3px;
+  padding: 2px 5px;
+  background: rgb(6 10 13 / 78%);
+  color: #eef7fa;
+  font-size: 8px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.tactical-cue.is-danger i { animation: tactical-danger-pulse 640ms ease-in-out infinite alternate; }
+
+@keyframes tactical-danger-pulse {
+  to { transform: rotate(var(--cue-angle)) scale(1.16); }
+}
+
 .results-overlay {
   position: absolute;
   inset: 0;
@@ -1222,7 +1286,7 @@ button:disabled {
 }
 
 .results-panel {
-  width: min(640px, 82vw);
+  width: min(920px, 92vw);
   max-height: calc(100dvh - 84px);
   overflow: auto;
   padding: 18px;
@@ -1242,23 +1306,62 @@ button:disabled {
 
 .result-list {
   border-top: 1px solid #445159;
+  overflow-x: auto;
+}
+
+.result-mvp {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: auto 12px minmax(90px, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  border: 1px solid rgb(242 193 78 / 48%);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: linear-gradient(90deg, rgb(242 193 78 / 16%), rgb(16 24 29 / 72%));
+}
+
+.result-mvp > span { color: #f2c14e; font-size: 11px; font-weight: 950; }
+.result-mvp > i,
+.result-player > i { width: 10px; height: 10px; border-radius: 50%; background: var(--player-color); }
+.result-mvp > strong { color: #fff0a8; font-size: 20px; }
+.result-mvp > small { color: #8d9ba1; font-size: 9px; }
+
+.result-table-head,
+.result-row {
+  min-width: 760px;
+  display: grid;
+  grid-template-columns: 28px minmax(120px, 1.4fr) 72px repeat(4, minmax(64px, 0.75fr)) 52px;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-table-head {
+  min-height: 30px;
+  color: #7f9199;
+  font-size: 8px;
+  font-weight: 900;
 }
 
 .result-row {
   min-height: 36px;
-  display: grid;
-  grid-template-columns: 26px 12px minmax(80px, 1fr) repeat(7, minmax(44px, auto)) 34px;
-  align-items: center;
-  gap: 4px;
   border-bottom: 1px solid #303a40;
   font-size: 10px;
 }
 
 .result-row > span:not(.result-rank) { white-space: nowrap; color: #aebbc0; }
+.result-player { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.result-player b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .result-row.is-you {
   color: #fff1bc;
   background: rgb(242 193 78 / 10%);
+}
+
+.result-row.is-mvp {
+  box-shadow: inset 3px 0 0 #f2c14e;
+  background: rgb(242 193 78 / 7%);
 }
 
 .result-row strong {
@@ -1944,6 +2047,12 @@ button:disabled {
 }
 
 @media (max-width: 1000px) and (orientation: landscape) {
+  .tactical-radar {
+    top: max(132px, calc(env(safe-area-inset-top) + 126px));
+    right: auto;
+    left: max(18px, env(safe-area-inset-left));
+  }
+
   .lobby-screen {
     grid-template-columns: minmax(170px, 0.5fr) minmax(0, 1fr);
     min-width: 0;
@@ -1966,6 +2075,29 @@ button:disabled {
 }
 
 @media (max-width: 720px) and (orientation: landscape) {
+  .hud-layer {
+    --leaderboard-top: 48px;
+    --leaderboard-height: 110px;
+    --radar-gap: 8px;
+  }
+
+  .tactical-radar {
+    width: 104px;
+    height: 104px;
+  }
+
+  .tactical-cue { max-width: 92px; }
+  .tactical-cue i { font-size: 18px; }
+  .tactical-cue span { font-size: 7px; }
+  .results-overlay { padding: 38px 10px 10px; }
+  .results-panel { width: min(960px, 96vw); max-height: calc(100dvh - 48px); padding: 10px; }
+  .results-panel h2 { margin-bottom: 7px; font-size: 18px; }
+  .result-mvp { min-height: 38px; margin-bottom: 7px; padding: 5px 8px; }
+  .result-mvp > strong { font-size: 16px; }
+  .result-table-head,
+  .result-row { min-width: 690px; grid-template-columns: 24px minmax(105px, 1.3fr) 64px repeat(4, 58px) 42px; gap: 5px; }
+  .result-row { min-height: 30px; font-size: 9px; }
+
   .lobby-screen {
     grid-template-columns: 170px minmax(0, 1fr);
     min-width: 0;

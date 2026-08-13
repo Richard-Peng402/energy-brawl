@@ -29,6 +29,8 @@ describe("host presentation state", () => {
       holderId: null,
       holdRemainingMs: null,
       finishedAt: 1_000,
+      matchMvpId: "player-1",
+      matchMvpScore: 1_000,
       players: [
         {
           ...room.players[0]!,

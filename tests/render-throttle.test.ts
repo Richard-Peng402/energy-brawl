@@ -37,6 +37,8 @@ const game = (score = 0): GameSnapshot => ({
   holderId: null,
   holdRemainingMs: null,
   finishedAt: null,
+  matchMvpId: null,
+  matchMvpScore: null,
   players: [{
     id: "player-1",
     nickname: "玩家",

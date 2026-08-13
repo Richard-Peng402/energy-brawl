@@ -63,6 +63,8 @@ export interface PlayerSnapshot extends Vec2 {
   healingDone?: number;
   damageTaken?: number;
   skillContribution?: number;
+  lastDamageSourceId?: string | null;
+  lastDamagedAt?: number | null;
   energyCollected: number;
   alive: boolean;
   respawnAt: number | null;
@@ -140,6 +142,8 @@ export interface GameSnapshot {
   holderId: string | null;
   holdRemainingMs: number | null;
   finishedAt: number | null;
+  matchMvpId: string | null;
+  matchMvpScore: number | null;
   players: PlayerSnapshot[];
   projectiles: ProjectileSnapshot[];
   energy: EnergySnapshot[];

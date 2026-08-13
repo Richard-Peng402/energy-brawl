@@ -34,6 +34,7 @@ import { TouchRouter } from "./touch-router";
 import { VirtualStick } from "./virtual-stick";
 import { CHARACTER_PREVIEW_CLASSES, getCharacterPreviewMotion } from "./character-preview";
 import { resolveHeldSkillAim, resolveMouseAim, type PointerAim } from "./mouse-aim";
+import { buildRadarFrame, buildTacticalCues } from "./tactical-radar";
 
 const NAME_KEY = "energy-brawl.nickname";
 
@@ -529,6 +530,7 @@ export class MobileApp {
       this.renderer?.setLocalPlayerId(this.network.playerId);
       this.renderer?.setSnapshot(this.network.game);
       this.renderHud(this.network.game);
+      this.renderTacticalHud(this.network.game);
       this.renderResults(this.network.game);
     } else {
       if (this.layoutEditing) this.setLayoutEditing(false);
@@ -782,17 +784,46 @@ export class MobileApp {
       const ownWon = snapshot.winnerIds.includes(this.network.playerId ?? "");
       const winningTeam = snapshot.matchMode !== "solo" ? winner?.teamId : null;
       this.find("#result-title").textContent = ownWon ? "你赢了" : winningTeam ? `${winningTeam === "red" ? "红队" : winningTeam === "blue" ? "蓝队" : "金队"}获胜` : `${winner?.nickname ?? "本局"} 获胜`;
-      this.find("#result-list").innerHTML = ranking
+      const mvp = snapshot.players.find((player) => player.id === snapshot.matchMvpId);
+      this.find("#result-mvp").innerHTML = mvp
+        ? `<span>MVP</span><i style="--player-color:${mvp.color}"></i><b>${escapeHtml(mvp.nickname)}</b><strong>${snapshot.matchMvpScore ?? 0}</strong><small>综合贡献</small>`
+        : `<span>MVP</span><b>无</b>`;
+      this.find("#result-list").innerHTML = `<div class="result-table-head"><span>#</span><span>玩家</span><span>K/D/A</span><span>伤害</span><span>治疗</span><span>承伤</span><span>技能</span><span>积分</span></div>` + ranking
         .map(
-          (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}">
-            <span class="result-rank">${index + 1}</span><i style="--player-color:${player.color}"></i>
-            <b>${escapeHtml(player.nickname)}</b><span>${player.kills} 击杀</span><span>${player.deaths ?? 0} 死亡</span><span>${player.assists ?? 0} 助攻</span><span>${player.damageDealt ?? 0} 伤害</span><span>${player.healingDone ?? 0} 治疗</span><span>${player.damageTaken ?? 0} 承伤</span><span>${player.skillContribution ?? 0} 技能</span><strong>${player.score}</strong>
+          (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}${player.id === snapshot.matchMvpId ? " is-mvp" : ""}">
+            <span class="result-rank">${index + 1}</span><span class="result-player"><i style="--player-color:${player.color}"></i><b>${escapeHtml(player.nickname)}</b></span>
+            <span>${player.kills}/${player.deaths ?? 0}/${player.assists ?? 0}</span><span>${Math.round(player.damageDealt ?? 0)}</span><span>${Math.round(player.healingDone ?? 0)}</span><span>${Math.round(player.damageTaken ?? 0)}</span><span>${player.skillContribution ?? 0}</span><strong>${player.score}</strong>
           </div>`,
         )
         .join("");
     }
     const countdown = Math.max(0, (snapshot.finishedAt ?? snapshot.serverTime) + LOBBY_RETURN_DELAY_MS - snapshot.serverTime);
     this.find("#return-countdown").textContent = `${Math.ceil(countdown / 1_000)}s 后自动回大厅`;
+  }
+
+  private renderTacticalHud(snapshot: GameSnapshot): void {
+    const canvas = this.find<HTMLCanvasElement>("#tactical-radar");
+    const size = Math.max(1, Math.round(canvas.clientWidth || 148));
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const physicalSize = Math.round(size * dpr);
+    if (canvas.width !== physicalSize || canvas.height !== physicalSize) {
+      canvas.width = physicalSize;
+      canvas.height = physicalSize;
+    }
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      context.clearRect(0, 0, size, size);
+      drawRadar(context, buildRadarFrame(snapshot, this.network.playerId, size));
+    }
+    const viewport = this.renderer?.getCameraWorldView();
+    const arena = this.find<HTMLElement>("#arena-screen");
+    const own = snapshot.players.find((player) => player.id === this.network.playerId);
+    const cues = viewport ? buildTacticalCues(snapshot, this.network.playerId, viewport, {
+      width: arena.clientWidth || window.innerWidth,
+      height: arena.clientHeight || window.innerHeight,
+    }, { attackerId: own?.lastDamageSourceId ?? null, damagedAt: own?.lastDamagedAt ?? null }) : [];
+    this.find("#tactical-cues").innerHTML = cues.map((cue) => `<div class="tactical-cue is-${cue.kind}" style="--cue-x:${cue.x}px;--cue-y:${cue.y}px;--cue-angle:${cue.angle}rad;--cue-color:${cue.color}"><i>➤</i><span>${cue.kind === "danger" ? "受击" : cue.kind === "objective" ? "据点" : "队友"} ${cue.distance}</span></div>`).join("");
   }
 
   private ensureRenderer(mapId: MapId): void {
@@ -1031,6 +1062,8 @@ function mobileTemplate(): string {
       <section id="arena-screen" class="arena-screen is-hidden">
         <div id="game-root" class="game-root"></div>
         <div class="hud-layer">
+          <canvas id="tactical-radar" class="tactical-radar" aria-label="战术雷达"></canvas>
+          <div id="tactical-cues" class="tactical-cues" aria-hidden="true"></div>
           <div class="self-status">
             <div class="health-line"><span>HP</span><div class="health-track"><i id="health-fill"></i></div><strong id="health-value">100</strong></div>
             <div class="score-line"><span>积分</span><strong id="own-score">0</strong><small>/ <span id="target-score">15</span></small></div>
@@ -1054,7 +1087,7 @@ function mobileTemplate(): string {
           <div id="layout-editor" class="layout-editor is-hidden"><strong>拖动两个技能按钮调整位置</strong><span>移动与攻击摇杆仍可在左右半屏任意位置呼出</span><button id="layout-reset" type="button">恢复默认</button><button id="layout-save" type="button">保存布局</button></div>
         </div>
         <div id="results-overlay" class="results-overlay is-hidden">
-          <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-list" class="result-list"></div><p id="return-countdown"></p><button id="return-lobby" class="primary-button" type="button">返回大厅</button></div>
+          <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-mvp" class="result-mvp"></div><div id="result-list" class="result-list"></div><p id="return-countdown"></p><button id="return-lobby" class="primary-button" type="button">返回大厅</button></div>
         </div>
       </section>
       <dialog id="controls-dialog" class="controls-dialog">
@@ -1075,4 +1108,32 @@ function formatTime(milliseconds: number): string {
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] ?? character);
+}
+
+function drawRadar(context: CanvasRenderingContext2D, frame: ReturnType<typeof buildRadarFrame>): void {
+  const size = frame.size;
+  context.fillStyle = "rgba(5, 10, 14, 0.86)";
+  context.fillRect(0, 0, size, size);
+  context.strokeStyle = "rgba(154, 194, 211, 0.42)";
+  context.lineWidth = 1;
+  context.strokeRect(0.5, 0.5, size - 1, size - 1);
+  context.fillStyle = "rgba(102, 130, 143, 0.55)";
+  for (const wall of frame.walls) context.fillRect(wall.x, wall.y, wall.width, wall.height);
+  context.fillStyle = "#8fe9ff";
+  for (const orb of frame.energy) context.fillRect(orb.x - 1.5, orb.y - 1.5, 3, 3);
+  context.fillStyle = "#f2c14e";
+  for (const orb of frame.skillOrbs) context.fillRect(orb.x - 2, orb.y - 2, 4, 4);
+  if (frame.capturePoint) {
+    context.strokeStyle = frame.capturePoint.state === "contested" ? "#ff5a5f" : "#ffd166";
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(frame.capturePoint.x, frame.capturePoint.y, Math.max(4, frame.capturePoint.radius), 0, Math.PI * 2);
+    context.stroke();
+  }
+  for (const marker of frame.players) {
+    context.fillStyle = marker.kind === "local" ? "#ffffff" : marker.color;
+    context.beginPath();
+    context.arc(marker.x, marker.y, marker.kind === "local" ? 4 : 3, 0, Math.PI * 2);
+    context.fill();
+  }
 }

@@ -224,6 +224,10 @@ describe("authoritative simulation", () => {
     expect(world.players.get("red")?.assists).toBe(1);
     expect(world.players.get("blue")?.deaths).toBe(1);
     expect(world.players.get("blue")?.damageTaken).toBe(100);
+    expect(worldToSnapshot(world).players.find((player) => player.id === "blue")).toMatchObject({
+      lastDamageSourceId: "gold",
+      lastDamagedAt: world.now,
+    });
   });
 
   it("tracks authoritative killstreaks and resets the streak when the killer dies", () => {
@@ -540,6 +544,10 @@ describe("authoritative simulation", () => {
     expect(world.phase).toBe("finished");
     expect(world.winnerIds).toEqual(["red"]);
     expect(world.finishedAt).toBe(world.now);
+    expect(worldToSnapshot(world)).toMatchObject({
+      matchMvpId: "red",
+      matchMvpScore: expect.any(Number),
+    });
   });
 
   it("does not consume hold time in the frame that creates a new holder", () => {
@@ -699,6 +707,7 @@ describe("authoritative simulation", () => {
     expect(world.phase).toBe("finished");
     expect(world.winnerIds).toEqual(["red"]);
     expect(world.finishedAt).toBe(world.now);
+    expect(worldToSnapshot(world).matchMvpId).toBe("red");
   });
 
   it("does not resolve projectile hits after the eight-minute cutoff", () => {

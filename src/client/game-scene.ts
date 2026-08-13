@@ -205,6 +205,10 @@ export class GameRenderer {
     this.scene.setExclusiveSkillPreview(state);
   }
 
+  getCameraWorldView(): { x: number; y: number; width: number; height: number } | null {
+    return this.scene.getCameraWorldView();
+  }
+
   destroy(): void {
     this.resizeObserver?.disconnect();
     window.removeEventListener("resize", this.resizeForHiDpi);
@@ -392,6 +396,12 @@ class ArenaScene extends Phaser.Scene {
     const dy = clientY - bounds.top - screenY;
     const length = Math.hypot(dx, dy);
     return length > 0.001 ? { x: dx / length, y: dy / length } : { x: 0, y: 0 };
+  }
+
+  getCameraWorldView(): { x: number; y: number; width: number; height: number } | null {
+    if (!this.ready) return null;
+    const view = this.cameras.main.worldView;
+    return { x: view.x, y: view.y, width: view.width, height: view.height };
   }
 
   setExclusiveSkillPreview(state: SkillIndicatorState | null): void {

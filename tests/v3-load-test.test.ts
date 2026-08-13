@@ -18,6 +18,8 @@ const emptySnapshot = (overrides: Partial<GameSnapshot> = {}): GameSnapshot => (
   holderId: null,
   holdRemainingMs: null,
   finishedAt: null,
+  matchMvpId: null,
+  matchMvpScore: null,
   players: [],
   projectiles: [],
   energy: [],

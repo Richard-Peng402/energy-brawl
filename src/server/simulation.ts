@@ -33,6 +33,7 @@ import type { SkillType } from "../shared/skill-catalog";
 import { firstWallHit, moveCircleSafely, moveCircleUntilBlocked, sweepCircleCircle } from "../shared/collision";
 import { StaticSpatialIndex } from "../shared/spatial-index";
 import { circleHitsCircle, clamp, distanceSquared, normalize } from "../shared/math";
+import { selectMatchMvp } from "../shared/match-results";
 import {
   advanceSkillSystem,
   acceptSkillAction,
@@ -93,6 +94,8 @@ export interface GameWorld {
   holderId: string | null;
   holdRemainingMs: number | null;
   finishedAt: number | null;
+  matchMvpId: string | null;
+  matchMvpScore: number | null;
   players: Map<string, WorldPlayer>;
   projectiles: Map<string, WorldProjectile>;
   energy: Map<string, EnergySnapshot>;
@@ -160,6 +163,8 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
       healingDone: 0,
       damageTaken: 0,
       skillContribution: 0,
+      lastDamageSourceId: null,
+      lastDamagedAt: null,
       alive: true,
       respawnAt: null,
       shieldUntil: now + SPAWN_SHIELD_MS,
@@ -191,6 +196,8 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
     holderId: null,
     holdRemainingMs: null,
     finishedAt: null,
+    matchMvpId: null,
+    matchMvpScore: null,
     players,
     projectiles: new Map(),
     energy: new Map(),
@@ -317,6 +324,8 @@ export function damagePlayer(
   if (attacker && attacker.id !== victim.id) {
     attacker.damageDealt = (attacker.damageDealt ?? 0) + roundedDamage;
     victim.recentDamageSources.set(attacker.id, world.now);
+    victim.lastDamageSourceId = attacker.id;
+    victim.lastDamagedAt = world.now;
   }
   victim.health = Math.max(0, victim.health - healthDamage);
   if (victim.health > 0) return true;
@@ -426,6 +435,8 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     holderId: world.holderId,
     holdRemainingMs: world.holdRemainingMs,
     finishedAt: world.finishedAt,
+    matchMvpId: world.matchMvpId,
+    matchMvpScore: world.matchMvpScore,
     players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, ...player }) => player),
     projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, ...projectile }) => projectile),
     energy: [...world.energy.values()],
@@ -466,7 +477,7 @@ function advanceWorldCapturePoint(world: GameWorld, deltaMs: number): void {
     (world.captureScores.get(teamId) ?? 0) + deltaMs / 1_000,
   );
   world.captureScores.set(teamId, score);
-  if (isCapturePointComplete(score)) finishMatch(world, playerIdsForTeam(world, teamId));
+  if (isCapturePointComplete(score)) finishWorldMatch(world, playerIdsForTeam(world, teamId));
 }
 
 function executeSkill(world: GameWorld, player: WorldPlayer, skill: SkillType): boolean {
@@ -818,7 +829,7 @@ function safePlayerPosition(world: GameWorld, player: WorldPlayer, delta: Vec2):
 function finishNormalTime(world: GameWorld): void {
   if (isCaptureMode(world.matchMode)) {
     const leadingTeams = leadingCaptureTeamIds(world);
-    if (leadingTeams.length === 1) finishMatch(world, playerIdsForTeam(world, leadingTeams[0]!));
+    if (leadingTeams.length === 1) finishWorldMatch(world, playerIdsForTeam(world, leadingTeams[0]!));
     else {
       world.phase = "overtime";
       world.overtimePlayerIds = leadingTeams.flatMap((teamId) => playerIdsForTeam(world, teamId));
@@ -829,12 +840,12 @@ function finishNormalTime(world: GameWorld): void {
   if (world.matchMode !== "solo") {
     const leadingTeams = leadingTeamIds(world);
     if (leadingTeams.length === 1) {
-      finishMatch(world, playerIdsForTeam(world, leadingTeams[0]!));
+      finishWorldMatch(world, playerIdsForTeam(world, leadingTeams[0]!));
       return;
     }
   }
   if (leaders.length === 1) {
-    finishMatch(world, leaders);
+    finishWorldMatch(world, leaders);
     return;
   }
   world.phase = "overtime";
@@ -848,7 +859,7 @@ function handleScoreChange(world: GameWorld, scorerId: string): void {
   if (isCaptureMode(world.matchMode)) return;
   if (world.phase === "overtime" && world.overtimePlayerIds.includes(scorerId)) {
     const scorer = world.players.get(scorerId);
-    finishMatch(world, world.matchMode !== "solo" && scorer?.teamId ? playerIdsForTeam(world, scorer.teamId) : [scorerId]);
+    finishWorldMatch(world, world.matchMode !== "solo" && scorer?.teamId ? playerIdsForTeam(world, scorer.teamId) : [scorerId]);
     return;
   }
   if (world.phase === "playing") refreshHolder(world);
@@ -920,7 +931,7 @@ function advanceHold(world: GameWorld, deltaMs: number): void {
   world.holdRemainingMs = Math.max(0, world.holdRemainingMs - deltaMs);
   if (world.holdRemainingMs === 0) {
     const holder = world.players.get(world.holderId);
-    finishMatch(world, world.matchMode !== "solo" && holder?.teamId ? playerIdsForTeam(world, holder.teamId) : [world.holderId]);
+    finishWorldMatch(world, world.matchMode !== "solo" && holder?.teamId ? playerIdsForTeam(world, holder.teamId) : [world.holderId]);
   }
 }
 
@@ -928,10 +939,13 @@ function isFinished(world: GameWorld): boolean {
   return world.phase === "finished";
 }
 
-function finishMatch(world: GameWorld, winnerIds: string[]): void {
+export function finishWorldMatch(world: GameWorld, winnerIds: string[]): void {
   world.phase = "finished";
   world.winnerIds = winnerIds;
   world.finishedAt = world.now;
+  const mvp = selectMatchMvp([...world.players.values()]);
+  world.matchMvpId = mvp.playerId;
+  world.matchMvpScore = mvp.score;
   world.projectiles.clear();
   for (const player of world.players.values()) {
     player.input = { ...EMPTY_INPUT, seq: player.lastProcessedInput };
@@ -945,7 +959,7 @@ export function forceWorldWinner(world: GameWorld, playerId: string): boolean {
   if (world.phase === "finished" || !player) return false;
   // Keep the scoreboard and winnerIds consistent so every client renders the same winner.
   player.score = Math.max(player.score, TARGET_SCORE);
-  finishMatch(world, [playerId]);
+  finishWorldMatch(world, [playerId]);
   return true;
 }
 
@@ -953,6 +967,6 @@ export function forceWorldTeamWinner(world: GameWorld, teamId: TeamId): boolean 
   if (world.phase === "finished") return false;
   const winnerIds = playerIdsForTeam(world, teamId);
   if (winnerIds.length === 0) return false;
-  finishMatch(world, winnerIds);
+  finishWorldMatch(world, winnerIds);
   return true;
 }
