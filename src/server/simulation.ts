@@ -28,6 +28,7 @@ import { getMapDefinition, type MapId } from "../shared/map-catalog";
 import { getModeDefinition, isCaptureMode, TEAM_IDS, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import { advanceCapturePoint, createCapturePointState, DEFAULT_CAPTURE_POINT_CONFIG, isCapturePointComplete, type CapturePointState } from "../shared/capture-point";
 import { applyExclusiveSkill, advanceExclusiveSkillEffects, clearExclusiveSkillState, isExclusiveEffectActive, type ExclusiveRuntimeState } from "./exclusive-skill-system";
+import { addStatusEffect, clearAllStatusEffects, clearPurifiableStatus, expireStatusEffects, hasActiveStatusEffect, type StatusEffectStore } from "./status-effects";
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import type { SkillType } from "../shared/skill-catalog";
 import { firstWallHit, moveCircleSafely, moveCircleUntilBlocked, sweepCircleCircle } from "../shared/collision";
@@ -78,6 +79,7 @@ export interface WorldPlayer extends PlayerSnapshot {
   killStreak: number;
   exclusiveSkillState?: ExclusiveRuntimeState | null;
   recentDamageSources: Map<string, number>;
+  statusEffects: StatusEffectStore;
 }
 
 export interface WorldProjectile extends ProjectileSnapshot {
@@ -185,6 +187,7 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
       exclusiveSkillReadyAt: now,
       exclusiveSkillState: null,
       recentDamageSources: new Map(),
+      statusEffects: new Map(),
     });
   });
 
@@ -271,6 +274,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
   if (isFinished(world)) return;
 
   for (const player of world.players.values()) {
+    expireStatusEffects(player.statusEffects, world.now);
     if (player.skillShieldUntil <= world.now) player.skillShieldHealth = 0;
     if (!player.alive) {
       if (player.respawnAt !== null && world.now >= player.respawnAt) respawnPlayer(world, player);
@@ -318,7 +322,7 @@ export function damagePlayer(
   if (attacker && attacker.id !== victim.id) markCombat(attacker, world.now);
 
   if (victim.skillShieldUntil <= world.now) victim.skillShieldHealth = 0;
-  const reducedAmount = attacker && isExclusiveEffectActive(victim, "mobile-bulwark", world.now) && isInFront(victim, attacker) ? amount * 0.45 : amount;
+  const reducedAmount = attacker && isExclusiveEffectActive(victim, "mobile-bulwark", world.now) && isInFront(victim, attacker) ? amount * 0.55 : amount;
   const absorbed = Math.min(victim.skillShieldHealth, reducedAmount);
   victim.skillShieldHealth -= absorbed;
   const healthDamage = reducedAmount - absorbed;
@@ -345,6 +349,7 @@ export function damagePlayer(
   victim.deaths = (victim.deaths ?? 0) + 1;
   clearSkillSlot(victim);
   clearExclusiveSkillState(victim);
+  clearAllStatusEffects(victim.statusEffects);
 
   if (attacker && attacker.id !== victim.id) {
     attacker.killStreak += 1;
@@ -413,12 +418,21 @@ export function applyWorldExclusiveSkill(world: GameWorld, playerId: string, dir
   const result = applyExclusiveSkill(player, world.now, direction);
   if (!result.ok) return false;
   player.skillContribution = (player.skillContribution ?? 0) + 1;
+  if (result.definition.id === "phase-shift") {
+    addStatusEffect(player.statusEffects, "phase-fire-lock", world.now, result.definition.balance.fireLockDurationMs ?? 250);
+    addStatusEffect(player.statusEffects, "phase-reveal", world.now, result.definition.balance.revealDurationMs ?? 1_200);
+  }
   if (result.definition.id === "pulse-heal") {
+    const selfHealed = Math.min(player.maxHealth - player.health, result.definition.balance.selfHeal ?? 28);
+    player.health += selfHealed;
+    player.healingDone = (player.healingDone ?? 0) + selfHealed;
+    clearPurifiableStatus(player.statusEffects);
     for (const ally of world.players.values()) {
-      if (ally.id !== player.id && ally.alive && ally.teamId !== null && ally.teamId === player.teamId && distanceSquared(ally, player) <= 280 * 280) {
-        const healed = Math.min(ally.maxHealth - ally.health, 30);
+      if (world.matchMode !== "solo" && ally.id !== player.id && ally.alive && ally.teamId !== null && ally.teamId === player.teamId && distanceSquared(ally, player) <= (result.definition.balance.radius ?? 280) ** 2) {
+        const healed = Math.min(ally.maxHealth - ally.health, result.definition.balance.allyHeal ?? 34);
         ally.health += healed;
         player.healingDone = (player.healingDone ?? 0) + healed;
+        clearPurifiableStatus(ally.statusEffects);
       }
     }
   }
@@ -551,7 +565,7 @@ function isInFront(defender: WorldPlayer, attacker: WorldPlayer): boolean {
 
 function movePlayer(world: GameWorld, player: WorldPlayer, deltaMs: number): void {
   const direction = normalize({ x: player.input.moveX, y: player.input.moveY });
-  const speedMultiplier = isExclusiveEffectActive(player, "capacitor-overload", world.now) ? 1.2 : isExclusiveEffectActive(player, "afterimage-run", world.now) ? 1.35 : 1;
+  const speedMultiplier = isExclusiveEffectActive(player, "capacitor-overload", world.now) ? 1.15 : isExclusiveEffectActive(player, "afterimage-run", world.now) ? 1.28 : 1;
   player.vx = direction.x * player.moveSpeed * speedMultiplier;
   player.vy = direction.y * player.moveSpeed * speedMultiplier;
   const seconds = deltaMs / 1_000;
@@ -574,10 +588,11 @@ function updateAimAndFire(world: GameWorld, player: WorldPlayer): void {
     const aim = normalize({ x: player.input.aimX, y: player.input.aimY });
     player.angle = Math.atan2(aim.y, aim.x);
     if (player.input.firing && world.now >= player.nextFireAt) {
-      const runnerDamage = isExclusiveEffectActive(player, "afterimage-run", world.now) ? player.damage * 1.2 : player.damage;
+      if (hasActiveStatusEffect(player.statusEffects, "phase-fire-lock", world.now)) return;
+      const runnerDamage = isExclusiveEffectActive(player, "afterimage-run", world.now) ? player.damage * 1.15 : player.damage;
       spawnProjectile(world, player, player.angle, runnerDamage);
       const overloadMultiplier = isExclusiveEffectActive(player, "capacitor-overload", world.now) ? 0.7 : 1;
-      const fortressSlow = [...world.players.values()].some((enemy) => enemy.alive && enemy.teamId != null && enemy.teamId !== player.teamId && isExclusiveEffectActive(enemy, "mobile-bulwark", world.now) && distanceSquared(enemy, player) <= 240 * 240) ? 1.3 : 1;
+      const fortressSlow = [...world.players.values()].some((enemy) => enemy.alive && enemy.teamId != null && enemy.teamId !== player.teamId && isExclusiveEffectActive(enemy, "mobile-bulwark", world.now) && distanceSquared(enemy, player) <= 240 * 240) ? 1.25 : 1;
       player.nextFireAt = world.now + player.fireCooldownMs * overloadMultiplier * fortressSlow;
     }
   }
@@ -707,6 +722,7 @@ function respawnPlayer(world: GameWorld, player: WorldPlayer): void {
   player.nextFireAt = world.now;
   player.lastCombatAt = world.now;
   player.regenAccumulatorMs = 0;
+  clearAllStatusEffects(player.statusEffects);
 }
 
 function markCombat(player: WorldPlayer, now: number): void {

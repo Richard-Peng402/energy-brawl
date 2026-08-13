@@ -21,6 +21,7 @@ import { circleHitsCircle, circleHitsRect } from "../src/shared/math";
 import { getCharacter } from "../src/shared/character-catalog";
 import {
   applyPlayerInput,
+  applyWorldExclusiveSkill,
   applyWorldSkillAction,
   collectEnergy,
   collectWorldSkillOrb,
@@ -44,6 +45,55 @@ function createWorld() {
 const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
 
 describe("authoritative simulation", () => {
+  it("uses v4.5 base stats and blocks Phase fire during its exit lock", () => {
+    const world = createGameWorld([
+      { id: "phase", nickname: "相位", characterId: "phase", isBot: false },
+      { id: "target", nickname: "目标", characterId: "medic", isBot: false },
+    ], 0, "solo");
+    const phase = world.players.get("phase")!;
+    expect(phase).toMatchObject({ maxHealth: 88, damage: 30, fireCooldownMs: 900, moveSpeed: 248, projectileSpeed: 880 });
+    phase.shieldUntil = 0;
+    expect(applyWorldExclusiveSkill(world, phase.id, { x: 1, y: 0 })).toBe(true);
+    phase.input = { seq: 1, moveX: 0, moveY: 0, aimX: 1, aimY: 0, firing: true };
+    stepWorld(world, 100);
+    expect(world.projectiles.size).toBe(0);
+    stepWorld(world, 200);
+    expect(world.projectiles.size).toBe(1);
+  });
+
+  it("applies Fortress protection only to its forward sector", () => {
+    const world = createGameWorld([
+      { id: "fortress", nickname: "堡垒", characterId: "fortress", isBot: false, teamId: "red" },
+      { id: "enemy", nickname: "敌人", characterId: "blaze", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    const fortress = world.players.get("fortress")!;
+    const enemy = world.players.get("enemy")!;
+    fortress.shieldUntil = 0;
+    enemy.shieldUntil = 0;
+    fortress.x = 1_000; fortress.y = 800; fortress.angle = 0;
+    enemy.x = 1_100; enemy.y = 800;
+    expect(applyWorldExclusiveSkill(world, fortress.id, { x: 1, y: 0 })).toBe(true);
+    damagePlayer(world, fortress.id, enemy.id, 20);
+    expect(fortress.health).toBe(fortress.maxHealth - 11);
+    fortress.health = fortress.maxHealth;
+    enemy.x = 900;
+    damagePlayer(world, fortress.id, enemy.id, 20);
+    expect(fortress.health).toBe(fortress.maxHealth - 20);
+  });
+
+  it("does not heal teammates with Pulse Heal in solo mode", () => {
+    const world = createGameWorld([
+      { id: "medic", nickname: "医师", characterId: "medic", isBot: false, teamId: null },
+      { id: "ally", nickname: "队友", characterId: "blaze", isBot: false, teamId: null },
+    ], 0, "solo");
+    const medic = world.players.get("medic")!;
+    const ally = world.players.get("ally")!;
+    medic.shieldUntil = 0; ally.shieldUntil = 0;
+    medic.health = 50; ally.health = 40;
+    expect(applyWorldExclusiveSkill(world, medic.id, { x: 1, y: 0 })).toBe(true);
+    expect(medic.health).toBe(78);
+    expect(ally.health).toBe(40);
+  });
   it("spawns neon energy outside every wall", () => {
     const world = createGameWorld([
       { id: "player", nickname: "player", characterId: "blaze", isBot: false },
@@ -269,14 +319,14 @@ describe("authoritative simulation", () => {
     stepWorld(world, SPAWN_SHIELD_MS + 1);
 
     damagePlayer(world, "blue", "red", 25);
-    damagePlayer(world, "blue", "gold", 75);
+    damagePlayer(world, "blue", "gold", world.players.get("blue")!.health);
 
     expect(world.players.get("red")?.damageDealt).toBe(25);
-    expect(world.players.get("gold")?.damageDealt).toBe(75);
+    expect(world.players.get("gold")?.damageDealt).toBe(83);
     expect(world.players.get("gold")?.kills).toBe(1);
     expect(world.players.get("red")?.assists).toBe(1);
     expect(world.players.get("blue")?.deaths).toBe(1);
-    expect(world.players.get("blue")?.damageTaken).toBe(100);
+    expect(world.players.get("blue")?.damageTaken).toBe(108);
     expect(worldToSnapshot(world).players.find((player) => player.id === "blue")).toMatchObject({
       lastDamageSourceId: "gold",
       lastDamagedAt: world.now,
@@ -672,7 +722,7 @@ describe("authoritative simulation", () => {
     collectEnergy(world, "red", [...world.energy.keys()][0]!);
     holder.shieldUntil = 0;
 
-    damagePlayer(world, "red", "blue", MAX_HEALTH);
+    damagePlayer(world, "red", "blue", world.players.get("red")!.health);
 
     expect(world.players.get("blue")!.score).toBe(KILL_SCORE + HOLDER_KILL_BONUS);
   });
@@ -806,7 +856,7 @@ describe("authoritative simulation", () => {
     });
     stepWorld(world, 50);
 
-    expect(Math.hypot(player.vx, player.vy)).toBeLessThanOrEqual(265.001);
+    expect(Math.hypot(player.vx, player.vy)).toBeLessThanOrEqual(272.001);
     expect(player.lastProcessedInput).toBe(1);
   });
 
