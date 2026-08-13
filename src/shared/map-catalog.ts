@@ -14,6 +14,7 @@ export interface MapDefinition {
   spawnPointsByMode?: Partial<Record<MatchMode, readonly Vec2[]>>;
   energySpawnPoints: readonly Vec2[];
   skillOrbSpawnPoints: readonly Vec2[];
+  capturePointCenter: Vec2;
 }
 
 const neonWalls: readonly Rect[] = [
@@ -51,18 +52,21 @@ export const MAP_CATALOG: readonly MapDefinition[] = [
   {
     id: "reactor-core", name: "反应堆核心", theme: "reactor", walls: WALLS, spawnPoints: SPAWN_POINTS,
     energySpawnPoints: ENERGY_SPAWN_POINTS, skillOrbSpawnPoints: SKILL_ORB_SPAWN_POINTS,
+    capturePointCenter: { x: 1_440, y: 810 },
   },
   {
     id: "neon-docks", name: "霓虹港区", theme: "neon", walls: neonWalls, spawnPoints: neonSpawns,
     spawnPointsByMode: { team3v3: teamSpawns(300, ARENA_WIDTH - 300), domination3v3: teamSpawns(300, ARENA_WIDTH - 300), domination2v2v2: neonSpawns },
-    energySpawnPoints: [{ x: ARENA_WIDTH / 2, y: 420 }, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT - 420 }, { x: 760, y: ARENA_HEIGHT / 2 }, { x: ARENA_WIDTH - 760, y: ARENA_HEIGHT / 2 }, { x: 760, y: 420 }, { x: ARENA_WIDTH - 760, y: ARENA_HEIGHT - 420 }],
+    energySpawnPoints: [{ x: ARENA_WIDTH / 2, y: 520 }, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT - 520 }, { x: 760, y: ARENA_HEIGHT / 2 }, { x: ARENA_WIDTH - 760, y: ARENA_HEIGHT / 2 }, { x: 760, y: 420 }, { x: ARENA_WIDTH - 760, y: ARENA_HEIGHT - 420 }],
     skillOrbSpawnPoints: [{ x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 }, { x: 620, y: 470 }, { x: ARENA_WIDTH - 620, y: 470 }, { x: 620, y: ARENA_HEIGHT - 470 }, { x: ARENA_WIDTH - 620, y: ARENA_HEIGHT - 470 }],
+    capturePointCenter: { x: 1_440, y: 620 },
   },
   {
     id: "crystal-ruins", name: "晶脉遗迹", theme: "crystal", walls: crystalWalls, spawnPoints: crystalSpawns,
     spawnPointsByMode: { team3v3: teamSpawns(360, ARENA_WIDTH - 360), domination3v3: teamSpawns(360, ARENA_WIDTH - 360), domination2v2v2: crystalSpawns },
     energySpawnPoints: [{ x: ARENA_WIDTH / 2, y: 420 }, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT - 420 }, { x: 880, y: ARENA_HEIGHT / 2 }, { x: ARENA_WIDTH - 880, y: ARENA_HEIGHT / 2 }, { x: 620, y: 760 }, { x: ARENA_WIDTH - 620, y: 760 }],
     skillOrbSpawnPoints: [{ x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 }, { x: 920, y: 420 }, { x: ARENA_WIDTH - 920, y: 420 }, { x: 920, y: ARENA_HEIGHT - 420 }, { x: ARENA_WIDTH - 920, y: ARENA_HEIGHT - 420 }],
+    capturePointCenter: { x: 1_440, y: 590 },
   },
 ];
 
@@ -76,4 +80,3 @@ export function resolveMapSelection(selection: MapSelection, previousId: MapId |
   const index = Math.min(candidates.length - 1, Math.max(0, Math.floor(randomValue * candidates.length)));
   return candidates[index] ?? MAP_CATALOG[0]!;
 }
-

@@ -21,6 +21,7 @@ import {
 } from "./asset-registry";
 import { resolveCameraView, shouldSnapCameraOnRespawn } from "./camera-follow";
 import { CombatAudio } from "./combat-audio";
+import { teamLabel } from "./team-label";
 import {
   effectCapacity,
   projectileAngle,
@@ -553,7 +554,8 @@ class ArenaScene extends Phaser.Scene {
       const weaponTransform = resolveWeaponTransform(player.angle, PLAYER_RADIUS + 10);
       view.weapon.setRotation(weaponTransform.rotation).setPosition(weaponTransform.x, weaponTransform.y);
       view.container.setAlpha(player.alive ? 1 : 0.62);
-      view.name.setText(player.isBot ? `${player.nickname} · AI` : player.nickname);
+      const identity = snapshot.matchMode === "solo" ? player.nickname : `[${teamLabel(player.teamId)}] ${player.nickname}`;
+      view.name.setText(player.isBot ? `${identity} · AI` : identity);
       view.healthFill.width = 72 * (player.health / player.maxHealth);
       view.healthFill.setFillStyle(player.health <= 25 ? 0xff5a5f : 0x31d0aa);
       this.syncShield(view, player, snapshot.serverTime);

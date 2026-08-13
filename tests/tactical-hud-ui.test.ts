@@ -23,6 +23,12 @@ describe("v4.4 tactical HUD UI", () => {
     expect(styles).toContain(".result-row.is-mvp");
   });
 
+  it("labels team identity in the lobby roster and in-match leaderboard", () => {
+    expect(app).toContain("teamLabel(player.teamId)");
+    expect(app).toContain("leader-team");
+    expect(app).toContain("teamLabel(own?.teamId)");
+  });
+
   it("keeps radar and cues outside both landscape touch-stick zones", () => {
     const compact = extractBlock(styles, "@media (max-width: 720px) and (orientation: landscape)");
     expect(compact).toContain(".tactical-radar");

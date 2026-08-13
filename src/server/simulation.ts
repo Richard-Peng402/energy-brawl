@@ -32,7 +32,7 @@ import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import type { SkillType } from "../shared/skill-catalog";
 import { firstWallHit, moveCircleSafely, moveCircleUntilBlocked, sweepCircleCircle } from "../shared/collision";
 import { StaticSpatialIndex } from "../shared/spatial-index";
-import { circleHitsCircle, clamp, distanceSquared, normalize } from "../shared/math";
+import { circleHitsCircle, circleHitsRect, clamp, distanceSquared, normalize } from "../shared/math";
 import { selectMatchMvp } from "../shared/match-results";
 import {
   advanceSkillSystem,
@@ -110,6 +110,7 @@ export interface GameWorld {
   teamScores: Map<TeamId, number>;
   captureScores: Map<TeamId, number>;
   capturePoint: CapturePointState | null;
+  capturePointConfig: Readonly<typeof DEFAULT_CAPTURE_POINT_CONFIG>;
   mapId: MapId;
   mapWalls: StaticSpatialIndex;
   mapSpawnPoints: readonly Vec2[];
@@ -216,13 +217,16 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
       TEAM_IDS.slice(0, getModeDefinition(matchMode).teamCount).map((teamId) => [teamId, 0] as const),
     ),
     capturePoint: isCaptureMode(matchMode) ? createCapturePointState() : null,
+    capturePointConfig: { ...DEFAULT_CAPTURE_POINT_CONFIG, center: { ...map.capturePointCenter } },
     mapId,
     mapWalls,
     mapSpawnPoints: spawnPoints,
     mapEnergySpawnPoints: map.energySpawnPoints,
   };
 
-  while (world.energy.size < MAX_ENERGY) spawnEnergy(world);
+  while (world.energy.size < MAX_ENERGY && spawnEnergy(world)) {
+    // Fill every valid configured point once; stop safely if a map has fewer valid points.
+  }
   seedInitialSkillOrbs(world.skillSystem, [...players.values()]);
   return world;
 }
@@ -454,12 +458,12 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
       targetScore: DEFAULT_CAPTURE_POINT_CONFIG.targetProgress,
     })),
     capturePoint: world.capturePoint ? {
-      x: DEFAULT_CAPTURE_POINT_CONFIG.center.x,
-      y: DEFAULT_CAPTURE_POINT_CONFIG.center.y,
-      radius: DEFAULT_CAPTURE_POINT_CONFIG.radius,
+      x: world.capturePointConfig.center.x,
+      y: world.capturePointConfig.center.y,
+      radius: world.capturePointConfig.radius,
       ownerTeamId: world.capturePoint.ownerTeamId,
       progress: world.capturePoint.progress,
-      targetProgress: DEFAULT_CAPTURE_POINT_CONFIG.targetProgress,
+      targetProgress: world.capturePointConfig.targetProgress,
       contestingTeams: [...world.capturePoint.contestingTeams],
       state: world.capturePoint.state,
     } : null,
@@ -469,15 +473,15 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
 
 function advanceWorldCapturePoint(world: GameWorld, deltaMs: number): void {
   if (!world.capturePoint || world.phase === "finished") return;
-  world.capturePoint = advanceCapturePoint(world.capturePoint, [...world.players.values()], deltaMs);
+  world.capturePoint = advanceCapturePoint(world.capturePoint, [...world.players.values()], deltaMs, world.capturePointConfig);
   if (world.capturePoint.state !== "owned" || !world.capturePoint.ownerTeamId || !world.capturePoint.contestingTeams.includes(world.capturePoint.ownerTeamId)) return;
   const teamId = world.capturePoint.ownerTeamId;
   const score = Math.min(
-    DEFAULT_CAPTURE_POINT_CONFIG.targetProgress,
+    world.capturePointConfig.targetProgress,
     (world.captureScores.get(teamId) ?? 0) + deltaMs / 1_000,
   );
   world.captureScores.set(teamId, score);
-  if (isCapturePointComplete(score)) finishWorldMatch(world, playerIdsForTeam(world, teamId));
+  if (isCapturePointComplete(score, world.capturePointConfig)) finishWorldMatch(world, playerIdsForTeam(world, teamId));
 }
 
 function executeSkill(world: GameWorld, player: WorldPlayer, skill: SkillType): boolean {
@@ -671,18 +675,21 @@ function replenishEnergy(world: GameWorld): void {
   world.nextEnergySpawnAt = world.now + ENERGY_RESPAWN_MS;
 }
 
-function spawnEnergy(world: GameWorld): void {
+function spawnEnergy(world: GameWorld): boolean {
   for (let attempt = 0; attempt < world.mapEnergySpawnPoints.length; attempt += 1) {
     const pointIndex = world.nextEnergyPoint++ % world.mapEnergySpawnPoints.length;
     const point = world.mapEnergySpawnPoints[pointIndex];
     if (!point) continue;
     const occupied = [...world.energy.values()].some((energy) => distanceSquared(energy, point) < 4);
-    if (!occupied) {
+    const blocked = world.mapWalls.query({ x: point.x - ENERGY_RADIUS, y: point.y - ENERGY_RADIUS, width: ENERGY_RADIUS * 2, height: ENERGY_RADIUS * 2 })
+      .some((wall) => circleHitsRect(point, ENERGY_RADIUS, wall));
+    if (!occupied && !blocked) {
       const id = `energy-${world.nextEnergyId++}`;
       world.energy.set(id, { id, x: point.x, y: point.y });
-      return;
+      return true;
     }
   }
+  return false;
 }
 
 function respawnPlayer(world: GameWorld, player: WorldPlayer): void {

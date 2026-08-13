@@ -1,9 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { chooseBotDecision } from "../src/server/bot";
+import { chooseBotDecision, selectCombatTarget } from "../src/server/bot";
 import { createGameWorld } from "../src/server/simulation";
 
 describe("bot decisions", () => {
+  it("never selects a teammate as its combat target in team modes", () => {
+    const world = createGameWorld([
+      { id: "bot-1", nickname: "bot", characterId: "medic", isBot: true, teamId: "red" },
+      { id: "ally", nickname: "ally", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "enemy", nickname: "enemy", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    const bot = world.players.get("bot-1")!;
+    const ally = world.players.get("ally")!;
+    const enemy = world.players.get("enemy")!;
+    ally.x = bot.x + 80;
+    ally.y = bot.y;
+    enemy.x = bot.x + 220;
+    enemy.y = bot.y;
+
+    expect(selectCombatTarget(world, bot)?.id).toBe("enemy");
+    const decision = chooseBotDecision(world, bot.id, () => 0.5);
+
+    expect(decision.input.firing).toBe(true);
+    expect(decision.input.aimX).toBeGreaterThan(0);
+    expect(decision.input.aimY).toBeCloseTo(0, 4);
+  });
+
   it("prioritizes the central objective in team modes when not retreating", () => {
     const world = createGameWorld([
       { id: "bot-1", nickname: "bot", characterId: "medic", isBot: true, teamId: "red" },

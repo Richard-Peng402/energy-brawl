@@ -47,7 +47,7 @@ export function advanceCapturePoint(
     .map((player) => player.teamId as TeamId))];
   const next: CapturePointState = { ...current, contestingTeams: teams };
   if (teams.length === 0) {
-    next.state = current.ownerTeamId ? "owned" : "neutral";
+    next.state = current.ownerTeamId && current.progress >= config.targetProgress ? "owned" : current.ownerTeamId ? "capturing" : "neutral";
     return next;
   }
   if (teams.length > 1) {
@@ -59,7 +59,13 @@ export function advanceCapturePoint(
   const delta = Math.max(0, deltaMs) / 1_000 * config.ratePerSecond;
   if (current.ownerTeamId && current.ownerTeamId !== teamId) {
     next.progress = Math.max(0, current.progress - delta);
-    if (next.progress === 0) next.ownerTeamId = null;
+    if (next.progress === 0) {
+      next.ownerTeamId = null;
+      next.state = "neutral";
+      return next;
+    }
+    next.state = "capturing";
+    return next;
   } else {
     next.ownerTeamId = teamId;
     next.progress = Math.min(config.targetProgress, current.progress + delta);

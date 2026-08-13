@@ -23,11 +23,11 @@ export function chooseBotDecision(
   const player = world.players.get(playerId);
   if (!player?.alive || world.phase === "finished") return { input: idleInput(player), useSkill: false };
 
-  const enemy = nearestPlayer(player, [...world.players.values()].filter((candidate) => candidate.id !== player.id && candidate.alive));
+  const enemy = selectCombatTarget(world, player);
   const energy = nearestPoint(player, [...world.energy.values()]);
   const skillOrb = nearestPoint(player, [...world.skillSystem.orbs.values()]);
   const capturePoint = world.capturePoint;
-  const captureTarget = capturePoint ? { x: 1_440, y: 810 } : null;
+  const captureTarget = capturePoint ? world.capturePointConfig.center : null;
   const enemyDistance = enemy ? distanceSquared(player, enemy) : Number.POSITIVE_INFINITY;
   const energyDistance = energy ? distanceSquared(player, energy) : Number.POSITIVE_INFINITY;
 
@@ -72,6 +72,14 @@ export function chooseBotDecision(
       firing: Boolean(enemy && enemyDistance <= FIRE_DISTANCE_SQUARED),
     },
   };
+}
+
+export function selectCombatTarget(world: GameWorld, player: WorldPlayer): WorldPlayer | undefined {
+  return nearestPlayer(player, [...world.players.values()].filter((candidate) =>
+    candidate.id !== player.id
+    && candidate.alive
+    && (world.matchMode === "solo" || player.teamId == null || candidate.teamId !== player.teamId),
+  ));
 }
 
 function idleInput(player: WorldPlayer | undefined): PlayerInput {

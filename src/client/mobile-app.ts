@@ -35,6 +35,7 @@ import { VirtualStick } from "./virtual-stick";
 import { CHARACTER_PREVIEW_CLASSES, getCharacterPreviewMotion } from "./character-preview";
 import { resolveHeldSkillAim, resolveMouseAim, type PointerAim } from "./mouse-aim";
 import { buildRadarFrame, buildTacticalCues } from "./tactical-radar";
+import { teamLabel } from "./team-label";
 
 const NAME_KEY = "energy-brawl.nickname";
 
@@ -635,7 +636,7 @@ export class MobileApp {
           ? `<div class="roster-slot${player.id === this.network.playerId ? " is-you" : ""}">
               <span class="player-dot" style="--player-color:${player.color}"></span>
               <span class="roster-name">${escapeHtml(player.nickname)}</span>
-              <span class="roster-status">${player.isBot ? "AI" : player.ready ? "已准备" : player.connected ? "未准备" : "离线"}</span>
+              <span class="roster-status"><b>${teamLabel(player.teamId)}</b>${player.isBot ? "AI" : player.ready ? "已准备" : player.connected ? "未准备" : "离线"}</span>
             </div>`
           : `<div class="roster-slot is-empty"><span class="slot-number">${index + 1}</span><span class="roster-name">等待加入</span><span class="roster-status">空位</span></div>`,
       )
@@ -666,10 +667,10 @@ export class MobileApp {
     this.find("#target-score").textContent = `${ownTeamScore?.targetScore ?? TARGET_SCORE}`;
     this.find("#team-score").textContent = snapshot.matchMode === "solo"
       ? "个人战"
-      : (snapshot.teamScores ?? []).map((team) => {
+      : `${teamLabel(own?.teamId)} · ${(snapshot.teamScores ?? []).map((team) => {
         const capture = snapshot.captureScores?.find((candidate) => candidate.teamId === team.teamId)?.score ?? 0;
-        return `${team.teamId === "red" ? "红" : team.teamId === "blue" ? "蓝" : "金"} ${team.score}/${team.targetScore} · 据点 ${capture.toFixed(0)}`;
-      }).join(" · ");
+        return `${teamLabel(team.teamId)} ${team.score}/${team.targetScore} · 据点 ${capture.toFixed(0)}`;
+      }).join(" · ")}`;
     const capture = snapshot.capturePoint;
     const captureStatus = this.find("#capture-status");
     if (!capture || snapshot.matchMode === "solo") captureStatus.textContent = "";
@@ -699,7 +700,7 @@ export class MobileApp {
         .slice(0, 4)
         .map(
           (player, index) => `<div class="leader-row${player.id === this.network.playerId ? " is-you" : ""}">
-            <span>${index + 1}</span><i style="--player-color:${player.color}"></i><b>${escapeHtml(player.nickname)}</b><strong>${player.score}</strong>
+            <span>${index + 1}</span><i style="--player-color:${player.color}"></i><em class="leader-team">${teamLabel(player.teamId)}</em><b>${escapeHtml(player.nickname)}</b><strong>${player.score}</strong>
           </div>`,
         )
         .join("");

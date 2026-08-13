@@ -32,6 +32,7 @@ import {
 } from "../src/server/simulation";
 import { PROJECTILE_MAX_DISTANCE } from "../src/shared/constants";
 import { DEFAULT_CAPTURE_POINT_CONFIG } from "../src/shared/capture-point";
+import { getMapDefinition } from "../src/shared/map-catalog";
 
 function createWorld() {
   return createGameWorld([
@@ -43,6 +44,58 @@ function createWorld() {
 const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
 
 describe("authoritative simulation", () => {
+  it("spawns neon energy outside every wall", () => {
+    const world = createGameWorld([
+      { id: "player", nickname: "player", characterId: "blaze", isBot: false },
+    ], 0, "solo", "neon-docks");
+    const map = getMapDefinition("neon-docks");
+
+    expect([...world.energy.values()]).not.toHaveLength(0);
+    expect([...world.energy.values()].every((energy) => map.walls.every((wall) => !circleHitsRect(energy, 18, wall)))).toBe(true);
+  });
+
+  it("uses a map-specific clear center for domination points", () => {
+    const neon = createGameWorld([
+      { id: "red", nickname: "red", characterId: "blaze", isBot: false, teamId: "red" },
+    ], 0, "domination3v3", "neon-docks");
+    const crystal = createGameWorld([
+      { id: "red", nickname: "red", characterId: "blaze", isBot: false, teamId: "red" },
+    ], 0, "domination3v3", "crystal-ruins");
+
+    expect(neon.capturePointConfig.center).toEqual({ x: 1_440, y: 620 });
+    expect(crystal.capturePointConfig.center).toEqual({ x: 1_440, y: 590 });
+    expect(worldToSnapshot(neon).capturePoint).toMatchObject({ x: 1_440, y: 620 });
+    expect(worldToSnapshot(crystal).capturePoint).toMatchObject({ x: 1_440, y: 590 });
+  });
+
+  it.each(["reactor-core", "neon-docks", "crystal-ruins"] as const)("keeps the domination center outside walls on %s", (mapId) => {
+    const world = createGameWorld([{ id: "player", nickname: "player", characterId: "blaze", isBot: false, teamId: "red" }], 0, "domination3v3", mapId);
+    const map = getMapDefinition(mapId);
+    expect(map.walls.every((wall) => !circleHitsRect(world.capturePointConfig.center, world.capturePointConfig.radius * 0.45, wall))).toBe(true);
+  });
+
+  it("scores only while the fully captured team remains uncontested", () => {
+    const world = createGameWorld([
+      { id: "red", nickname: "red", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "blue", nickname: "blue", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "domination3v3", "reactor-core");
+    const red = world.players.get("red")!;
+    const blue = world.players.get("blue")!;
+    red.x = world.capturePointConfig.center.x;
+    red.y = world.capturePointConfig.center.y;
+    blue.x = 200;
+    blue.y = 200;
+    stepWorld(world, 70_000);
+    expect(world.capturePoint?.state).toBe("owned");
+    expect(world.captureScores.get("red")).toBeGreaterThan(0);
+    const scoreBeforeContest = world.captureScores.get("red") ?? 0;
+    blue.x = red.x;
+    blue.y = red.y;
+    stepWorld(world, 1_000);
+    expect(world.capturePoint?.state).toBe("contested");
+    expect(world.captureScores.get("red")).toBe(scoreBeforeContest);
+  });
+
   it("advances and broadcasts the central objective only in team modes", () => {
     const world = createGameWorld([
       { id: "red-1", nickname: "红一", characterId: "blaze", isBot: false, teamId: "red" },

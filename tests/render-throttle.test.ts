@@ -80,10 +80,12 @@ describe("mobile render throttling", () => {
   it("keeps the room UI revision stable across game snapshots", () => {
     expect(roomUiRevision(room())).toBe(roomUiRevision(room()));
     expect(roomUiRevision(room())).not.toBe(roomUiRevision({ ...room(), players: [{ ...room().players[0]!, ready: true }] }));
+    expect(roomUiRevision(room())).not.toBe(roomUiRevision({ ...room(), players: [{ ...room().players[0]!, teamId: "red" }] }));
   });
 
   it("changes the leaderboard revision only when visible ranking data changes", () => {
     expect(gameLeaderboardRevision(game(), "player-1")).toBe(gameLeaderboardRevision({ ...game(), serverTime: 200 }, "player-1"));
     expect(gameLeaderboardRevision(game(), "player-1")).not.toBe(gameLeaderboardRevision(game(1), "player-1"));
+    expect(gameLeaderboardRevision(game(), "player-1")).not.toBe(gameLeaderboardRevision({ ...game(), players: [{ ...game().players[0]!, teamId: "blue" }] }, "player-1"));
   });
 });

@@ -530,10 +530,10 @@ button:disabled {
   min-width: 0;
   height: 52px;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: 10px minmax(0, 1fr) minmax(0, auto);
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: 4px;
+  padding: 0 7px;
   border-right: 1px solid #303a40;
   border-bottom: 1px solid #303a40;
   background: #1d2429;
@@ -583,6 +583,13 @@ button:disabled {
   white-space: nowrap;
 }
 
+.roster-status b {
+  display: inline-block;
+  margin-right: 3px;
+  color: #dff7ff;
+  font-size: 8px;
+}
+
 .ready-button {
   width: calc(100% - 24px);
   margin: 12px;
@@ -592,6 +599,20 @@ button:disabled {
 
 .ready-button.is-ready {
   background: #ff5a5f;
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .roster-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .roster-slot:nth-child(3n) {
+    border-right: 1px solid #303a40;
+  }
+
+  .roster-slot:nth-child(2n) {
+    border-right: 0;
+  }
 }
 
 .arena-screen,
@@ -899,12 +920,20 @@ button:disabled {
 .leader-row {
   height: 27px;
   display: grid;
-  grid-template-columns: 18px 10px minmax(0, 1fr) 24px;
+  grid-template-columns: 18px 10px 27px minmax(0, 1fr) 24px;
   align-items: center;
   gap: 6px;
   padding: 0 8px;
   border-bottom: 1px solid rgb(255 255 255 / 7%);
   font-size: 10px;
+}
+
+.leader-team {
+  color: #a8dfff;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .leader-row:last-child {
