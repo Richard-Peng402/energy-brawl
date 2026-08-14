@@ -20,6 +20,26 @@ describe("game room", () => {
     expect(room.setMapSelection("neon-docks")).toMatchObject({ ok: false });
   });
 
+  it("creates a fresh map-mechanic lifecycle after returning to the lobby", () => {
+    const room = new GameRoom();
+    const joined = join(room, "socket-map-reset", "机制玩家", "blaze");
+    room.setReady("socket-map-reset", true);
+    expect(room.startMatch()).toEqual({ ok: true });
+    room.tick(25_000);
+    expect(room.gameSnapshot()?.mapMechanic).toMatchObject({ phase: "active", round: 0 });
+
+    expect(room.applyHostAdminCommand({ type: "forceWinner", playerId: joined.data!.playerId })).toEqual({ ok: true });
+    expect(room.returnToLobby("socket-map-reset")).toEqual({ ok: true });
+    room.setReady("socket-map-reset", true);
+    expect(room.startMatch()).toEqual({ ok: true });
+    expect(room.gameSnapshot()?.mapMechanic).toMatchObject({
+      phase: "idle",
+      round: 0,
+      phaseStartedAt: 25_000,
+      phaseEndsAt: 45_000,
+    });
+  });
+
   it("selects a team mode only in the lobby and carries balanced teams into the match", () => {
     const room = new GameRoom();
     expect(room.setMatchMode("team3v3")).toEqual({ ok: true });

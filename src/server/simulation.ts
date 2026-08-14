@@ -25,6 +25,7 @@ import {
 } from "../shared/constants";
 import { getCharacter, MEDIC_ENERGY_HEAL, type CharacterId } from "../shared/character-catalog";
 import { getMapDefinition, type MapId } from "../shared/map-catalog";
+import { zoneContainsPoint } from "../shared/map-mechanics";
 import { getModeDefinition, isCaptureMode, TEAM_IDS, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import { advanceCapturePoint, createCapturePointState, DEFAULT_CAPTURE_POINT_CONFIG, isCapturePointComplete, type CapturePointState } from "../shared/capture-point";
 import { applyExclusiveSkill, advanceExclusiveSkillEffects, clearExclusiveSkillState, isExclusiveEffectActive, type ExclusiveRuntimeState } from "./exclusive-skill-system";
@@ -61,6 +62,12 @@ import type {
   ProjectileSnapshot,
   Vec2,
 } from "../shared/protocol";
+import {
+  advanceMapMechanicState,
+  createMapMechanicState,
+  mapMechanicSnapshot,
+  type MapMechanicState,
+} from "./map-mechanic-system";
 
 export interface PlayerSeed {
   id: string;
@@ -117,6 +124,12 @@ export interface GameWorld {
   mapWalls: StaticSpatialIndex;
   mapSpawnPoints: readonly Vec2[];
   mapEnergySpawnPoints: readonly Vec2[];
+  mapMechanicsEnabled: boolean;
+  mapMechanicState: MapMechanicState | null;
+}
+
+export interface CreateGameWorldOptions {
+  mapMechanicsEnabled?: boolean;
 }
 
 const EMPTY_INPUT: PlayerInput = {
@@ -128,8 +141,15 @@ const EMPTY_INPUT: PlayerInput = {
   firing: false,
 };
 
-export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode: MatchMode = "solo", mapId: MapId = "reactor-core"): GameWorld {
+export function createGameWorld(
+  seeds: readonly PlayerSeed[],
+  now = 0,
+  matchMode: MatchMode = "solo",
+  mapId: MapId = "reactor-core",
+  options: CreateGameWorldOptions = {},
+): GameWorld {
   const map = getMapDefinition(mapId);
+  const mapMechanicsEnabled = options.mapMechanicsEnabled ?? true;
   const mapWalls = new StaticSpatialIndex(map.walls);
   const spawnPoints = map.spawnPointsByMode?.[matchMode] ?? map.spawnPoints;
   const players = new Map<string, WorldPlayer>();
@@ -225,6 +245,8 @@ export function createGameWorld(seeds: readonly PlayerSeed[], now = 0, matchMode
     mapWalls,
     mapSpawnPoints: spawnPoints,
     mapEnergySpawnPoints: map.energySpawnPoints,
+    mapMechanicsEnabled,
+    mapMechanicState: createMapMechanicState(mapId, now, mapMechanicsEnabled),
   };
 
   while (world.energy.size < MAX_ENERGY && spawnEnergy(world)) {
@@ -264,6 +286,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
     if (world.phase === "playing" && world.remainingMs === 0) finishNormalTime(world);
     return;
   }
+  const previousNow = world.now;
   world.now += simulationDelta;
 
   if (world.phase === "playing") {
@@ -284,6 +307,8 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
   }
 
   resolvePlayerSeparation(world);
+  advanceWorldMapMechanic(world, previousNow, world.now);
+  if (isFinished(world)) return;
   refreshBulwarkSuppression(world);
   for (const player of world.players.values()) if (player.alive) updateAimAndFire(world, player);
   advanceProjectiles(world, simulationDelta);
@@ -311,19 +336,29 @@ export function damagePlayer(
   attackerId: string,
   amount: number,
 ): boolean {
+  return applyWorldDamage(world, victimId, attackerId, amount, world.now);
+}
+
+function applyWorldDamage(
+  world: GameWorld,
+  victimId: string,
+  attackerId: string | null,
+  amount: number,
+  eventAt: number,
+): boolean {
   if (world.phase === "finished") return false;
   const victim = world.players.get(victimId);
-  if (!victim?.alive || victim.shieldUntil > world.now || amount <= 0 || !Number.isFinite(amount)) return false;
+  if (!victim?.alive || victim.shieldUntil > eventAt || amount <= 0 || !Number.isFinite(amount)) return false;
 
-  const attacker = world.players.get(attackerId);
+  const attacker = attackerId === null ? undefined : world.players.get(attackerId);
   if (attacker && attacker.id !== victim.id && attacker.teamId !== null && attacker.teamId === victim.teamId) {
     return false;
   }
-  markCombat(victim, world.now);
-  if (attacker && attacker.id !== victim.id) markCombat(attacker, world.now);
+  markCombat(victim, eventAt);
+  if (attacker && attacker.id !== victim.id) markCombat(attacker, eventAt);
 
-  if (victim.skillShieldUntil <= world.now) victim.skillShieldHealth = 0;
-  const selfProtected = attacker && isExclusiveEffectActive(victim, "mobile-bulwark", world.now) && isInFront(victim, attacker);
+  if (victim.skillShieldUntil <= eventAt) victim.skillShieldHealth = 0;
+  const selfProtected = attacker && isExclusiveEffectActive(victim, "mobile-bulwark", eventAt) && isInFront(victim, attacker);
   const allyProtected = attacker && findProtectingBulwark(world, victim, attacker) !== null;
   const reducedAmount = amount * (selfProtected ? 0.55 : allyProtected ? 0.75 : 1);
   const absorbed = Math.min(victim.skillShieldHealth, reducedAmount);
@@ -334,9 +369,12 @@ export function damagePlayer(
   victim.damageTaken = (victim.damageTaken ?? 0) + roundedDamage;
   if (attacker && attacker.id !== victim.id) {
     attacker.damageDealt = (attacker.damageDealt ?? 0) + roundedDamage;
-    victim.recentDamageSources.set(attacker.id, world.now);
+    victim.recentDamageSources.set(attacker.id, eventAt);
     victim.lastDamageSourceId = attacker.id;
-    victim.lastDamagedAt = world.now;
+    victim.lastDamagedAt = eventAt;
+  } else {
+    victim.lastDamageSourceId = null;
+    victim.lastDamagedAt = eventAt;
   }
   victim.health = Math.max(0, victim.health - healthDamage);
   if (victim.health > 0) return true;
@@ -344,7 +382,7 @@ export function damagePlayer(
   victim.alive = false;
   victim.vx = 0;
   victim.vy = 0;
-  victim.respawnAt = world.now + RESPAWN_DELAY_MS;
+  victim.respawnAt = eventAt + RESPAWN_DELAY_MS;
   victim.input = { ...EMPTY_INPUT, seq: victim.lastProcessedInput };
   victim.skillShieldHealth = 0;
   victim.skillShieldUntil = 0;
@@ -358,7 +396,7 @@ export function damagePlayer(
     attacker.killStreak += 1;
     world.killFeed.push({
       id: `kill-${world.nextKillFeedId++}`,
-      at: world.now,
+      at: eventAt,
       killerId: attacker.id,
       victimId: victim.id,
       streak: attacker.killStreak,
@@ -367,13 +405,14 @@ export function damagePlayer(
     addPlayerScore(world, attacker, KILL_SCORE + (world.holderId === victim.id ? HOLDER_KILL_BONUS : 0));
     attacker.kills += 1;
     for (const [assistId, at] of victim.recentDamageSources) {
-      if (assistId === attacker.id || world.now - at > 6_000) continue;
+      if (assistId === attacker.id || eventAt - at > 6_000) continue;
       const assister = world.players.get(assistId);
       if (assister) assister.assists = (assister.assists ?? 0) + 1;
     }
-    victim.recentDamageSources.clear();
     handleScoreChange(world, attacker.id);
   }
+  victim.recentDamageSources.clear();
+  if (!attacker || attacker.id === victim.id) victim.lastDamageSourceId = null;
   return true;
 }
 
@@ -485,7 +524,42 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
       state: world.capturePoint.state,
     } : null,
     mapId: world.mapId,
+    mapMechanic: world.mapMechanicState ? mapMechanicSnapshot(world.mapMechanicState) : null,
   };
+}
+
+function advanceWorldMapMechanic(world: GameWorld, startedAt: number, endedAt: number): void {
+  const state = world.mapMechanicState;
+  if (!state) return;
+
+  let cursor = startedAt;
+  let segments = 0;
+  while (cursor < endedAt && segments < 1_024) {
+    segments += 1;
+    const segmentEnd = Math.min(endedAt, state.phaseEndsAt);
+    if (state.phase === "active" && state.definition.kind === "reactor-vent") {
+      applyReactorDamageThrough(world, state, segmentEnd);
+    }
+    advanceMapMechanicState(state, segmentEnd, world.phase === "playing");
+    if (segmentEnd === cursor && state.phaseEndsAt <= cursor) break;
+    cursor = segmentEnd;
+  }
+}
+
+function applyReactorDamageThrough(world: GameWorld, state: MapMechanicState, segmentEnd: number): void {
+  if (state.definition.kind !== "reactor-vent") return;
+  const zone = state.definition.zones[state.zoneIndex]!;
+  const { damagePerSecond, damageTickMs } = state.definition.effect;
+  for (const player of world.players.values()) {
+    let lastTickAt = state.reactorDamageAt.get(player.id) ?? state.phaseStartedAt;
+    while (lastTickAt + damageTickMs <= segmentEnd) {
+      lastTickAt += damageTickMs;
+      if (zoneContainsPoint(zone, player)) {
+        applyWorldDamage(world, player.id, null, damagePerSecond, lastTickAt);
+      }
+    }
+    state.reactorDamageAt.set(player.id, lastTickAt);
+  }
 }
 
 function advanceWorldCapturePoint(world: GameWorld, deltaMs: number): void {
@@ -1016,6 +1090,7 @@ export function finishWorldMatch(world: GameWorld, winnerIds: string[]): void {
   world.matchMvpId = mvp.playerId;
   world.matchMvpScore = mvp.score;
   world.projectiles.clear();
+  world.mapMechanicState = null;
   for (const player of world.players.values()) {
     player.input = { ...EMPTY_INPUT, seq: player.lastProcessedInput };
     player.vx = 0;

@@ -27,6 +27,7 @@ import {
   collectWorldSkillOrb,
   createGameWorld,
   damagePlayer,
+  finishWorldMatch,
   refreshWorldScoreState,
   stepWorld,
   worldToSnapshot,
@@ -43,6 +44,107 @@ function createWorld() {
 }
 
 const scaleArenaPosition = (value: number) => value * ARENA_SCALE;
+
+describe("reactor venting", () => {
+  const reactorWorld = () => createGameWorld([
+    { id: "p1", nickname: "相位", characterId: "phase", isBot: false },
+    { id: "p2", nickname: "烈锋", characterId: "blaze", isBot: false },
+  ], 0, "solo", "reactor-core", { mapMechanicsEnabled: true });
+
+  it("warns without damage and applies exactly one tick after one active second", () => {
+    const world = reactorWorld();
+    const target = world.players.get("p1")!;
+    const outside = world.players.get("p2")!;
+    target.x = 1_440; target.y = 810; target.shieldUntil = 0;
+    outside.x = 300; outside.y = 300; outside.shieldUntil = 0;
+
+    stepWorld(world, 23_999);
+    expect(target.health).toBe(target.maxHealth);
+    expect(worldToSnapshot(world).mapMechanic).toMatchObject({ phase: "warning", phaseEndsAt: 24_000 });
+    stepWorld(world, 1);
+    expect(target.health).toBe(target.maxHealth);
+    stepWorld(world, 999);
+    expect(target.health).toBe(target.maxHealth);
+    stepWorld(world, 1);
+
+    expect(target.health).toBe(target.maxHealth - 8);
+    expect(target.lastCombatAt).toBe(world.now);
+    expect(outside.health).toBe(outside.maxHealth);
+    expect(outside.score).toBe(0);
+    expect(world.killFeed).toEqual([]);
+    expect(worldToSnapshot(world).mapMechanic).toMatchObject({
+      kind: "reactor-vent",
+      phase: "active",
+      zone: { kind: "circle", x: 1_440, y: 810, radius: 300 },
+      phaseStartedAt: 24_000,
+      phaseEndsAt: 32_000,
+    });
+  });
+
+  it("does not duplicate ticks and cannot kill the full-health phase sniper in one vent", () => {
+    const world = reactorWorld();
+    const target = world.players.get("p1")!;
+    target.x = 1_440; target.y = 810; target.shieldUntil = 0;
+
+    stepWorld(world, 25_000);
+    expect(target.health).toBe(80);
+    stepWorld(world, 1);
+    expect(target.health).toBe(80);
+    stepWorld(world, 999);
+    expect(target.health).toBe(72);
+
+    const fullVent = reactorWorld();
+    const sniper = fullVent.players.get("p1")!;
+    sniper.x = 1_440; sniper.y = 810; sniper.shieldUntil = 0;
+    stepWorld(fullVent, 32_000);
+    expect(sniper.maxHealth).toBe(88);
+    expect(sniper.health).toBe(24);
+    expect(sniper.alive).toBe(true);
+  });
+
+  it("respects spawn shields and never attributes environment deaths", () => {
+    const shieldedWorld = reactorWorld();
+    const shielded = shieldedWorld.players.get("p1")!;
+    shielded.x = 1_440; shielded.y = 810; shielded.shieldUntil = 30_000;
+    stepWorld(shieldedWorld, 25_000);
+    expect(shielded.health).toBe(shielded.maxHealth);
+    shielded.shieldUntil = 0;
+    stepWorld(shieldedWorld, 1_000);
+    expect(shielded.health).toBe(shielded.maxHealth - 8);
+
+    const lethalWorld = reactorWorld();
+    const victim = lethalWorld.players.get("p1")!;
+    const opponent = lethalWorld.players.get("p2")!;
+    victim.x = 1_440; victim.y = 810; victim.shieldUntil = 0; victim.health = 8;
+    victim.recentDamageSources.set(opponent.id, 19_000);
+    victim.lastDamageSourceId = opponent.id;
+    stepWorld(lethalWorld, 25_000);
+    expect(victim.alive).toBe(false);
+    expect(victim.recentDamageSources.size).toBe(0);
+    expect(victim.lastDamageSourceId).toBeNull();
+    expect(opponent.score).toBe(0);
+    expect(opponent.kills).toBe(0);
+    expect(lethalWorld.killFeed).toEqual([]);
+  });
+
+  it("stops immediately after match finish and supports a disabled state", () => {
+    const world = reactorWorld();
+    const target = world.players.get("p1")!;
+    target.x = 1_440; target.y = 810; target.shieldUntil = 0;
+    stepWorld(world, 25_000);
+    finishWorldMatch(world, ["p2"]);
+    const healthAtFinish = target.health;
+    stepWorld(world, 20_000);
+    expect(target.health).toBe(healthAtFinish);
+    expect(worldToSnapshot(world).mapMechanic).toBeNull();
+
+    const disabled = createGameWorld([
+      { id: "p1", nickname: "关闭", characterId: "phase", isBot: false },
+    ], 0, "solo", "reactor-core", { mapMechanicsEnabled: false });
+    expect(disabled.mapMechanicState).toBeNull();
+    expect(worldToSnapshot(disabled).mapMechanic).toBeNull();
+  });
+});
 
 describe("authoritative simulation", () => {
   it("uses v4.5 base stats and blocks Phase fire during its exit lock", () => {
@@ -178,7 +280,7 @@ describe("authoritative simulation", () => {
     const world = createGameWorld([
       { id: "red", nickname: "red", characterId: "blaze", isBot: false, teamId: "red" },
       { id: "blue", nickname: "blue", characterId: "fortress", isBot: false, teamId: "blue" },
-    ], 0, "domination3v3", "reactor-core");
+    ], 0, "domination3v3", "reactor-core", { mapMechanicsEnabled: false });
     const red = world.players.get("red")!;
     const blue = world.players.get("blue")!;
     red.x = world.capturePointConfig.center.x;
