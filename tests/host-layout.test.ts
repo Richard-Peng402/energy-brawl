@@ -28,6 +28,14 @@ describe("host dashboard layout", () => {
     expect(styles).toContain(".host-diagnostics-alerts");
   });
 
+  it("keeps the host dashboard vertically scrollable inside the touch-locked app root", () => {
+    const hostShell = extractBlock(styles, ".host-shell");
+
+    expect(hostShell).toContain("height: 100dvh");
+    expect(hostShell).toContain("overflow-x: hidden");
+    expect(hostShell).toContain("overflow-y: auto");
+  });
+
   it("shows every team player's identity in the host roster", () => {
     expect(hostApp).toContain('import { teamLabel } from "./team-label"');
     expect(hostApp).toContain("host-player-team");

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { HostDiagnosticsSnapshot } from "../src/shared/diagnostics";
-import { diagnosticsRevision, renderDiagnosticsPlayers, resolveDiagnosticsPresentation } from "../src/client/host-diagnostics-view";
+import type { DiagnosticReport, HostDiagnosticsSnapshot } from "../src/shared/diagnostics";
+import * as diagnosticsView from "../src/client/host-diagnostics-view";
+
+const { diagnosticsRevision, renderDiagnosticsPlayers, resolveDiagnosticsPresentation } = diagnosticsView;
 
 describe("host diagnostics presentation", () => {
   it("formats warnings, unsupported fields and masked addresses", () => {
@@ -28,6 +30,23 @@ describe("host diagnostics presentation", () => {
     clone.players[0]!.sample!.rttMs = 40;
     expect(diagnosticsRevision(clone)).not.toBe(diagnosticsRevision(snapshot));
   });
+
+  it("uses the latest completed report when the active match snapshot is empty", () => {
+    const resolveSnapshot = (diagnosticsView as typeof diagnosticsView & {
+      resolveDiagnosticsSnapshot?: (active: HostDiagnosticsSnapshot | null, completed: DiagnosticReport | null) => HostDiagnosticsSnapshot | null;
+    }).resolveDiagnosticsSnapshot;
+
+    expect(resolveSnapshot).toBeTypeOf("function");
+    const snapshot = resolveSnapshot?.(null, diagnosticReport()) ?? null;
+
+    expect(snapshot).toMatchObject({
+      matchId: "completed-match",
+      mapId: "crystal-ruins",
+      players: [{ alias: "P1", sample: expect.objectContaining({ rttMs: 76 }) }],
+      server: expect.objectContaining({ stepMaxMs: 12 }),
+    });
+    expect(renderDiagnosticsPlayers(snapshot)).toContain("76ms");
+  });
 });
 
 function diagnosticSnapshot(): HostDiagnosticsSnapshot {
@@ -42,5 +61,30 @@ function diagnosticSnapshot(): HostDiagnosticsSnapshot {
     }],
     server: { sampledAt: 1_000, stepP95Ms: 8, stepMaxMs: 10, steps: 60, catchUpLimitHits: 0, humans: 1, bots: 5, projectiles: 12, skillEffects: 2, acceptedSamples: 1, rejectedSamples: 0 },
     recentAlerts: [], totalAlerts: 1,
+  };
+}
+
+function diagnosticReport(): DiagnosticReport {
+  const playerSample = diagnosticSnapshot().players[0]!.sample!;
+  return {
+    schemaVersion: 1,
+    gameVersion: "4.5.0",
+    matchId: "completed-match",
+    mapId: "crystal-ruins",
+    matchMode: "team3v3",
+    startedAt: 1_000,
+    finishedAt: 9_000,
+    endReason: "normal",
+    players: [{
+      alias: "P1",
+      characterId: "blaze",
+      address: "192.168.1.xxx",
+      profile: null,
+      samples: [{ ...playerSample, matchId: "completed-match", rttMs: 76 }],
+      alertCounts: {},
+      reconnects: 0,
+    }],
+    server: { samples: [{ sampledAt: 8_000, stepP95Ms: 7, stepMaxMs: 12, steps: 60, catchUpLimitHits: 0, humans: 1, bots: 5, projectiles: 8, skillEffects: 1, acceptedSamples: 1, rejectedSamples: 0 }], alertCounts: {} },
+    totalAlerts: 0,
   };
 }

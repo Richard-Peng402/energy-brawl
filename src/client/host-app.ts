@@ -3,7 +3,12 @@ import type { MapSelection } from "../shared/map-catalog";
 import type { AdminStat, GamePhase, GameSnapshot, RoomSnapshot, ServerInfo, TeamScoreSnapshot } from "../shared/protocol";
 import { GameNetworkClient } from "./network";
 import { DiagnosticsReportStore } from "./diagnostics-report-store";
-import { diagnosticsRevision, renderDiagnosticsPlayers, resolveDiagnosticsPresentation } from "./host-diagnostics-view";
+import {
+  diagnosticsRevision,
+  renderDiagnosticsPlayers,
+  resolveDiagnosticsPresentation,
+  resolveDiagnosticsSnapshot,
+} from "./host-diagnostics-view";
 import { ServerInfoRefreshController, type ServerInfoRefreshState } from "./server-info-refresh";
 import { teamLabel } from "./team-label";
 
@@ -213,14 +218,20 @@ export class HostApp {
   }
 
   private renderDiagnostics(force = false): void {
-    const snapshot = this.network.hostDiagnostics;
     const reports = this.diagnosticReports.list();
+    const activeSnapshot = this.network.hostDiagnostics;
+    const completedReport = this.network.latestDiagnosticReport ?? reports[0] ?? null;
+    const snapshot = resolveDiagnosticsSnapshot(activeSnapshot, completedReport);
     const revision = `${diagnosticsRevision(snapshot)}|${reports.map((report) => `${report.matchId}:${report.finishedAt}`).join(",")}`;
     if (!force && revision === this.renderedDiagnosticsRevision) return;
     this.renderedDiagnosticsRevision = revision;
     const presentation = resolveDiagnosticsPresentation(snapshot);
     const status = this.find("[data-diagnostics-status]");
-    status.textContent = snapshot?.matchId ? `${snapshot.mapId ?? "未知地图"} · ${snapshot.players.length} 名真人` : "等待对局";
+    status.textContent = activeSnapshot?.matchId
+      ? `${snapshot?.mapId ?? "未知地图"} · ${snapshot?.players.length ?? 0} 名真人`
+      : snapshot?.matchId
+        ? `最近完成 · ${snapshot.mapId ?? "未知地图"} · ${snapshot.players.length} 名真人`
+        : "等待对局";
     const alerts = this.find("[data-diagnostics-alerts]");
     alerts.textContent = String(presentation.totalAlerts);
     alerts.classList.toggle("is-active", presentation.totalAlerts > 0);

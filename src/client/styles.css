@@ -1571,8 +1571,9 @@ button:disabled {
 
 /* Host dashboard */
 .host-shell {
-  min-height: 100vh;
-  overflow: auto;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #11161a;
 }
 

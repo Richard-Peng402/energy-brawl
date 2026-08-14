@@ -1,4 +1,9 @@
-import { DIAGNOSTIC_THRESHOLDS, type DiagnosticSeverity, type HostDiagnosticsSnapshot } from "../shared/diagnostics";
+import {
+  DIAGNOSTIC_THRESHOLDS,
+  type DiagnosticReport,
+  type DiagnosticSeverity,
+  type HostDiagnosticsSnapshot,
+} from "../shared/diagnostics";
 
 export interface DiagnosticsPlayerPresentation {
   playerLabel: string;
@@ -47,6 +52,39 @@ export function resolveDiagnosticsPresentation(snapshot: HostDiagnosticsSnapshot
     : players.some((player) => player.severity === "warning") || (snapshot.server?.stepMaxMs ?? 0) > DIAGNOSTIC_THRESHOLDS.serverStepMs ? "warning"
       : "normal";
   return { players, totalAlerts: snapshot.totalAlerts, severity };
+}
+
+export function resolveDiagnosticsSnapshot(
+  activeSnapshot: HostDiagnosticsSnapshot | null,
+  completedReport: DiagnosticReport | null,
+): HostDiagnosticsSnapshot | null {
+  if (activeSnapshot?.matchId) return activeSnapshot;
+  if (!completedReport) return null;
+  return {
+    schemaVersion: completedReport.schemaVersion,
+    matchId: completedReport.matchId,
+    mapId: completedReport.mapId,
+    matchMode: completedReport.matchMode,
+    sampledAt: completedReport.finishedAt,
+    players: completedReport.players.map((player) => {
+      const sample = player.samples.at(-1) ?? null;
+      return {
+        playerId: player.alias,
+        nickname: player.alias,
+        alias: player.alias,
+        isBot: false,
+        connected: sample?.connected ?? true,
+        address: player.address,
+        profile: player.profile,
+        sample,
+        sampleAgeMs: null,
+        alertCounts: player.alertCounts,
+      };
+    }),
+    server: completedReport.server.samples.at(-1) ?? null,
+    recentAlerts: [],
+    totalAlerts: completedReport.totalAlerts,
+  };
 }
 
 export function renderDiagnosticsPlayers(snapshot: HostDiagnosticsSnapshot | null): string {
