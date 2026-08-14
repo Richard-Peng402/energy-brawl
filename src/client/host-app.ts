@@ -11,6 +11,7 @@ import {
 } from "./host-diagnostics-view";
 import { ServerInfoRefreshController, type ServerInfoRefreshState } from "./server-info-refresh";
 import { teamLabel } from "./team-label";
+import { mapMechanicLobbyView, randomMapMechanicSummaries } from "./map-mechanic-visuals";
 
 export class HostApp {
   private readonly network = new GameNetworkClient(false);
@@ -203,6 +204,16 @@ export class HostApp {
     const checkbox = this.find<HTMLInputElement>("#host-map-mechanics");
     checkbox.checked = room?.mapMechanicsEnabled ?? true;
     checkbox.disabled = !lobbyRulesEnabled;
+    const mapSelection = room?.mapSelection ?? "reactor-core";
+    const mechanismsEnabled = room?.mapMechanicsEnabled ?? true;
+    const mechanicDescription = this.find("#host-map-mechanic-description");
+    if (!mechanismsEnabled) mechanicDescription.textContent = "动态机制已关闭";
+    else if (mapSelection === "random") {
+      mechanicDescription.textContent = `随机轮换：${randomMapMechanicSummaries().map((entry) => entry.title).join(" / ")}`;
+    } else {
+      const view = mapMechanicLobbyView(mapSelection, true);
+      mechanicDescription.textContent = `${view.title} · ${view.timing} · ${view.counterplay}`;
+    }
     this.find("#host-team-controls").innerHTML = presentation.matchMode === "solo"
       ? ""
       : presentation.teamScores.map((team) => {

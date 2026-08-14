@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { calculateArenaCameraZoom, MobileViewport, readViewport } from "../src/client/mobile-viewport";
+
+const styles = readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8");
 
 describe("mobile viewport", () => {
   it("fills ultra-wide landscape screens while preserving the reference vertical view", () => {
@@ -48,6 +51,15 @@ describe("mobile viewport", () => {
     const fixture = createFixture(false);
     await expect(fixture.viewport.requestFullscreen()).resolves.toBe(false);
     expect(fixture.orientationLocks).toEqual([]);
+  });
+
+  it("caps the lobby mechanism card for 844x390 and 932x430 landscape viewports", () => {
+    expect(styles).toContain("@media (max-height: 470px) and (orientation: landscape)");
+    expect(styles).toContain(".map-mechanic-card");
+    expect(styles).toContain("max-height: 86px");
+    expect(styles).toContain(".character-selection-stage");
+    expect(styles).toContain(".roster-panel");
+    expect(styles).toContain(".ready-button");
   });
 });
 

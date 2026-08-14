@@ -81,6 +81,8 @@ describe("mobile render throttling", () => {
     expect(roomUiRevision(room())).toBe(roomUiRevision(room()));
     expect(roomUiRevision(room())).not.toBe(roomUiRevision({ ...room(), players: [{ ...room().players[0]!, ready: true }] }));
     expect(roomUiRevision(room())).not.toBe(roomUiRevision({ ...room(), players: [{ ...room().players[0]!, teamId: "red" }] }));
+    expect(roomUiRevision(room())).not.toBe(roomUiRevision({ ...room(), mapSelection: "neon-docks" }));
+    expect(roomUiRevision(room())).not.toBe(roomUiRevision({ ...room(), mapMechanicsEnabled: false }));
   });
 
   it("changes the leaderboard revision only when visible ranking data changes", () => {

@@ -50,6 +50,13 @@ describe("host dashboard layout", () => {
     expect(hostApp).toContain('checkbox.checked = room?.mapMechanicsEnabled ?? true');
     expect(hostApp).toContain('checkbox.disabled = !lobbyRulesEnabled');
   });
+
+  it("shows the current or disabled map-mechanic explanation before start", () => {
+    expect(hostApp).toContain("mapMechanicLobbyView");
+    expect(hostApp).toContain("randomMapMechanicSummaries");
+    expect(hostApp).toContain("动态机制已关闭");
+    expect(hostApp).toContain("host-map-mechanic-description");
+  });
 });
 
 function extractBlock(css: string, header: string): string {

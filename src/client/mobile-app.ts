@@ -2,7 +2,7 @@ import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog
 import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import { getExclusiveSkill, getExclusiveSkillCounterSummary } from "../shared/exclusive-skill-catalog";
-import type { MapId } from "../shared/map-catalog";
+import { getMapDefinition, type MapId } from "../shared/map-catalog";
 import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
@@ -37,6 +37,12 @@ import { CHARACTER_PREVIEW_CLASSES, getCharacterPreviewMotion } from "./characte
 import { resolveHeldSkillAim, resolveMouseAim, type PointerAim } from "./mouse-aim";
 import { buildRadarFrame, buildTacticalCues } from "./tactical-radar";
 import { teamLabel } from "./team-label";
+import {
+  mapMechanicLobbyView,
+  mapMechanicMatchKey,
+  mapMechanicPresentationProfile,
+  randomMapMechanicSummaries,
+} from "./map-mechanic-visuals";
 
 const NAME_KEY = "energy-brawl.nickname";
 const HAPTICS_MODE_KEY = "energy-brawl.haptics-mode";
@@ -97,6 +103,8 @@ export class MobileApp {
   private lastKillFeedRevision = "";
   private lastResultsRevision = "";
   private lastCapturePointRevision = "";
+  private activeMechanicMatchKey: string | null = null;
+  private mechanicBannerTimer = 0;
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = mobileTemplate();
@@ -539,6 +547,7 @@ export class MobileApp {
       this.lastRoomUiRevision = nextRoomUiRevision;
       this.renderColors();
       this.renderRoster();
+      this.renderMapMechanicLobby();
     }
 
     if (!this.network.playerSessionReady) {
@@ -559,6 +568,7 @@ export class MobileApp {
       this.renderHud(this.network.game);
       this.renderTacticalHud(this.network.game);
       this.renderResults(this.network.game);
+      this.renderOpeningMechanicBanner(this.network.game);
     } else {
       this.haptics.stop();
       if (this.layoutEditing) this.setLayoutEditing(false);
@@ -575,6 +585,7 @@ export class MobileApp {
       this.lastKillFeedRevision = "";
       this.lastResultsRevision = "";
       this.lastCapturePointRevision = "";
+      this.clearOpeningMechanicBanner(true);
     }
 
     if (this.network.notice) this.showToast(this.network.notice);
@@ -681,6 +692,60 @@ export class MobileApp {
       : hasJoined
         ? "等待其他玩家"
         : "选择身份加入房间";
+  }
+
+  private renderMapMechanicLobby(): void {
+    const room = this.network.room;
+    const card = this.find<HTMLElement>("[data-map-mechanic-card]");
+    const enabled = room?.mapMechanicsEnabled ?? true;
+    const selection = room?.mapSelection ?? "reactor-core";
+    if (!enabled) {
+      const view = mapMechanicLobbyView("reactor-core", false);
+      card.dataset.tone = "disabled";
+      card.innerHTML = `<span class="map-mechanic-card-kicker">地图机制</span><strong>${view.title}</strong><p class="map-mechanic-card-body">${view.summary}</p>`;
+      return;
+    }
+    if (selection === "random") {
+      const summaries = randomMapMechanicSummaries();
+      card.dataset.tone = "random";
+      card.innerHTML = `<span class="map-mechanic-card-kicker">随机地图</span><strong>三种机制随机轮换</strong><p class="map-mechanic-card-body">${summaries.map((entry) => `${entry.title}：${entry.summary}`).join(" · ")}</p>`;
+      return;
+    }
+    const view = mapMechanicLobbyView(selection, true);
+    const profile = mapMechanicPresentationProfile(view.kind);
+    card.dataset.tone = profile.tone;
+    card.style.setProperty("--mechanic-primary", profile.primary);
+    card.style.setProperty("--mechanic-secondary", profile.secondary);
+    card.innerHTML = `<span class="map-mechanic-card-kicker">${view.timing}</span><strong>${profile.icon} ${view.title}</strong><p class="map-mechanic-card-body">${view.summary} ${view.counterplay}</p>`;
+  }
+
+  private renderOpeningMechanicBanner(snapshot: GameSnapshot): void {
+    if (!snapshot.mapMechanic || !snapshot.mapId) {
+      this.clearOpeningMechanicBanner(false);
+      return;
+    }
+    const matchKey = mapMechanicMatchKey(snapshot);
+    if (matchKey === this.activeMechanicMatchKey) return;
+    this.activeMechanicMatchKey = matchKey;
+    const view = mapMechanicLobbyView(snapshot.mapId, true);
+    const profile = mapMechanicPresentationProfile(view.kind);
+    const banner = this.find<HTMLElement>("#map-mechanic-opening");
+    banner.style.setProperty("--mechanic-primary", profile.primary);
+    banner.style.setProperty("--mechanic-secondary", profile.secondary);
+    banner.innerHTML = `<span>${getMapDefinition(snapshot.mapId).name}</span><strong>${profile.icon} ${view.title}</strong><small>${view.firstWarning}</small>`;
+    banner.classList.add("is-visible");
+    if (this.mechanicBannerTimer) window.clearTimeout(this.mechanicBannerTimer);
+    this.mechanicBannerTimer = window.setTimeout(() => {
+      banner.classList.remove("is-visible");
+      this.mechanicBannerTimer = 0;
+    }, 3_000);
+  }
+
+  private clearOpeningMechanicBanner(resetMatchKey: boolean): void {
+    if (this.mechanicBannerTimer) window.clearTimeout(this.mechanicBannerTimer);
+    this.mechanicBannerTimer = 0;
+    this.find("#map-mechanic-opening").classList.remove("is-visible");
+    if (resetMatchKey) this.activeMechanicMatchKey = null;
   }
 
   private renderHud(snapshot: GameSnapshot): void {
@@ -1087,6 +1152,7 @@ function mobileTemplate(): string {
           <div id="lobby-intro-copy" class="lobby-intro-copy"><span class="eyebrow">LAN ARENA · 6 PLAYERS</span>
           <h1>能量乱斗</h1>
           <p id="lobby-status">正在连接房间</p></div>
+          <section class="map-mechanic-card" data-map-mechanic-card aria-live="polite"></section>
         </div>
         <div class="lobby-workspace">
           <section class="character-panel">
@@ -1119,6 +1185,7 @@ function mobileTemplate(): string {
           <div id="match-clock" class="match-clock">5:00</div>
           <div id="team-score" class="team-score">个人战</div>
           <div id="capture-status" class="capture-status" aria-live="polite"></div>
+          <div id="map-mechanic-opening" class="map-mechanic-opening" aria-live="polite"></div>
           <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
           <div id="leaderboard" class="leaderboard"></div>
            <button class="control-settings-button arena-controls" data-controls-open type="button">键位</button><button class="sound-button arena-sound" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>

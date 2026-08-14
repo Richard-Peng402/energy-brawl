@@ -5,7 +5,14 @@ export function roomUiRevision(room: RoomSnapshot | null): string {
   const players = room.players
     .map((player) => [player.id, player.nickname, player.characterId, player.isBot, player.connected, player.ready, player.teamId ?? ""].join(":"))
     .join(";");
-  return [room.phase, room.canStart, room.pendingWinnerId ?? "", players].join("|");
+  return [
+    room.phase,
+    room.canStart,
+    room.pendingWinnerId ?? "",
+    room.mapSelection ?? "reactor-core",
+    room.mapMechanicsEnabled ?? true,
+    players,
+  ].join("|");
 }
 
 export function gameLeaderboardRevision(snapshot: GameSnapshot, localPlayerId: string | null): string {

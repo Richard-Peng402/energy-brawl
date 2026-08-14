@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8");
+const mobileApp = readFileSync(new URL("../src/client/mobile-app.ts", import.meta.url), "utf8");
 
 describe("mobile lobby compact landscape layout", () => {
   it("keeps the skill control at the right safe edge and the kill feed to one row", () => {
@@ -40,6 +41,19 @@ describe("mobile lobby compact landscape layout", () => {
     expect(compactLandscape).toContain("overflow-x: hidden");
     expect(compactLandscape).toContain(".lobby-workspace");
     expect(compactLandscape).toContain("grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr)");
+  });
+
+  it("keeps pre-match mechanism copy compact and the opening banner away from controls", () => {
+    expect(mobileApp).toContain("data-map-mechanic-card");
+    expect(mobileApp).toContain('id="map-mechanic-opening"');
+    const card = extractBlock(styles, ".map-mechanic-card");
+    const body = extractBlock(styles, ".map-mechanic-card-body");
+    const banner = extractBlock(styles, ".map-mechanic-opening");
+    expect(card).toContain("overflow: hidden");
+    expect(body).toContain("-webkit-line-clamp: 3");
+    expect(banner).toContain("pointer-events: none");
+    expect(banner).toContain("top:");
+    expect(banner).not.toContain("bottom:");
   });
 });
 
