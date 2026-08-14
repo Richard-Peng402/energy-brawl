@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { chooseBotDecision, selectCombatTarget } from "../src/server/bot";
+import { advanceMapMechanicState } from "../src/server/map-mechanic-system";
 import { createGameWorld } from "../src/server/simulation";
 
 describe("bot decisions", () => {
@@ -134,5 +135,98 @@ describe("bot decisions", () => {
     enemy.x = bot.x + 1_000;
     world.skillSystem.orbs.get("skill")!.x = bot.x - 160;
     expect(chooseBotDecision(world, bot.id, () => 0.5).input.moveX).toBeCloseTo(-0.75, 4);
+  });
+
+  it("escapes reactor warning before pursuing enemies, pickups or objectives", () => {
+    const world = createGameWorld([
+      { id: "bot-1", nickname: "bot", characterId: "medic", isBot: true, teamId: "red" },
+      { id: "enemy", nickname: "enemy", characterId: "blaze", isBot: false, teamId: "blue" },
+    ], 0, "team3v3", "reactor-core", { mapMechanicsEnabled: true });
+    const bot = world.players.get("bot-1")!;
+    bot.x = 1_540;
+    bot.y = 810;
+    world.players.get("enemy")!.x = 1_400;
+    world.players.get("enemy")!.y = 810;
+    world.energy.set("bait", { id: "bait", x: 1_400, y: 810 });
+    world.skillSystem.orbs.set("skill", { id: "skill", type: "dash", x: 1_420, y: 810 });
+    advanceMapMechanicState(world.mapMechanicState!, 20_000, true);
+
+    const decision = chooseBotDecision(world, bot.id, () => 0.5);
+
+    expect(decision.input.moveX).toBeGreaterThan(0.7);
+    expect(Math.abs(decision.input.moveY)).toBeLessThan(0.05);
+  });
+
+  it("keeps moving outward through the reactor boundary hysteresis band", () => {
+    const world = createGameWorld([
+      { id: "bot-1", nickname: "bot", characterId: "medic", isBot: true },
+    ], 0, "solo", "reactor-core", { mapMechanicsEnabled: true });
+    const bot = world.players.get("bot-1")!;
+    advanceMapMechanicState(world.mapMechanicState!, 20_000, true);
+    bot.y = 810;
+
+    bot.x = 1_440 + 294;
+    const inside = chooseBotDecision(world, bot.id, () => 0.5).input.moveX;
+    bot.x = 1_440 + 326;
+    const edge = chooseBotDecision(world, bot.id, () => 0.5).input.moveX;
+
+    expect(inside).toBeGreaterThan(0.7);
+    expect(edge).toBeGreaterThan(0.7);
+  });
+
+  it("uses an active neon lane when it is a short route toward the target", () => {
+    const world = createGameWorld([
+      { id: "bot-1", nickname: "bot", characterId: "medic", isBot: true },
+      { id: "enemy", nickname: "enemy", characterId: "blaze", isBot: false },
+    ], 0, "solo", "neon-docks", { mapMechanicsEnabled: true });
+    const bot = world.players.get("bot-1")!;
+    bot.x = 800;
+    bot.y = 800;
+    world.players.get("enemy")!.x = 2_200;
+    world.players.get("enemy")!.y = 800;
+    world.energy.clear();
+    world.skillSystem.orbs.clear();
+    advanceMapMechanicState(world.mapMechanicState!, 24_000, true);
+
+    const decision = chooseBotDecision(world, bot.id, () => 0.5);
+
+    expect(decision.input.moveX).toBeGreaterThan(0.55);
+    expect(decision.input.moveY).toBeLessThan(-0.15);
+  });
+
+  it("pursues safe crystal resonance when wounded and retreats when outnumbered", () => {
+    const safe = createGameWorld([
+      { id: "bot", nickname: "bot", characterId: "medic", isBot: true, teamId: "red" },
+      { id: "enemy", nickname: "enemy", characterId: "blaze", isBot: false, teamId: "blue" },
+    ], 0, "team3v3", "crystal-ruins", { mapMechanicsEnabled: true });
+    const safeBot = safe.players.get("bot")!;
+    safeBot.health = safeBot.maxHealth * 0.6;
+    safeBot.x = 850;
+    safeBot.y = 450;
+    safe.players.get("enemy")!.x = 2_400;
+    safe.players.get("enemy")!.y = 1_300;
+    safe.energy.clear();
+    safe.skillSystem.orbs.clear();
+    advanceMapMechanicState(safe.mapMechanicState!, 24_000, true);
+    expect(chooseBotDecision(safe, safeBot.id, () => 0.5).input.moveX).toBeGreaterThan(0.7);
+
+    const contested = createGameWorld([
+      { id: "bot", nickname: "bot", characterId: "medic", isBot: true, teamId: "red" },
+      { id: "enemy-1", nickname: "enemy", characterId: "blaze", isBot: false, teamId: "blue" },
+      { id: "enemy-2", nickname: "enemy", characterId: "arc", isBot: false, teamId: "blue" },
+    ], 0, "team3v3", "crystal-ruins", { mapMechanicsEnabled: true });
+    const contestedBot = contested.players.get("bot")!;
+    contestedBot.health = contestedBot.maxHealth * 0.6;
+    contestedBot.x = 1_160;
+    contestedBot.y = 450;
+    contested.players.get("enemy-1")!.x = 1_080;
+    contested.players.get("enemy-1")!.y = 420;
+    contested.players.get("enemy-2")!.x = 1_090;
+    contested.players.get("enemy-2")!.y = 480;
+    contested.energy.clear();
+    contested.skillSystem.orbs.clear();
+    advanceMapMechanicState(contested.mapMechanicState!, 24_000, true);
+
+    expect(chooseBotDecision(contested, contestedBot.id, () => 0.5).input.moveX).toBeGreaterThan(0.7);
   });
 });

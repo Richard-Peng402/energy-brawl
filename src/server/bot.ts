@@ -1,4 +1,5 @@
 import { distanceSquared, normalize } from "../shared/math";
+import { zoneContainsPoint, type MapMechanicZone } from "../shared/map-mechanics";
 import type { PlayerInput, Vec2 } from "../shared/protocol";
 import type { GameWorld, WorldPlayer } from "./simulation";
 
@@ -9,6 +10,9 @@ const DASH_MIN_DISTANCE_SQUARED = 420 * 420;
 const DASH_MAX_DISTANCE_SQUARED = 900 * 900;
 const MOVE_INPUT_SCALE = 0.75;
 const SKILL_USE_CHANCE = 0.45;
+const MAP_ZONE_HYSTERESIS = 48;
+const CRYSTAL_SEEK_HEALTH_RATIO = 0.65;
+const NEON_ROUTE_DETOUR_RATIO = 1.12;
 
 export interface BotDecision {
   input: PlayerInput;
@@ -30,10 +34,16 @@ export function chooseBotDecision(
   const captureTarget = capturePoint ? world.capturePointConfig.center : null;
   const enemyDistance = enemy ? distanceSquared(player, enemy) : Number.POSITIVE_INFINITY;
   const energyDistance = energy ? distanceSquared(player, energy) : Number.POSITIVE_INFINITY;
+  const reactorEscape = activeDangerEscapeVector(world, player);
+  const mapOpportunity = bestMapOpportunity(world, player, captureTarget ?? skillOrb ?? energy ?? enemy ?? null);
 
   let movement: Vec2 = { x: 0, y: 0 };
-  if (enemy && player.health <= RETREAT_HEALTH && enemyDistance <= RETREAT_DISTANCE_SQUARED) {
+  if (reactorEscape) {
+    movement = reactorEscape;
+  } else if (enemy && player.health <= RETREAT_HEALTH && enemyDistance <= RETREAT_DISTANCE_SQUARED) {
     movement = normalize({ x: player.x - enemy.x, y: player.y - enemy.y });
+  } else if (mapOpportunity) {
+    movement = mapOpportunity;
   } else if (captureTarget && capturePoint && capturePoint.ownerTeamId !== player.teamId && capturePoint.state !== "owned") {
     movement = normalize({ x: captureTarget.x - player.x, y: captureTarget.y - player.y });
   } else if (skillOrb) {
@@ -82,6 +92,79 @@ export function selectCombatTarget(world: GameWorld, player: WorldPlayer): World
   ));
 }
 
+function activeDangerEscapeVector(world: GameWorld, player: WorldPlayer): Vec2 | null {
+  const state = world.mapMechanicState;
+  if (!state || state.definition.kind !== "reactor-vent" || (state.phase !== "warning" && state.phase !== "active")) return null;
+  const zone = state.definition.zones[state.zoneIndex];
+  if (!zone || !zoneContainsPoint(zone, player, MAP_ZONE_HYSTERESIS)) return null;
+  return outwardVector(zone, player);
+}
+
+function bestMapOpportunity(world: GameWorld, player: WorldPlayer, routeTarget: Vec2 | null): Vec2 | null {
+  const state = world.mapMechanicState;
+  if (!state || state.phase !== "active") return null;
+  const zone = state.definition.zones[state.zoneIndex];
+  if (!zone) return null;
+
+  if (state.definition.kind === "crystal-resonance") {
+    const occupancy = [...world.players.values()].filter((candidate) => candidate.alive && zoneContainsPoint(zone, candidate));
+    const allies = occupancy.filter((candidate) => isFriendly(world, player, candidate)).length;
+    const enemies = occupancy.length - allies;
+    if (zoneContainsPoint(zone, player, MAP_ZONE_HYSTERESIS) && enemies > allies) return outwardVector(zone, player);
+    if (player.health / Math.max(1, player.maxHealth) <= CRYSTAL_SEEK_HEALTH_RATIO && enemies <= allies && !zoneContainsPoint(zone, player)) {
+      const center = zoneCenter(zone);
+      return normalize({ x: center.x - player.x, y: center.y - player.y });
+    }
+    return null;
+  }
+
+  if (state.definition.kind !== "neon-overdrive" || !routeTarget || zoneContainsPoint(zone, player)) return null;
+  const entry = closestZoneEntry(zone, player);
+  const directDistance = Math.sqrt(distanceSquared(player, routeTarget));
+  const routedDistance = Math.sqrt(distanceSquared(player, entry)) + Math.sqrt(distanceSquared(entry, routeTarget));
+  if (directDistance <= 0 || routedDistance > directDistance * NEON_ROUTE_DETOUR_RATIO) return null;
+  return normalize({ x: entry.x - player.x, y: entry.y - player.y });
+}
+
+function isFriendly(world: GameWorld, player: WorldPlayer, candidate: WorldPlayer): boolean {
+  if (candidate.id === player.id) return true;
+  return world.matchMode !== "solo" && player.teamId !== null && candidate.teamId === player.teamId;
+}
+
+function zoneCenter(zone: MapMechanicZone): Vec2 {
+  return zone.kind === "circle"
+    ? { x: zone.x, y: zone.y }
+    : { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 };
+}
+
+function outwardVector(zone: MapMechanicZone, player: Vec2): Vec2 {
+  if (zone.kind === "circle") {
+    const delta = { x: player.x - zone.x, y: player.y - zone.y };
+    return delta.x === 0 && delta.y === 0 ? { x: 1, y: 0 } : normalize(delta);
+  }
+  const distances = [
+    { distance: Math.abs(player.x - zone.x), vector: { x: -1, y: 0 } },
+    { distance: Math.abs(zone.x + zone.width - player.x), vector: { x: 1, y: 0 } },
+    { distance: Math.abs(player.y - zone.y), vector: { x: 0, y: -1 } },
+    { distance: Math.abs(zone.y + zone.height - player.y), vector: { x: 0, y: 1 } },
+  ];
+  distances.sort((left, right) => left.distance - right.distance);
+  return distances[0]!.vector;
+}
+
+function closestZoneEntry(zone: MapMechanicZone, player: Vec2): Vec2 {
+  if (zone.kind === "circle") {
+    const direction = normalize({ x: player.x - zone.x, y: player.y - zone.y });
+    const safeDirection = direction.x === 0 && direction.y === 0 ? { x: 1, y: 0 } : direction;
+    return { x: zone.x + safeDirection.x * zone.radius * 0.72, y: zone.y + safeDirection.y * zone.radius * 0.72 };
+  }
+  const inset = Math.min(24, zone.width * 0.1, zone.height * 0.1);
+  return {
+    x: clamp(player.x, zone.x + inset, zone.x + zone.width - inset),
+    y: clamp(player.y, zone.y + inset, zone.y + zone.height - inset),
+  };
+}
+
 function idleInput(player: WorldPlayer | undefined): PlayerInput {
   return {
     seq: (player?.lastProcessedInput ?? 0) + 1,
@@ -111,4 +194,8 @@ function imperfectAim(origin: Vec2, target: Vec2, random: () => number): Vec2 {
   const perfectAngle = Math.atan2(target.y - origin.y, target.x - origin.x);
   const error = (random() - 0.5) * 0.9;
   return { x: Math.cos(perfectAngle + error), y: Math.sin(perfectAngle + error) };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
