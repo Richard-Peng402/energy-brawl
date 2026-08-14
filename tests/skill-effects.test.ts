@@ -23,6 +23,11 @@ describe("exclusive skill visual profiles", () => {
     expect(getStatusEffectVisualProfile("bulwark-suppression")).toMatchObject({ label: "火力压制" });
   });
 
+  it("gives map buffs distinct readable visual profiles", () => {
+    expect(getStatusEffectVisualProfile("neon-overdrive")).toMatchObject({ color: 0x37cfff, label: "轨道过载" });
+    expect(getStatusEffectVisualProfile("crystal-resonance")).toMatchObject({ color: 0xa978ff, label: "晶脉共鸣" });
+  });
+
   it("caps camera feedback to the approved duration and displacement", () => {
     expect(combatCameraImpulse("hurt")).toMatchObject({ maxCssPx: 6, durationMs: 90, throttleMs: 300 });
     expect(combatCameraImpulse("death")).toMatchObject({ maxCssPx: 10, durationMs: 160, throttleMs: 300 });

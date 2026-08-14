@@ -12,6 +12,15 @@ describe("map catalog", () => {
     }
   });
 
+  it("exposes shared geometry anchors for map-system validation", () => {
+    for (const map of MAP_CATALOG) {
+      expect(map.spawnPoints.length).toBeGreaterThan(0);
+      expect(map.energySpawnPoints.length).toBeGreaterThan(0);
+      expect(map.skillOrbSpawnPoints.length).toBeGreaterThan(0);
+      expect(map.capturePointCenter).toEqual(expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }));
+    }
+  });
+
   it("rotates random matches away from the previous map when possible", () => {
     const first = getMapDefinition("reactor-core");
     const next = resolveMapSelection("random", first.id, 0);
@@ -19,4 +28,3 @@ describe("map catalog", () => {
     expect(next.id).not.toBe(first.id);
   });
 });
-

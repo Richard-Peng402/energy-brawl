@@ -8,6 +8,7 @@ import {
   type ClientDiagnosticSample,
   type DiagnosticReport,
 } from "../src/shared/diagnostics";
+import type { HostAdminCommand, MapMechanicSnapshot, RoomSnapshot } from "../src/shared/protocol";
 
 const sample = (overrides: Partial<ClientDiagnosticSample> = {}): ClientDiagnosticSample => ({
   schemaVersion: 1,
@@ -32,6 +33,25 @@ const sample = (overrides: Partial<ClientDiagnosticSample> = {}): ClientDiagnost
 });
 
 describe("diagnostic contract", () => {
+  it("keeps map-mechanic fields available beside diagnostics snapshots", () => {
+    const room = { mapMechanicsEnabled: true } satisfies Pick<RoomSnapshot, "mapMechanicsEnabled">;
+    const command: HostAdminCommand = { type: "setMapMechanics", enabled: true };
+    const snapshot: MapMechanicSnapshot = {
+      kind: "crystal-resonance",
+      phase: "active",
+      round: 2,
+      zoneIndex: 2,
+      zone: { kind: "circle", x: 1_100, y: 1_170, radius: 100 },
+      phaseStartedAt: 25_000,
+      phaseEndsAt: 33_000,
+      participants: [{ playerId: "p1", chargeProgress: 0.5, claimed: false }],
+    };
+
+    expect(room.mapMechanicsEnabled).toBe(true);
+    expect(command.type).toBe("setMapMechanics");
+    expect(snapshot.participants[0]?.chargeProgress).toBe(0.5);
+  });
+
   it("uses the approved fixed thresholds", () => {
     expect(DIAGNOSTIC_THRESHOLDS).toEqual({
       rttMs: 120,

@@ -5,6 +5,7 @@ import type { ExclusiveSkillId } from "./exclusive-skill-catalog";
 import type { CapturePointStateName } from "./capture-point";
 import type { NetworkSnapshot } from "./network";
 import type { MapId, MapSelection } from "./map-catalog";
+import type { MapMechanicKind, MapMechanicPhase, MapMechanicZone } from "./map-mechanics";
 import type {
   ClientDiagnosticSample,
   DeviceDiagnosticProfile,
@@ -38,8 +39,25 @@ export interface PerformanceHint {
   frameP95Ms: number;
 }
 
-export type CombatStateId = "bulwark-suppression" | "phase-reveal" | "phase-fire-lock";
+export type CombatStateId = "bulwark-suppression" | "phase-reveal" | "phase-fire-lock" | "neon-overdrive" | "crystal-resonance";
 export interface CombatStateSnapshot { id: CombatStateId; startedAt: number; expiresAt: number; }
+
+export interface MapMechanicParticipantSnapshot {
+  playerId: string;
+  chargeProgress: number;
+  claimed: boolean;
+}
+
+export interface MapMechanicSnapshot {
+  kind: MapMechanicKind;
+  phase: MapMechanicPhase;
+  round: number;
+  zoneIndex: number;
+  zone: MapMechanicZone;
+  phaseStartedAt: number;
+  phaseEndsAt: number;
+  participants: MapMechanicParticipantSnapshot[];
+}
 
 export interface PlayerSnapshot extends Vec2 {
   id: string;
@@ -131,6 +149,7 @@ export interface RoomSnapshot {
   matchMode?: MatchMode;
   mapSelection?: MapSelection;
   activeMapId?: MapId | null;
+  mapMechanicsEnabled?: boolean;
   teamScores?: TeamScoreSnapshot[];
   players: Array<
     Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready"> & AdminStats & { teamId?: TeamId | null }
@@ -158,6 +177,7 @@ export interface GameSnapshot {
   teamScores?: TeamScoreSnapshot[];
   captureScores?: TeamScoreSnapshot[];
   capturePoint?: CapturePointSnapshot | null;
+  mapMechanic?: MapMechanicSnapshot | null;
 }
 
 export interface CapturePointSnapshot extends Vec2 {
@@ -224,6 +244,7 @@ export type HostAdminCommand =
   | { type: "forceWinner"; playerId: string }
   | { type: "setMode"; mode: MatchMode }
   | { type: "setMap"; mapSelection: MapSelection }
+  | { type: "setMapMechanics"; enabled: boolean }
   | { type: "swapTeams"; firstPlayerId: string; secondPlayerId: string }
   | { type: "forceTeamWinner"; teamId: TeamId };
 

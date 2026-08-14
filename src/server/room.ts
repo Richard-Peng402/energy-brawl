@@ -128,6 +128,7 @@ export class GameRoom {
       }
       return { ok: true };
     }
+    if (!("playerId" in command)) return { ok: false, error: "命令尚未接入" };
     if (!this.hasPlayer(command.playerId)) return { ok: false, error: "目标玩家不存在" };
 
     if (command.type === "setStat") {

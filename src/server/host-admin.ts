@@ -81,6 +81,7 @@ export class HostAdminService {
     if (request.command.type === "forceTeamWinner") {
       return TEAM_IDS.includes(request.command.teamId) ? null : "目标队伍无效";
     }
+    if (!("playerId" in request.command)) return "命令尚未接入";
     if (typeof request.command.playerId !== "string" || !playerExists) return "目标玩家不存在";
     if (request.command.type === "setStat") {
       if (!(request.command.stat in STAT_RANGES) || !Number.isFinite(request.command.value)) return "数值命令无效";

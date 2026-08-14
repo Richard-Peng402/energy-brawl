@@ -29,6 +29,8 @@ const STATUS_VISUALS: Readonly<Record<StatusEffectId, StatusEffectVisualProfile>
   "bulwark-suppression": { color: 0x63d9ff, label: "火力压制", pulseMs: 620 },
   "phase-reveal": { color: 0xc77dff, label: "显形", pulseMs: 420 },
   "phase-fire-lock": { color: 0xff8d70, label: "武器锁定", pulseMs: 250 },
+  "neon-overdrive": { color: 0x37cfff, label: "轨道过载", pulseMs: 360 },
+  "crystal-resonance": { color: 0xa978ff, label: "晶脉共鸣", pulseMs: 520 },
 };
 
 export function getStatusEffectVisualProfile(id: StatusEffectId): StatusEffectVisualProfile {
