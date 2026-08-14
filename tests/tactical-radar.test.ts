@@ -39,6 +39,26 @@ describe("tactical radar", () => {
     expect(frame.skillOrbs).toHaveLength(8);
     expect(frame.capturePoint).toMatchObject({ x: 80, y: 80 });
   });
+
+  it("projects only the authoritative current warning or active mechanism zone", () => {
+    const warning = buildRadarFrame(snapshot({
+      mapMechanic: {
+        kind: "neon-overdrive", phase: "warning", round: 0, zoneIndex: 0,
+        zone: { kind: "rect", x: 1_000, y: 600, width: 880, height: 120 },
+        phaseStartedAt: 20_000, phaseEndsAt: 24_000, participants: [],
+      },
+    }), "local", 160);
+    expect(warning.mapMechanic).toMatchObject({ kind: "neon-overdrive", phase: "warning", zoneIndex: 0, zone: { kind: "rect" } });
+
+    const cooldown = buildRadarFrame(snapshot({
+      mapMechanic: {
+        kind: "neon-overdrive", phase: "cooldown", round: 0, zoneIndex: 0,
+        zone: { kind: "rect", x: 1_000, y: 600, width: 880, height: 120 },
+        phaseStartedAt: 32_000, phaseEndsAt: 52_000, participants: [],
+      },
+    }), "local", 160);
+    expect(cooldown.mapMechanic).toBeNull();
+  });
 });
 
 function snapshot(overrides: Partial<GameSnapshot> = {}): GameSnapshot {

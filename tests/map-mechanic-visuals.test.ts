@@ -5,6 +5,9 @@ import {
   mapMechanicLobbyView,
   mapMechanicMatchKey,
   mapMechanicPresentationProfile,
+  mapMechanicRenderProfile,
+  mapMechanicStatusText,
+  mapMechanicVisualRevision,
   randomMapMechanicSummaries,
 } from "../src/client/map-mechanic-visuals";
 import type { GameSnapshot } from "../src/shared/protocol";
@@ -39,7 +42,43 @@ describe("map mechanic presentation", () => {
     expect(mapMechanicMatchKey(first)).toBe(mapMechanicMatchKey(duplicate));
     expect(mapMechanicMatchKey(nextMatch)).not.toBe(mapMechanicMatchKey(first));
   });
+
+  it("uses thick readable warning and active render profiles", () => {
+    expect(mapMechanicRenderProfile("reactor-vent", "idle")).toBeNull();
+    expect(mapMechanicRenderProfile("reactor-vent", "cooldown")).toBeNull();
+    expect(mapMechanicRenderProfile("reactor-vent", "warning")).toMatchObject({ strokeWidth: 12, shapeMotion: "expand", fillAlpha: 0.08 });
+    expect(mapMechanicRenderProfile("neon-overdrive", "active")).toMatchObject({ strokeWidth: 10, shapeMotion: "flow", primary: 0x37cfff });
+    expect(mapMechanicRenderProfile("crystal-resonance", "active")).toMatchObject({ strokeWidth: 10, shapeMotion: "converge", primary: 0xa978ff });
+  });
+
+  it("formats warning, active and local crystal charge HUD copy", () => {
+    const warning = mechanic({ kind: "reactor-vent", phase: "warning", phaseEndsAt: 25_000 });
+    expect(mapMechanicStatusText(warning, "p1", 21_100)).toBe("核心泄压 · 4 秒后启动");
+    expect(mapMechanicStatusText(mechanic({ kind: "neon-overdrive", phase: "active" }), "p1", 25_000)).toContain("移速 +12%");
+    expect(mapMechanicStatusText(mechanic({ kind: "crystal-resonance", phase: "active", participants: [{ playerId: "p1", chargeProgress: 0.42, claimed: false }] }), "p1", 25_000)).toBe("晶脉共鸣 · 共鸣进度 42%");
+  });
+
+  it("keeps duplicate visual revisions stable and clears hidden phases", () => {
+    const active = mechanic({ kind: "neon-overdrive", phase: "active", round: 1, zoneIndex: 1 });
+    expect(mapMechanicVisualRevision(active)).toBe(mapMechanicVisualRevision({ ...active, phaseEndsAt: active.phaseEndsAt + 50 }));
+    expect(mapMechanicVisualRevision(null)).toBe("hidden");
+    expect(mapMechanicVisualRevision(mechanic({ phase: "cooldown" }))).toBe("hidden");
+  });
 });
+
+function mechanic(overrides: Partial<NonNullable<GameSnapshot["mapMechanic"]>> = {}): NonNullable<GameSnapshot["mapMechanic"]> {
+  return {
+    kind: "reactor-vent",
+    phase: "active",
+    round: 0,
+    zoneIndex: 0,
+    zone: { kind: "circle", x: 1_440, y: 810, radius: 300 },
+    phaseStartedAt: 24_000,
+    phaseEndsAt: 32_000,
+    participants: [],
+    ...overrides,
+  };
+}
 
 function snapshot(overrides: Partial<GameSnapshot>): GameSnapshot {
   return {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -12,6 +13,8 @@ import {
   resolveCharacterTextureKey,
   shouldRenderEffect,
 } from "../src/client/effect-pool";
+
+const gameSceneSource = readFileSync(new URL("../src/client/game-scene.ts", import.meta.url), "utf8");
 
 describe("v3 render effect pool", () => {
   it("assigns a readable gun skin to every character", () => {
@@ -105,5 +108,14 @@ describe("v3 render effect pool", () => {
     expect(shouldRenderEffect("spark", true)).toBe(true);
     expect(shouldRenderEffect("trail", true)).toBe(true);
     expect(shouldRenderEffect("impact", true)).toBe(true);
+  });
+
+  it("creates one persistent map layer and a fixed map particle pool", () => {
+    expect(gameSceneSource).toContain("mapMechanicGraphics");
+    expect(gameSceneSource).toContain("mapMechanicPulse");
+    expect(gameSceneSource).toContain("mapMechanicParticlePool");
+    expect(gameSceneSource).toContain("new FixedObjectPool(");
+    expect(gameSceneSource).toContain("syncMapMechanic");
+    expect(gameSceneSource).toContain("mapMechanicVisualRevision");
   });
 });

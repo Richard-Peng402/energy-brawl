@@ -14,6 +14,13 @@ describe("v4.4 tactical HUD UI", () => {
     expect(styles).toContain("pointer-events: none");
   });
 
+  it("adds a compact synchronized map-mechanic status outside the controls", () => {
+    expect(app).toContain('id="map-mechanic-status"');
+    expect(app).toContain("mapMechanicStatusText");
+    expect(styles).toContain(".map-mechanic-status");
+    expect(extractBlock(styles, ".map-mechanic-status")).toContain("pointer-events: none");
+  });
+
   it("renders an MVP summary and fixed-column post-match table", () => {
     expect(app).toContain('id="result-mvp"');
     expect(app).toContain("result-table-head");

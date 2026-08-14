@@ -41,6 +41,7 @@ import {
   mapMechanicLobbyView,
   mapMechanicMatchKey,
   mapMechanicPresentationProfile,
+  mapMechanicStatusText,
   randomMapMechanicSummaries,
 } from "./map-mechanic-visuals";
 
@@ -769,6 +770,10 @@ export class MobileApp {
     else if (capture.state === "contested") captureStatus.textContent = `据点争夺中 · ${capture.progress.toFixed(0)}%`;
     else if (capture.ownerTeamId) captureStatus.textContent = `${capture.ownerTeamId === "red" ? "红队" : capture.ownerTeamId === "blue" ? "蓝队" : "金队"} 占领 · ${capture.progress.toFixed(0)}%`;
     else captureStatus.textContent = "据点待占领";
+    const mechanicStatus = this.find<HTMLElement>("#map-mechanic-status");
+    const mechanicCopy = mapMechanicStatusText(snapshot.mapMechanic, this.network.playerId, snapshot.serverTime);
+    mechanicStatus.textContent = mechanicCopy;
+    mechanicStatus.classList.toggle("is-visible", mechanicCopy.length > 0);
     const captureRevision = capturePointRevision(snapshot);
     if (captureRevision !== this.lastCapturePointRevision) {
       const previous = this.lastCapturePointRevision;
@@ -1186,6 +1191,7 @@ function mobileTemplate(): string {
           <div id="team-score" class="team-score">个人战</div>
           <div id="capture-status" class="capture-status" aria-live="polite"></div>
           <div id="map-mechanic-opening" class="map-mechanic-opening" aria-live="polite"></div>
+          <div id="map-mechanic-status" class="map-mechanic-status" aria-live="polite"></div>
           <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
           <div id="leaderboard" class="leaderboard"></div>
            <button class="control-settings-button arena-controls" data-controls-open type="button">键位</button><button class="sound-button arena-sound" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>
@@ -1234,6 +1240,37 @@ function drawRadar(context: CanvasRenderingContext2D, frame: ReturnType<typeof b
   context.strokeRect(0.5, 0.5, size - 1, size - 1);
   context.fillStyle = "rgba(102, 130, 143, 0.55)";
   for (const wall of frame.walls) context.fillRect(wall.x, wall.y, wall.width, wall.height);
+  if (frame.mapMechanic) {
+    const colors = {
+      "reactor-vent": "#ff7048",
+      "neon-overdrive": "#37cfff",
+      "crystal-resonance": "#a978ff",
+    } as const;
+    context.strokeStyle = colors[frame.mapMechanic.kind];
+    context.lineWidth = frame.mapMechanic.phase === "warning" ? 3 : 2.5;
+    context.globalAlpha = frame.mapMechanic.phase === "warning" ? 0.78 : 0.96;
+    context.beginPath();
+    if (frame.mapMechanic.zone.kind === "circle") {
+      context.ellipse(
+        frame.mapMechanic.zone.x,
+        frame.mapMechanic.zone.y,
+        Math.max(3, frame.mapMechanic.zone.radiusX),
+        Math.max(3, frame.mapMechanic.zone.radiusY),
+        0,
+        0,
+        Math.PI * 2,
+      );
+    } else {
+      context.rect(
+        frame.mapMechanic.zone.x,
+        frame.mapMechanic.zone.y,
+        frame.mapMechanic.zone.width,
+        frame.mapMechanic.zone.height,
+      );
+    }
+    context.stroke();
+    context.globalAlpha = 1;
+  }
   context.fillStyle = "#8fe9ff";
   for (const orb of frame.energy) context.fillRect(orb.x - 1.5, orb.y - 1.5, 3, 3);
   context.fillStyle = "#f2c14e";

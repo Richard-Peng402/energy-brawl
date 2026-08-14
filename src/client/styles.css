@@ -937,6 +937,32 @@ button:disabled {
 .map-mechanic-opening strong { color: #f5fbff; font-size: 12px; text-align: center; }
 .map-mechanic-opening small { color: var(--mechanic-secondary, #cfeeff); font-size: 8px; font-weight: 800; white-space: nowrap; }
 
+.map-mechanic-status {
+  position: absolute;
+  z-index: 23;
+  top: max(126px, calc(env(safe-area-inset-top) + 120px));
+  left: 50%;
+  max-width: min(420px, 48vw);
+  min-height: 24px;
+  transform: translateX(-50%);
+  border: 1px solid rgb(133 220 255 / 34%);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: linear-gradient(90deg, rgb(5 10 15 / 76%), rgb(10 22 31 / 92%), rgb(5 10 15 / 76%));
+  box-shadow: 0 5px 18px rgb(0 0 0 / 30%), inset 0 -1px 0 rgb(255 255 255 / 10%);
+  color: #ecfbff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.map-mechanic-status.is-visible { opacity: 1; }
+
 .kill-feed {
   position: absolute;
   top: max(102px, calc(env(safe-area-inset-top) + 96px));
@@ -2156,6 +2182,7 @@ button:disabled {
   .map-mechanic-card strong { font-size: 11px; }
   .map-mechanic-card .map-mechanic-card-body { margin-top: 2px; font-size: 7px; }
   .map-mechanic-opening { top: max(104px, calc(env(safe-area-inset-top) + 98px)); width: min(330px, 50vw); padding: 5px 8px; }
+  .map-mechanic-status { top: max(116px, calc(env(safe-area-inset-top) + 110px)); max-width: 46vw; padding: 4px 9px; font-size: 8px; }
 
   .lobby-workspace {
     gap: 6px;

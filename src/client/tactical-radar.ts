@@ -1,6 +1,7 @@
 import { ARENA_HEIGHT, ARENA_WIDTH } from "../shared/constants";
 import { firstWallHit } from "../shared/collision";
 import { getMapDefinition } from "../shared/map-catalog";
+import type { MapMechanicKind, MapMechanicPhase } from "../shared/map-mechanics";
 import type { GameSnapshot, PlayerSnapshot, Rect, Vec2 } from "../shared/protocol";
 
 const ENEMY_AWARENESS_RADIUS = 900;
@@ -22,6 +23,16 @@ export interface RadarFrame {
   energy: Vec2[];
   skillOrbs: Array<Vec2 & { type: string }>;
   capturePoint: (Vec2 & { radius: number; state: string; ownerTeamId: string | null }) | null;
+  mapMechanic: RadarMapMechanic | null;
+}
+
+export interface RadarMapMechanic {
+  kind: MapMechanicKind;
+  phase: Extract<MapMechanicPhase, "warning" | "active">;
+  zoneIndex: number;
+  zone:
+    | { kind: "circle"; x: number; y: number; radiusX: number; radiusY: number }
+    | { kind: "rect"; x: number; y: number; width: number; height: number };
 }
 
 export type TacticalCueKind = "danger" | "objective" | "teammate";
@@ -71,6 +82,31 @@ export function buildRadarFrame(snapshot: GameSnapshot, localPlayerId: string | 
       state: snapshot.capturePoint.state,
       ownerTeamId: snapshot.capturePoint.ownerTeamId,
     } : null,
+    mapMechanic: projectMapMechanic(snapshot, size),
+  };
+}
+
+function projectMapMechanic(snapshot: GameSnapshot, size: number): RadarMapMechanic | null {
+  const mechanic = snapshot.mapMechanic;
+  if (!mechanic || (mechanic.phase !== "warning" && mechanic.phase !== "active")) return null;
+  const projected = projectRadarPoint(mechanic.zone, size);
+  return {
+    kind: mechanic.kind,
+    phase: mechanic.phase,
+    zoneIndex: mechanic.zoneIndex,
+    zone: mechanic.zone.kind === "circle"
+      ? {
+          kind: "circle",
+          ...projected,
+          radiusX: mechanic.zone.radius / ARENA_WIDTH * size,
+          radiusY: mechanic.zone.radius / ARENA_HEIGHT * size,
+        }
+      : {
+          kind: "rect",
+          ...projected,
+          width: mechanic.zone.width / ARENA_WIDTH * size,
+          height: mechanic.zone.height / ARENA_HEIGHT * size,
+        },
   };
 }
 

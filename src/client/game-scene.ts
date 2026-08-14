@@ -4,7 +4,7 @@ import { CHARACTER_CATALOG } from "../shared/character-catalog";
 import { getMapDefinition, type MapId } from "../shared/map-catalog";
 import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_MAX_DISTANCE, VIEW_HEIGHT, VIEW_WIDTH } from "../shared/constants";
 import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
-import type { CapturePointSnapshot, GameSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import type { CapturePointSnapshot, GameSnapshot, MapMechanicSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import { AIM_GUIDE_LINE_WIDTH, calculateAimGuide } from "./aim-guide";
 import {
   ARENA_ASSETS,
@@ -59,6 +59,7 @@ import { combatCameraImpulse, getExclusiveEffectProfile, getStatusEffectVisualPr
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
+import { mapMechanicRenderProfile, mapMechanicVisualRevision } from "./map-mechanic-visuals";
 
 interface PlayerView {
   container: Phaser.GameObjects.Container;
@@ -247,6 +248,10 @@ class ArenaScene extends Phaser.Scene {
   private exclusiveSkillIndicatorGraphics: Phaser.GameObjects.Graphics | null = null;
   private capturePointGraphics: Phaser.GameObjects.Graphics | null = null;
   private capturePointPulse: Phaser.GameObjects.Arc | null = null;
+  private mapMechanicGraphics: Phaser.GameObjects.Graphics | null = null;
+  private mapMechanicPulse: Phaser.GameObjects.Arc | null = null;
+  private mapMechanicParticlePool: FixedObjectPool<Phaser.GameObjects.Image> | null = null;
+  private mapMechanicRevision = "hidden";
   private latestSnapshotReceivedAt = 0;
   private renderDelayMs = 100;
   private correctionRemaining: Vec2 = { x: 0, y: 0 };
@@ -317,6 +322,20 @@ class ArenaScene extends Phaser.Scene {
     this.capturePointPulse = this.add.circle(1_440, 810, 220, 0x4da3ff, 0.03)
       .setStrokeStyle(6, 0x4da3ff, 0.36)
       .setDepth(-2);
+    this.mapMechanicGraphics = this.add.graphics().setDepth(-3.1).setBlendMode(Phaser.BlendModes.ADD);
+    this.mapMechanicPulse = this.add.circle(0, 0, 1, 0xffffff, 0.02)
+      .setDepth(-3.05)
+      .setVisible(false)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.mapMechanicParticlePool = new FixedObjectPool(
+      28,
+      () => this.add.image(0, 0, "fx-impact-spark")
+        .setDepth(-3)
+        .setVisible(false)
+        .setActive(false)
+        .setBlendMode(Phaser.BlendModes.ADD),
+      (image) => image.setVisible(false).setActive(false).setAlpha(1).setScale(1).setRotation(0).clearTint(),
+    );
     this.aimEnd = this.add.circle(0, 0, 5, 0xfff1bf, 0.9).setStrokeStyle(2, 0xff8c58, 0.95).setDepth(9).setVisible(false);
     this.ready = true;
     if (this.snapshot) this.syncSnapshot(this.snapshot);
@@ -350,6 +369,7 @@ class ArenaScene extends Phaser.Scene {
     this.updateCamera();
     this.updateAimGuide();
     this.updateExclusiveSkillIndicator();
+    this.updateMapMechanicVisual(now);
   }
 
   applySnapshot(snapshot: GameSnapshot): void {
@@ -596,6 +616,7 @@ class ArenaScene extends Phaser.Scene {
     this.syncEnergy(snapshot);
     this.syncSkillOrbs(snapshot);
     this.syncCapturePoint(snapshot.capturePoint ?? null);
+    this.syncMapMechanic(snapshot.phase === "finished" ? null : snapshot.mapMechanic ?? null);
   }
 
   private syncCombatStateVisual(view: PlayerView, player: PlayerSnapshot, serverTime: number, identity: string): void {
@@ -642,6 +663,84 @@ class ArenaScene extends Phaser.Scene {
     graphics.lineStyle(4, 0xdff7ff, point.state === "contested" ? 0.86 : 0.45).strokeCircle(point.x, point.y, point.radius * 0.72);
     pulse.setVisible(true).setPosition(point.x, point.y).setRadius(point.radius).setStrokeStyle(6, ownerColor, point.state === "contested" ? 0.78 : 0.28);
     pulse.setAlpha(point.state === "contested" ? 0.9 : 0.55);
+  }
+
+  private syncMapMechanic(mechanic: MapMechanicSnapshot | null): void {
+    const revision = mapMechanicVisualRevision(mechanic);
+    if (revision === this.mapMechanicRevision) return;
+    this.mapMechanicRevision = revision;
+    const graphics = this.mapMechanicGraphics;
+    const pulse = this.mapMechanicPulse;
+    if (!graphics || !pulse || revision === "hidden" || !mechanic) {
+      graphics?.clear().setVisible(false);
+      pulse?.setVisible(false);
+      this.mapMechanicParticlePool?.forEach((image) => image.setVisible(false).setActive(false));
+      return;
+    }
+    const profile = mapMechanicRenderProfile(mechanic.kind, mechanic.phase);
+    if (!profile) return;
+    graphics.clear().setVisible(true);
+    graphics.fillStyle(profile.primary, profile.fillAlpha);
+    graphics.lineStyle(profile.strokeWidth + 8, 0x02070b, 0.66);
+    if (mechanic.zone.kind === "circle") {
+      graphics.fillCircle(mechanic.zone.x, mechanic.zone.y, mechanic.zone.radius);
+      graphics.strokeCircle(mechanic.zone.x, mechanic.zone.y, mechanic.zone.radius);
+      graphics.lineStyle(profile.strokeWidth, profile.primary, 0.94).strokeCircle(mechanic.zone.x, mechanic.zone.y, mechanic.zone.radius);
+      graphics.lineStyle(3, profile.secondary, 0.72).strokeCircle(mechanic.zone.x, mechanic.zone.y, mechanic.zone.radius * 0.82);
+      pulse.setPosition(mechanic.zone.x, mechanic.zone.y).setRadius(mechanic.zone.radius);
+    } else {
+      graphics.fillRect(mechanic.zone.x, mechanic.zone.y, mechanic.zone.width, mechanic.zone.height);
+      graphics.strokeRect(mechanic.zone.x, mechanic.zone.y, mechanic.zone.width, mechanic.zone.height);
+      graphics.lineStyle(profile.strokeWidth, profile.primary, 0.94).strokeRect(mechanic.zone.x, mechanic.zone.y, mechanic.zone.width, mechanic.zone.height);
+      graphics.lineStyle(3, profile.secondary, 0.72).strokeRect(mechanic.zone.x + 16, mechanic.zone.y + 16, mechanic.zone.width - 32, mechanic.zone.height - 32);
+      pulse
+        .setPosition(mechanic.zone.x + mechanic.zone.width / 2, mechanic.zone.y + mechanic.zone.height / 2)
+        .setRadius(Math.max(44, Math.min(mechanic.zone.width, mechanic.zone.height) * 0.46));
+    }
+    pulse
+      .setVisible(true)
+      .setFillStyle(profile.primary, 0.035)
+      .setStrokeStyle(5, profile.secondary, 0.5);
+    this.mapMechanicParticlePool?.forEach((image) => image
+      .setVisible(true)
+      .setActive(true)
+      .setTint(profile.secondary)
+      .setDisplaySize(26, 26));
+  }
+
+  private updateMapMechanicVisual(now: number): void {
+    const mechanic = this.snapshot?.phase === "finished" ? null : this.snapshot?.mapMechanic;
+    const profile = mechanic ? mapMechanicRenderProfile(mechanic.kind, mechanic.phase) : null;
+    const pulse = this.mapMechanicPulse;
+    const pool = this.mapMechanicParticlePool;
+    if (!mechanic || !profile || !pulse || !pool || this.mapMechanicRevision === "hidden") return;
+    const cycle = (now % 1_800) / 1_800;
+    pulse.setScale(0.88 + cycle * 0.18).setAlpha(0.72 - cycle * 0.5);
+    const center = mechanic.zone.kind === "circle"
+      ? { x: mechanic.zone.x, y: mechanic.zone.y }
+      : { x: mechanic.zone.x + mechanic.zone.width / 2, y: mechanic.zone.y + mechanic.zone.height / 2 };
+    pool.forEach((image, index) => {
+      const progress = (cycle + index / pool.capacity) % 1;
+      if (profile.shapeMotion === "flow" && mechanic.zone.kind === "rect") {
+        image
+          .setPosition(mechanic.zone.x + progress * mechanic.zone.width, mechanic.zone.y + 18 + (index % 4) * ((mechanic.zone.height - 36) / 3))
+          .setRotation(Math.PI / 2)
+          .setDisplaySize(18, 42)
+          .setAlpha(0.28 + 0.62 * Math.sin(progress * Math.PI));
+        return;
+      }
+      const angle = index / pool.capacity * Math.PI * 2;
+      const outerRadius = mechanic.zone.kind === "circle"
+        ? mechanic.zone.radius
+        : Math.min(mechanic.zone.width, mechanic.zone.height) * 0.42;
+      const radialProgress = profile.shapeMotion === "converge" ? 1 - progress : progress;
+      const radius = outerRadius * (0.18 + radialProgress * 0.82);
+      image
+        .setPosition(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius)
+        .setRotation(angle + Math.PI / 2)
+        .setDisplaySize(18 + progress * 16, 18 + progress * 16)
+        .setAlpha(0.2 + 0.68 * Math.sin(progress * Math.PI));
+    });
   }
 
   private syncExclusiveSkillEffect(player: PlayerSnapshot): void {
