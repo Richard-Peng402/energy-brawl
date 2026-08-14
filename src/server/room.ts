@@ -68,12 +68,20 @@ export class GameRoom {
   private matchMode: MatchMode = "solo";
   private mapSelection: MapSelection = "reactor-core";
   private activeMapId: MapId | null = null;
+  private mapMechanicsEnabled = true;
 
   setMapSelection(selection: MapSelection): Ack {
     if (this.world) return { ok: false, error: "对局开始后无法切换地图" };
     const resolved = resolveMapSelection(selection, this.activeMapId);
     this.mapSelection = selection;
     this.activeMapId = selection === "random" ? null : resolved.id;
+    return { ok: true };
+  }
+
+  setMapMechanicsEnabled(enabled: boolean): Ack {
+    if (this.world) return { ok: false, error: "只能在大厅修改动态地图机制" };
+    if (typeof enabled !== "boolean") return { ok: false, error: "动态地图机制开关无效" };
+    this.mapMechanicsEnabled = enabled;
     return { ok: true };
   }
 
@@ -115,6 +123,7 @@ export class GameRoom {
 
     if (command.type === "setMode") return this.setMatchMode(command.mode);
     if (command.type === "setMap") return this.setMapSelection(command.mapSelection);
+    if (command.type === "setMapMechanics") return this.setMapMechanicsEnabled(command.enabled);
     if (command.type === "swapTeams") return this.swapPlayerTeams(command.firstPlayerId, command.secondPlayerId);
     if (command.type === "forceTeamWinner") {
       if (this.matchMode === "solo") return { ok: false, error: "个人战没有团队胜者" };
@@ -263,7 +272,9 @@ export class GameRoom {
     if (hasDuplicateCharacterOnTeam([...this.seats.values()])) return { ok: false, error: "同队角色不能重复" };
     const map = resolveMapSelection(this.mapSelection, this.activeMapId);
     this.activeMapId = map.id;
-    this.world = createGameWorld([...this.seats.values()], this.clockMs, this.matchMode, map.id);
+    this.world = createGameWorld([...this.seats.values()], this.clockMs, this.matchMode, map.id, {
+      mapMechanicsEnabled: this.mapMechanicsEnabled,
+    });
     this.autoResetAt = null;
     this.pendingInputs.clear();
     this.pendingSkillActions.clear();
@@ -456,6 +467,7 @@ export class GameRoom {
       matchMode: this.matchMode,
       mapSelection: this.mapSelection,
       activeMapId: this.activeMapId,
+      mapMechanicsEnabled: this.mapMechanicsEnabled,
       teamScores: this.world
         ? worldToSnapshot(this.world).teamScores
         : [...new Set([...this.seats.values()].map((seat) => seat.teamId).filter((teamId): teamId is TeamId => teamId !== null))].map((teamId) => ({

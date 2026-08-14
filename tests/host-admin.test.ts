@@ -54,6 +54,15 @@ describe("secure host admin authorization", () => {
     expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setMode", mode: "solo" } }, "playing", false).ok).toBe(false);
   });
 
+  it("authorizes only boolean map-mechanic changes in the lobby", () => {
+    const service = new HostAdminService("secret");
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setMapMechanics", enabled: false } }, "lobby", false)).toEqual({ ok: true });
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setMapMechanics", enabled: true } }, "playing", false).ok).toBe(false);
+    const malformed = { type: "setMapMechanics", enabled: "yes" } as unknown as HostAdminCommand;
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: malformed }, "lobby", false).ok).toBe(false);
+  });
+
+
   it("validates exclusive cooldown and forced team winners", () => {
     const service = new HostAdminService("secret");
     expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setStat", playerId: "p1", stat: "exclusiveSkillCooldownMs", value: 999 } }, "lobby", true).ok).toBe(false);

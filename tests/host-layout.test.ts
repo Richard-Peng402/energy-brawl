@@ -42,6 +42,14 @@ describe("host dashboard layout", () => {
     expect(hostApp).toContain("teamLabel(player.teamId)");
     expect(styles).toContain(".host-player-team");
   });
+
+  it("places a server-backed dynamic-map switch beside the map selector", () => {
+    expect(hostApp).toContain('id="host-map-mechanics"');
+    expect(hostApp).toContain('id="host-map-mechanic-description"');
+    expect(hostApp).toContain('{ type: "setMapMechanics", enabled: checkbox.checked }');
+    expect(hostApp).toContain('checkbox.checked = room?.mapMechanicsEnabled ?? true');
+    expect(hostApp).toContain('checkbox.disabled = !lobbyRulesEnabled');
+  });
 });
 
 function extractBlock(css: string, header: string): string {

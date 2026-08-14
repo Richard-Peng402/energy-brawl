@@ -1642,6 +1642,39 @@ button:disabled {
   font-size: 14px;
 }
 
+.host-map-settings {
+  gap: 4px;
+}
+
+.host-map-settings > label:first-child {
+  display: flex;
+  flex-direction: column;
+  color: #8f9ca2;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.host-map-settings select {
+  min-height: 30px;
+  margin-top: 3px;
+  border: 1px solid #526068;
+  border-radius: 4px;
+  background: #171d22;
+  color: #ffffff;
+}
+
+.host-map-mechanic-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #c9d5da;
+  font-size: 11px;
+}
+
+#host-map-mechanic-description {
+  display: none;
+}
+
 .host-status-band span {
   color: #8f9ca2;
   font-size: 10px;

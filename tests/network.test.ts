@@ -56,6 +56,30 @@ async function createHarness(): Promise<{ client: TestClient; network: GameNetwo
 }
 
 describe("game network", () => {
+  it("validates, applies and broadcasts the protected map-mechanic lobby setting", async () => {
+    const { client, room } = await createHarness();
+    const changedState = new Promise<Parameters<ServerToClientEvents["roomState"]>[0]>((resolve) => client.once("roomState", resolve));
+    expect(await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "setMapMechanics", enabled: false },
+    })).toEqual({ ok: true });
+    await expect(changedState).resolves.toMatchObject({ mapMechanicsEnabled: false });
+    expect(room.snapshot().mapMechanicsEnabled).toBe(false);
+
+    expect(await emitAck(client, "hostAdminCommand", {
+      token: "wrong-token",
+      command: { type: "setMapMechanics", enabled: true },
+    })).toMatchObject({ ok: false });
+    expect(room.snapshot().mapMechanicsEnabled).toBe(false);
+
+    const malformed = await emitAck(client, "hostAdminCommand", {
+      token: "test-host-token",
+      command: { type: "setMapMechanics", enabled: "yes" },
+    } as unknown as Parameters<ClientToServerEvents["hostAdminCommand"]>[0]);
+    expect(malformed).toMatchObject({ ok: false });
+    expect(room.snapshot().mapMechanicsEnabled).toBe(false);
+  });
+
   it("applies and broadcasts host lobby mode, team, cooldown, and team-winner commands", async () => {
     const { client, room } = await createHarness();
     const first = await emitAck(client, "join", { nickname: "红方", characterId: "blaze" });

@@ -9,6 +9,23 @@ const join = (room: GameRoom, socketId: string, nickname: string, characterId: C
   room.joinHuman(socketId, { nickname, characterId });
 
 describe("game room", () => {
+  it("keeps the lobby-only map-mechanic setting authoritative across resets", () => {
+    const room = new GameRoom();
+    expect(room.snapshot().mapMechanicsEnabled).toBe(true);
+    expect(room.applyHostAdminCommand({ type: "setMapMechanics", enabled: false })).toEqual({ ok: true });
+    expect(room.snapshot().mapMechanicsEnabled).toBe(false);
+
+    join(room, "socket-mechanic-setting", "开关玩家", "blaze");
+    room.setReady("socket-mechanic-setting", true);
+    expect(room.startMatch()).toEqual({ ok: true });
+    expect(room.gameSnapshot()?.mapMechanic).toBeNull();
+    expect(room.applyHostAdminCommand({ type: "setMapMechanics", enabled: true })).toMatchObject({ ok: false });
+
+    expect(room.endMatch()).toEqual({ ok: true });
+    expect(room.returnToLobby("socket-mechanic-setting")).toEqual({ ok: true });
+    expect(room.snapshot().mapMechanicsEnabled).toBe(false);
+  });
+
   it("selects a fixed map in the lobby and exposes it in game snapshots", () => {
     const room = new GameRoom();
     expect(room.setMapSelection("crystal-ruins")).toEqual({ ok: true });

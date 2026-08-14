@@ -73,6 +73,10 @@ export class HostAdminService {
       const mapSelection = (request.command as Extract<HostAdminCommand, { type: "setMap" }>).mapSelection;
       return resolveMapSelection(mapSelection).id && (mapSelection === "random" || MAP_CATALOG.some((map) => map.id === mapSelection)) ? null : "地图无效";
     }
+    if (request.command.type === "setMapMechanics") {
+      if (phase !== "lobby") return "只能在大厅修改动态地图机制";
+      return typeof request.command.enabled === "boolean" ? null : "动态地图机制开关无效";
+    }
     if (request.command.type === "swapTeams") {
       if (phase !== "lobby") return "只能在大厅调整队伍";
       if (typeof request.command.firstPlayerId !== "string" || typeof request.command.secondPlayerId !== "string" || request.command.firstPlayerId === request.command.secondPlayerId) return "队伍交换目标无效";
