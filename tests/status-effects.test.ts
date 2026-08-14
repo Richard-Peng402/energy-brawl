@@ -28,6 +28,18 @@ describe("authoritative status effects", () => {
     expect(store.size).toBe(0);
   });
 
+  it("keeps map buffs non-purifiable while still expiring by server time", () => {
+    const store: StatusEffectStore = new Map();
+    addStatusEffect(store, "neon-overdrive", 1_000, 1_000);
+    addStatusEffect(store, "crystal-resonance", 1_000, 6_000);
+
+    expect(clearPurifiableStatus(store)).toEqual([]);
+    expect(hasActiveStatusEffect(store, "neon-overdrive", 1_999)).toBe(true);
+    expect(hasActiveStatusEffect(store, "crystal-resonance", 6_999)).toBe(true);
+    expireStatusEffects(store, 7_000);
+    expect(store.size).toBe(0);
+  });
+
   it("clears every temporary effect on death or round reset", () => {
     const store: StatusEffectStore = new Map();
     addStatusEffect(store, "phase-reveal", 0, 1_200);

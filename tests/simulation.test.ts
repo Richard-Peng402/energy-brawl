@@ -146,6 +146,124 @@ describe("reactor venting", () => {
   });
 });
 
+describe("neon overdrive", () => {
+  it("combines movement, firing, projectile and suppression multipliers without replacing host stats", () => {
+    const world = createGameWorld([
+      { id: "arc", nickname: "电弧", characterId: "arc", isBot: false, teamId: "red", stats: { moveSpeed: 300, fireCooldownMs: 500, projectileSpeed: 1_000 } },
+      { id: "fortress", nickname: "堡垒", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "team3v3", "neon-docks", { mapMechanicsEnabled: true });
+    const arc = world.players.get("arc")!;
+    const fortress = world.players.get("fortress")!;
+    arc.x = 1_200; arc.y = 660; arc.shieldUntil = 0;
+    fortress.x = 1_400; fortress.y = 660; fortress.shieldUntil = 0;
+
+    stepWorld(world, 24_001);
+    expect(arc.statusEffects.get("neon-overdrive")).toMatchObject({ expiresAt: 25_001, purifiable: false });
+    expect(applyWorldExclusiveSkill(world, arc.id, { x: 1, y: 0 })).toBe(true);
+    expect(applyWorldExclusiveSkill(world, fortress.id, { x: 1, y: 0 })).toBe(true);
+    arc.input = { seq: 1, moveX: 1, moveY: 0, aimX: 1, aimY: 0, firing: true };
+    arc.nextFireAt = world.now;
+
+    stepWorld(world, 16);
+
+    expect(arc.vx).toBeCloseTo(300 * 1.15 * 1.12);
+    expect(arc.nextFireAt - world.now).toBeCloseTo(500 * 0.7 * 0.9 * 1.25);
+    const projectile = [...world.projectiles.values()][0]!;
+    expect(Math.hypot(projectile.vx, projectile.vy)).toBeCloseTo(1_000 * 1.15);
+    expect(arc.statusEffects.get("bulwark-suppression")).toBeDefined();
+  });
+
+  it("stacks with Runner speed and keeps exactly one second of grace after leaving", () => {
+    const world = createGameWorld([
+      { id: "runner", nickname: "疾行", characterId: "runner", isBot: false },
+    ], 0, "solo", "neon-docks", { mapMechanicsEnabled: true });
+    const runner = world.players.get("runner")!;
+    runner.x = 1_200; runner.y = 660; runner.shieldUntil = 0;
+    stepWorld(world, 24_001);
+    expect(applyWorldExclusiveSkill(world, runner.id, { x: 1, y: 0 })).toBe(true);
+    runner.input = { seq: 1, moveX: 1, moveY: 0, aimX: 0, aimY: 1, firing: false };
+    stepWorld(world, 16);
+    expect(runner.vx).toBeCloseTo(runner.moveSpeed * 1.28 * 1.12);
+
+    runner.x = 300; runner.y = 300;
+    runner.input = { ...runner.input, moveX: 0 };
+    const expiresAt = runner.statusEffects.get("neon-overdrive")!.expiresAt;
+    stepWorld(world, 500);
+    expect(runner.statusEffects.has("neon-overdrive")).toBe(true);
+    stepWorld(world, expiresAt - world.now);
+    expect(runner.statusEffects.has("neon-overdrive")).toBe(false);
+  });
+});
+
+describe("crystal resonance", () => {
+  const crystalWorld = () => createGameWorld([
+    { id: "medic", nickname: "医师", characterId: "medic", isBot: false },
+    { id: "enemy", nickname: "敌人", characterId: "blaze", isBot: false },
+  ], 0, "solo", "crystal-ruins", { mapMechanicsEnabled: true });
+
+  it("requires 1.25 seconds, heals actual health, reduces damage and clears on death", () => {
+    const world = crystalWorld();
+    const medic = world.players.get("medic")!;
+    const enemy = world.players.get("enemy")!;
+    medic.x = 1_100; medic.y = 450; medic.shieldUntil = 0;
+    enemy.x = 300; enemy.y = 300; enemy.shieldUntil = 0;
+
+    stepWorld(world, 24_000);
+    stepWorld(world, 1_249);
+    expect(medic.statusEffects.has("crystal-resonance")).toBe(false);
+    expect(worldToSnapshot(world).mapMechanic?.participants).toEqual([
+      { playerId: "medic", chargeProgress: 0.9992, claimed: false },
+    ]);
+    stepWorld(world, 1);
+    expect(medic.statusEffects.get("crystal-resonance")).toMatchObject({ expiresAt: 31_250, purifiable: false });
+
+    medic.health = medic.maxHealth - 10;
+    medic.healingDone = 0;
+    medic.lastCombatAt = world.now;
+    stepWorld(world, 1_000);
+    expect(medic.health).toBe(medic.maxHealth - 7);
+    expect(medic.healingDone).toBe(3);
+
+    medic.health = medic.maxHealth - 1;
+    medic.lastCombatAt = world.now;
+    stepWorld(world, 1_000);
+    expect(medic.health).toBe(medic.maxHealth);
+    expect(medic.healingDone).toBe(4);
+
+    expect(damagePlayer(world, medic.id, enemy.id, 20)).toBe(true);
+    expect(medic.health).toBe(medic.maxHealth - 17);
+    medic.health = 1;
+    expect(damagePlayer(world, medic.id, enemy.id, 20)).toBe(true);
+    expect(medic.alive).toBe(false);
+    expect(medic.statusEffects.has("crystal-resonance")).toBe(false);
+    expect(medic.mapHealingAccumulatorMs).toBe(0);
+  });
+
+  it("resets interrupted charge and permits a new claim in the next active round", () => {
+    const world = crystalWorld();
+    const medic = world.players.get("medic")!;
+    medic.x = 1_100; medic.y = 450; medic.shieldUntil = 0;
+    stepWorld(world, 24_000);
+    stepWorld(world, 500);
+    medic.x = 300; medic.y = 300;
+    stepWorld(world, 1);
+    expect(worldToSnapshot(world).mapMechanic?.participants).toEqual([]);
+
+    medic.x = 1_100; medic.y = 450;
+    stepWorld(world, 1_249);
+    expect(medic.statusEffects.has("crystal-resonance")).toBe(false);
+    stepWorld(world, 1);
+    expect(medic.statusEffects.has("crystal-resonance")).toBe(true);
+
+    medic.x = 1_780; medic.y = 450;
+    stepWorld(world, 56_000 - world.now);
+    expect(worldToSnapshot(world).mapMechanic).toMatchObject({ phase: "active", round: 1, zoneIndex: 1 });
+    stepWorld(world, 1_250);
+    expect(worldToSnapshot(world).mapMechanic?.participants).toContainEqual({ playerId: "medic", chargeProgress: 1, claimed: true });
+    expect(medic.statusEffects.has("crystal-resonance")).toBe(true);
+  });
+});
+
 describe("authoritative simulation", () => {
   it("uses v4.5 base stats and blocks Phase fire during its exit lock", () => {
     const world = createGameWorld([

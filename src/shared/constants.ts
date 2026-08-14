@@ -3,6 +3,7 @@ import type { Rect, Vec2 } from "./protocol";
 export const MAX_PLAYERS = 6;
 export const MAX_HEALTH = 100;
 export const PROJECTILE_DAMAGE = 25;
+export const MIN_DAMAGE = 1;
 export const KILL_SCORE = 2;
 export const HOLDER_KILL_BONUS = 1;
 export const ENERGY_SCORE = 1;

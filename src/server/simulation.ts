@@ -13,6 +13,7 @@ import {
   KILL_SCORE,
   MATCH_DURATION_MS,
   MAX_ENERGY,
+  MIN_DAMAGE,
   PLAYER_RADIUS,
   PROJECTILE_MAX_DISTANCE,
   PROJECTILE_RADIUS,
@@ -25,7 +26,7 @@ import {
 } from "../shared/constants";
 import { getCharacter, MEDIC_ENERGY_HEAL, type CharacterId } from "../shared/character-catalog";
 import { getMapDefinition, type MapId } from "../shared/map-catalog";
-import { zoneContainsPoint } from "../shared/map-mechanics";
+import { MAP_MECHANICS, zoneContainsPoint } from "../shared/map-mechanics";
 import { getModeDefinition, isCaptureMode, TEAM_IDS, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import { advanceCapturePoint, createCapturePointState, DEFAULT_CAPTURE_POINT_CONFIG, isCapturePointComplete, type CapturePointState } from "../shared/capture-point";
 import { applyExclusiveSkill, advanceExclusiveSkillEffects, clearExclusiveSkillState, isExclusiveEffectActive, type ExclusiveRuntimeState } from "./exclusive-skill-system";
@@ -66,6 +67,7 @@ import {
   advanceMapMechanicState,
   createMapMechanicState,
   mapMechanicSnapshot,
+  updateCrystalParticipant,
   type MapMechanicState,
 } from "./map-mechanic-system";
 
@@ -83,6 +85,7 @@ export interface WorldPlayer extends PlayerSnapshot {
   nextFireAt: number;
   lastCombatAt: number;
   regenAccumulatorMs: number;
+  mapHealingAccumulatorMs: number;
   killStreak: number;
   exclusiveSkillState?: ExclusiveRuntimeState | null;
   recentDamageSources: Map<string, number>;
@@ -201,6 +204,7 @@ export function createGameWorld(
       nextFireAt: now,
       lastCombatAt: now,
       regenAccumulatorMs: 0,
+      mapHealingAccumulatorMs: 0,
       killStreak: 0,
       teamId: seed.teamId ?? null,
       exclusiveSkillCooldownMs: seed.stats?.exclusiveSkillCooldownMs ?? DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS,
@@ -295,6 +299,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
 
   advanceHold(world, simulationDelta);
   if (isFinished(world)) return;
+  advanceCrystalHealing(world, previousNow, world.now);
 
   for (const player of world.players.values()) {
     expireStatusEffects(player.statusEffects, world.now);
@@ -358,9 +363,7 @@ function applyWorldDamage(
   if (attacker && attacker.id !== victim.id) markCombat(attacker, eventAt);
 
   if (victim.skillShieldUntil <= eventAt) victim.skillShieldHealth = 0;
-  const selfProtected = attacker && isExclusiveEffectActive(victim, "mobile-bulwark", eventAt) && isInFront(victim, attacker);
-  const allyProtected = attacker && findProtectingBulwark(world, victim, attacker) !== null;
-  const reducedAmount = amount * (selfProtected ? 0.55 : allyProtected ? 0.75 : 1);
+  const reducedAmount = Math.max(MIN_DAMAGE, amount * effectiveDamageTakenMultiplier(world, victim, attacker, eventAt));
   const absorbed = Math.min(victim.skillShieldHealth, reducedAmount);
   victim.skillShieldHealth -= absorbed;
   const healthDamage = reducedAmount - absorbed;
@@ -387,6 +390,7 @@ function applyWorldDamage(
   victim.skillShieldHealth = 0;
   victim.skillShieldUntil = 0;
   victim.killStreak = 0;
+  victim.mapHealingAccumulatorMs = 0;
   victim.deaths = (victim.deaths ?? 0) + 1;
   clearSkillSlot(victim);
   clearExclusiveSkillState(victim);
@@ -497,7 +501,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     finishedAt: world.finishedAt,
     matchMvpId: world.matchMvpId,
     matchMvpScore: world.matchMvpScore,
-    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, statusEffects, ...player }) => ({ ...player, combatStates: [...statusEffects.values()].map(({ id, startedAt, expiresAt }) => ({ id, startedAt, expiresAt })) })),
+    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, mapHealingAccumulatorMs: _mapHealingAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, statusEffects, ...player }) => ({ ...player, combatStates: [...statusEffects.values()].map(({ id, startedAt, expiresAt }) => ({ id, startedAt, expiresAt })) })),
     projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, ...projectile }) => projectile),
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
@@ -537,12 +541,39 @@ function advanceWorldMapMechanic(world: GameWorld, startedAt: number, endedAt: n
   while (cursor < endedAt && segments < 1_024) {
     segments += 1;
     const segmentEnd = Math.min(endedAt, state.phaseEndsAt);
-    if (state.phase === "active" && state.definition.kind === "reactor-vent") {
-      applyReactorDamageThrough(world, state, segmentEnd);
+    if (state.phase === "active") {
+      if (state.definition.kind === "reactor-vent") applyReactorDamageThrough(world, state, segmentEnd);
+      if (state.definition.kind === "neon-overdrive") applyNeonOverdrive(world, state, segmentEnd);
+      if (state.definition.kind === "crystal-resonance") applyCrystalResonance(world, state, cursor, segmentEnd);
     }
     advanceMapMechanicState(state, segmentEnd, world.phase === "playing");
     if (segmentEnd === cursor && state.phaseEndsAt <= cursor) break;
     cursor = segmentEnd;
+  }
+}
+
+function applyNeonOverdrive(world: GameWorld, state: MapMechanicState, segmentEnd: number): void {
+  if (state.definition.kind !== "neon-overdrive") return;
+  const zone = state.definition.zones[state.zoneIndex]!;
+  for (const player of world.players.values()) {
+    if (!player.alive || !zoneContainsPoint(zone, player)) continue;
+    addStatusEffect(player.statusEffects, "neon-overdrive", segmentEnd, state.definition.effect.graceMs);
+  }
+}
+
+function applyCrystalResonance(world: GameWorld, state: MapMechanicState, segmentStart: number, segmentEnd: number): void {
+  if (state.definition.kind !== "crystal-resonance") return;
+  const zone = state.definition.zones[state.zoneIndex]!;
+  for (const player of world.players.values()) {
+    const inside = player.alive && zoneContainsPoint(zone, player);
+    if (inside && !state.participantChargeStartedAt.has(player.id) && !state.claimedPlayerIds.has(player.id)) {
+      updateCrystalParticipant(state, player.id, true, segmentStart);
+    }
+    const claimed = updateCrystalParticipant(state, player.id, inside, segmentEnd);
+    if (claimed) {
+      addStatusEffect(player.statusEffects, "crystal-resonance", segmentEnd, state.definition.effect.durationMs);
+      player.mapHealingAccumulatorMs = 0;
+    }
   }
 }
 
@@ -683,9 +714,53 @@ function advanceExclusiveMovement(world: GameWorld, player: WorldPlayer): boolea
   return true;
 }
 
+function effectiveMoveMultiplier(world: GameWorld, player: WorldPlayer): number {
+  let multiplier = isExclusiveEffectActive(player, "capacitor-overload", world.now)
+    ? 1.15
+    : isExclusiveEffectActive(player, "afterimage-run", world.now)
+      ? 1.28
+      : 1;
+  if (hasActiveStatusEffect(player.statusEffects, "neon-overdrive", world.now)) {
+    multiplier *= MAP_MECHANICS["neon-docks"].effect.moveMultiplier;
+  }
+  return multiplier;
+}
+
+function effectiveFireCooldownMultiplier(world: GameWorld, player: WorldPlayer): number {
+  let multiplier = isExclusiveEffectActive(player, "capacitor-overload", world.now) ? 0.7 : 1;
+  if (hasActiveStatusEffect(player.statusEffects, "bulwark-suppression", world.now)) multiplier *= 1.25;
+  if (hasActiveStatusEffect(player.statusEffects, "neon-overdrive", world.now)) {
+    multiplier *= MAP_MECHANICS["neon-docks"].effect.fireCooldownMultiplier;
+  }
+  return multiplier;
+}
+
+function effectiveProjectileSpeedMultiplier(world: GameWorld, player: WorldPlayer): number {
+  return hasActiveStatusEffect(player.statusEffects, "neon-overdrive", world.now)
+    ? MAP_MECHANICS["neon-docks"].effect.projectileSpeedMultiplier
+    : 1;
+}
+
+function effectiveDamageTakenMultiplier(
+  world: GameWorld,
+  player: WorldPlayer,
+  attacker: WorldPlayer | undefined,
+  eventAt = world.now,
+): number {
+  let multiplier = 1;
+  if (attacker) {
+    if (isExclusiveEffectActive(player, "mobile-bulwark", eventAt) && isInFront(player, attacker)) multiplier *= 0.55;
+    else if (findProtectingBulwark(world, player, attacker) !== null) multiplier *= 0.75;
+  }
+  if (hasActiveStatusEffect(player.statusEffects, "crystal-resonance", eventAt)) {
+    multiplier *= MAP_MECHANICS["crystal-ruins"].effect.damageTakenMultiplier;
+  }
+  return multiplier;
+}
+
 function movePlayer(world: GameWorld, player: WorldPlayer, deltaMs: number): void {
   const direction = normalize({ x: player.input.moveX, y: player.input.moveY });
-  const speedMultiplier = isExclusiveEffectActive(player, "capacitor-overload", world.now) ? 1.15 : isExclusiveEffectActive(player, "afterimage-run", world.now) ? 1.28 : 1;
+  const speedMultiplier = effectiveMoveMultiplier(world, player);
   player.vx = direction.x * player.moveSpeed * speedMultiplier;
   player.vy = direction.y * player.moveSpeed * speedMultiplier;
   const seconds = deltaMs / 1_000;
@@ -711,23 +786,22 @@ function updateAimAndFire(world: GameWorld, player: WorldPlayer): void {
       if (hasActiveStatusEffect(player.statusEffects, "phase-fire-lock", world.now)) return;
       const runnerDamage = isExclusiveEffectActive(player, "afterimage-run", world.now) ? player.damage * 1.15 : player.damage;
       spawnProjectile(world, player, player.angle, runnerDamage);
-      const overloadMultiplier = isExclusiveEffectActive(player, "capacitor-overload", world.now) ? 0.7 : 1;
-      const fortressSlow = hasActiveStatusEffect(player.statusEffects, "bulwark-suppression", world.now) ? 1.25 : 1;
-      player.nextFireAt = world.now + player.fireCooldownMs * overloadMultiplier * fortressSlow;
+      player.nextFireAt = world.now + player.fireCooldownMs * effectiveFireCooldownMultiplier(world, player);
     }
   }
 }
 
 function spawnProjectile(world: GameWorld, player: WorldPlayer, angle: number, damage: number): void {
   const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+  const projectileSpeed = player.projectileSpeed * effectiveProjectileSpeedMultiplier(world, player);
   const id = `projectile-${world.nextProjectileId++}`;
   world.projectiles.set(id, {
     id,
     ownerId: player.id,
     x: player.x + direction.x * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
     y: player.y + direction.y * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
-    vx: direction.x * player.projectileSpeed,
-    vy: direction.y * player.projectileSpeed,
+    vx: direction.x * projectileSpeed,
+    vy: direction.y * projectileSpeed,
     damage,
     distanceTraveled: 0,
   });
@@ -842,12 +916,36 @@ function respawnPlayer(world: GameWorld, player: WorldPlayer): void {
   player.nextFireAt = world.now;
   player.lastCombatAt = world.now;
   player.regenAccumulatorMs = 0;
+  player.mapHealingAccumulatorMs = 0;
   clearAllStatusEffects(player.statusEffects);
 }
 
 function markCombat(player: WorldPlayer, now: number): void {
   player.lastCombatAt = now;
   player.regenAccumulatorMs = 0;
+}
+
+function advanceCrystalHealing(world: GameWorld, intervalStart: number, intervalEnd: number): void {
+  const healingPerSecond = MAP_MECHANICS["crystal-ruins"].effect.healingPerSecond;
+  const pointIntervalMs = 1_000 / healingPerSecond;
+  for (const player of world.players.values()) {
+    const effect = player.statusEffects.get("crystal-resonance");
+    if (!player.alive || !effect) {
+      player.mapHealingAccumulatorMs = 0;
+      continue;
+    }
+    const activeStart = Math.max(intervalStart, effect.startedAt);
+    const activeEnd = Math.min(intervalEnd, effect.expiresAt);
+    if (activeEnd > activeStart) player.mapHealingAccumulatorMs += activeEnd - activeStart;
+    const points = Math.floor(player.mapHealingAccumulatorMs / pointIntervalMs);
+    if (points > 0) {
+      player.mapHealingAccumulatorMs -= points * pointIntervalMs;
+      const healed = Math.min(points, player.maxHealth - player.health);
+      player.health += healed;
+      player.healingDone = (player.healingDone ?? 0) + healed;
+    }
+    if (intervalEnd >= effect.expiresAt) player.mapHealingAccumulatorMs = 0;
+  }
 }
 
 function advanceCombatRegeneration(world: GameWorld, deltaMs: number): void {
