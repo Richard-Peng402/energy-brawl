@@ -433,6 +433,24 @@ describe("authoritative simulation", () => {
     expect(world.projectiles.size).toBe(1);
   });
 
+  it("uses the active map walls for Phase destination validity while allowing wall crossing", () => {
+    const blocked = createGameWorld([
+      { id: "phase", nickname: "相位", characterId: "phase", isBot: false },
+    ], 0, "solo", "neon-docks");
+    const blockedPhase = blocked.players.get("phase")!;
+    blockedPhase.x = 340; blockedPhase.y = 276;
+    expect(applyWorldExclusiveSkill(blocked, blockedPhase.id, { x: 1, y: 0 })).toBe(false);
+    expect(blockedPhase).toMatchObject({ x: 340, y: 276 });
+
+    const crossing = createGameWorld([
+      { id: "phase", nickname: "相位", characterId: "phase", isBot: false },
+    ], 0, "solo", "neon-docks");
+    const crossingPhase = crossing.players.get("phase")!;
+    crossingPhase.x = 700; crossingPhase.y = 810;
+    expect(applyWorldExclusiveSkill(crossing, crossingPhase.id, { x: 1, y: 0 })).toBe(true);
+    expect(crossingPhase.x).toBeCloseTo(1_100, 3);
+  });
+
   it("applies Fortress protection only to its forward sector", () => {
     const world = createGameWorld([
       { id: "fortress", nickname: "堡垒", characterId: "fortress", isBot: false, teamId: "red" },

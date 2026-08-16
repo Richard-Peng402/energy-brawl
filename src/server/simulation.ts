@@ -502,7 +502,11 @@ export function applyWorldExclusiveSkill(world: GameWorld, playerId: string, dir
   if (world.phase === "finished") return false;
   const player = world.players.get(playerId);
   if (!player) return false;
-  const result = applyExclusiveSkill(player, world.now, direction);
+  const result = applyExclusiveSkill(player, world.now, direction, {
+    walls: world.mapWalls.query({ x: 0, y: 0, width: ARENA_WIDTH, height: ARENA_HEIGHT }),
+    bounds: { width: ARENA_WIDTH, height: ARENA_HEIGHT },
+    playerRadius: PLAYER_RADIUS,
+  });
   if (!result.ok) return false;
   recordExclusiveSkillEvent(world, {
     playerId: player.id,

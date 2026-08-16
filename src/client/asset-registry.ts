@@ -132,15 +132,21 @@ export const EXCLUSIVE_SKILL_ICON_ASSETS: Readonly<Record<CharacterId, string>> 
   runner: "/assets/v4/fx/skills/runner.svg",
 };
 
+const stageFallback = (asset: string): Readonly<Record<"cast" | "active" | "end", string>> => ({
+  cast: asset,
+  active: asset,
+  end: asset,
+});
+
 export const EXCLUSIVE_SKILL_STAGE_ASSETS: Readonly<
   Record<ExclusiveSkillId, Readonly<Record<"cast" | "active" | "end", string>>>
 > = {
-  breach: { cast: "/assets/v4/fx/skills/blaze.svg", active: "/assets/v4/fx/skills/blaze.svg", end: "/assets/v4/fx/skills/blaze.svg" },
-  "pulse-heal": { cast: "/assets/v4/fx/skills/medic.svg", active: "/assets/v4/fx/skills/medic.svg", end: "/assets/v4/fx/skills/medic.svg" },
-  "mobile-bulwark": { cast: "/assets/v4/fx/skills/fortress.svg", active: "/assets/v4/fx/skills/fortress.svg", end: "/assets/v4/fx/skills/fortress.svg" },
-  "capacitor-overload": { cast: "/assets/v4/fx/skills/arc.svg", active: "/assets/v4/fx/skills/arc.svg", end: "/assets/v4/fx/skills/arc.svg" },
-  "phase-shift": { cast: "/assets/v4/fx/skills/phase.svg", active: "/assets/v4/fx/skills/phase.svg", end: "/assets/v4/fx/skills/phase.svg" },
-  "afterimage-run": { cast: "/assets/v4/fx/skills/runner.svg", active: "/assets/v4/fx/skills/runner.svg", end: "/assets/v4/fx/skills/runner.svg" },
+  breach: stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.blaze),
+  "pulse-heal": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.medic),
+  "mobile-bulwark": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.fortress),
+  "capacitor-overload": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.arc),
+  "phase-shift": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.phase),
+  "afterimage-run": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.runner),
 };
 
 export const PROJECTILE_FX_ASSETS = {

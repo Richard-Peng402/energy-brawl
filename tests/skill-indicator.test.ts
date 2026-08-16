@@ -15,6 +15,10 @@ describe("independent exclusive skill indicator", () => {
       expect(profile.range).toBeGreaterThan(0);
       expect(profile.thickness).toBeGreaterThanOrEqual(14);
       expect(profile.shape).toBeTruthy();
+      expect(profile.geometryKind).toMatch(/^(path|circle|frontal-arc|self)$/);
     }
+    expect(getSkillIndicatorProfile("medic")).toMatchObject({ geometryKind: "circle", range: 280 });
+    expect(getSkillIndicatorProfile("fortress")).toMatchObject({ geometryKind: "frontal-arc", secondaryRadius: 280 });
+    expect(getSkillIndicatorProfile("phase")).toMatchObject({ geometryKind: "path" });
   });
 });

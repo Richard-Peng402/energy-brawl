@@ -14,12 +14,13 @@ describe("exclusive skill visual profiles", () => {
       expect(profile.layers).toBeGreaterThanOrEqual(4);
       expect(profile.pulseMs).toBeGreaterThanOrEqual(360);
       expect(profile.pulseMs).toBeLessThanOrEqual(900);
+      expect(profile.releasePath).toBe("authoritative-state");
     }
   });
 
   it("keeps anchor and healing feedback persistent for their server state window", () => {
     expect(getExclusiveEffectProfile("breach")).toMatchObject({ persistent: true, layers: 5 });
-    expect(getExclusiveEffectProfile("pulse-heal").layers).toBeGreaterThanOrEqual(4);
+    expect(getExclusiveEffectProfile("pulse-heal")).toMatchObject({ layers: expect.any(Number), releasePath: "authoritative-state" });
   });
 
   it("gives every authoritative counter state a readable visual profile", () => {

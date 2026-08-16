@@ -4,13 +4,14 @@ import { CHARACTER_CATALOG } from "../shared/character-catalog";
 import { getMapDefinition, type MapId } from "../shared/map-catalog";
 import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_MAX_DISTANCE, VIEW_HEIGHT, VIEW_WIDTH } from "../shared/constants";
 import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
-import type { CapturePointSnapshot, GameSnapshot, MapMechanicSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import type { CapturePointSnapshot, ExclusiveSkillEvent, GameSnapshot, MapMechanicSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
 import { AIM_GUIDE_LINE_WIDTH, calculateAimGuide } from "./aim-guide";
 import {
   ARENA_ASSETS,
   CHARACTER_ASSETS,
   CHARACTER_DIRECTION_ASSETS,
   CHARACTER_DIRECTIONS,
+  EXCLUSIVE_SKILL_STAGE_ASSETS,
   MAP_ARENA_ASSETS,
   PROJECTILE_FX_ASSETS,
   PICKUP_ASSETS,
@@ -56,10 +57,12 @@ import { shouldAdvanceSnapshotAnchor, SnapshotBuffer } from "./snapshot-buffer";
 import type { SkillIndicatorState } from "./skill-indicator";
 import { getSkillIndicatorProfile } from "./skill-indicator";
 import { combatCameraImpulse, getExclusiveEffectProfile, getStatusEffectVisualProfile, selectCombatCameraFeedback } from "./skill-effects";
-import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
+import { EXCLUSIVE_SKILL_IDS, getExclusiveSkill, type ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
 import { mapMechanicRenderProfile, mapMechanicVisualRevision } from "./map-mechanic-visuals";
+import { resolveExclusiveSkillTargeting } from "../shared/exclusive-skill-targeting";
+import { getExclusiveSkillVfxProfile } from "./exclusive-skill-vfx";
 import {
   classifyExclusiveSkillFeedback,
   selectExclusiveSkillFeedback,
@@ -106,6 +109,13 @@ interface ExclusiveEffectView {
   graphics: Phaser.GameObjects.Graphics;
   skillId: ExclusiveSkillId;
   startedAt: number;
+}
+
+interface ExclusiveStageView {
+  container: Phaser.GameObjects.Container;
+  image: Phaser.GameObjects.Image;
+  ring: Phaser.GameObjects.Arc;
+  graphics: Phaser.GameObjects.Graphics;
 }
 
 const CHARACTER_RENDER_STATES: readonly CharacterAssetState[] = ["idle", "move", "attack", "hit", "death", "fallback"];
@@ -242,10 +252,14 @@ class ArenaScene extends Phaser.Scene {
   private readonly skillOrbViews = new Map<string, Phaser.GameObjects.Container>();
   private readonly exclusiveEffectRevisions = new Map<string, string>();
   private readonly exclusiveEffectViews = new Map<string, ExclusiveEffectView>();
+  private readonly exclusiveStagePools = new Map<string, ReusableObjectPool<ExclusiveStageView>>();
+  private readonly exclusiveStageLeases = new Map<ExclusiveStageView, ReusableObjectPool<ExclusiveStageView>>();
+  private readonly exclusiveStageTimers = new Set<Phaser.Time.TimerEvent>();
   private readonly snapshotBuffer = new SnapshotBuffer<GameSnapshot>();
   private readonly inputReconciler: InputReconciler;
   private snapshot: GameSnapshot | null = null;
   private lastExclusiveSkillEventSeq: number | null = null;
+  private readonly pendingExclusiveSkillEvents: ExclusiveSkillEvent[] = [];
   private localInput: Vec2 = { x: 0, y: 0 };
   private localAim: Vec2 = { x: 0, y: 0 };
   private aimCorridor: Phaser.GameObjects.Rectangle | null = null;
@@ -296,6 +310,12 @@ class ArenaScene extends Phaser.Scene {
     this.load.image("fx-impact-smoke", PROJECTILE_FX_ASSETS.smoke);
     for (const type of SKILL_TYPES) this.load.svg(`skill-${type}`, SKILL_ICON_ASSETS[type], { width: 64, height: 64 });
     for (const character of CHARACTER_CATALOG) this.load.svg(`exclusive-fx:${character.id}`, `/assets/v4/fx/skills/${character.id}.svg`, { width: 256, height: 256 });
+    for (const skillId of EXCLUSIVE_SKILL_IDS) {
+      const profile = getExclusiveSkillVfxProfile(skillId);
+      for (const stage of ["cast", "active", "end"] as const) {
+        this.load.svg(profile.stages[stage].textureKey, EXCLUSIVE_SKILL_STAGE_ASSETS[skillId][stage], { width: 256, height: 256 });
+      }
+    }
     for (const [kind, asset] of Object.entries(WEAPON_ASSETS)) this.load.image(`weapon:${kind}`, asset);
     for (const character of CHARACTER_CATALOG) {
       for (const state of CHARACTER_RENDER_STATES) {
@@ -318,6 +338,7 @@ class ArenaScene extends Phaser.Scene {
     this.createGeneratedFallbackTextures();
     this.drawArena();
     this.createEffectPools();
+    this.createExclusiveStagePools();
     this.createProjectileImagePools();
     this.createProjectilePool();
     this.resizeCamera(this.scale.width, this.scale.height);
@@ -344,7 +365,8 @@ class ArenaScene extends Phaser.Scene {
     );
     this.aimEnd = this.add.circle(0, 0, 5, 0xfff1bf, 0.9).setStrokeStyle(2, 0xff8c58, 0.95).setDepth(9).setVisible(false);
     this.ready = true;
-    if (this.snapshot) this.syncSnapshot(this.snapshot);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.clearExclusiveStageFeedback());
+    if (this.snapshot) this.syncSnapshot(this.snapshot, this.drainExclusiveSkillFeedback(this.snapshot));
   }
 
   override update(_time: number, delta: number): void {
@@ -396,9 +418,7 @@ class ArenaScene extends Phaser.Scene {
       this.lastExclusiveSkillEventSeq,
     );
     this.lastExclusiveSkillEventSeq = selectedSkillFeedback.lastSequence;
-    const classifiedSkillFeedback = selectedSkillFeedback.events.map((event) =>
-      classifyExclusiveSkillFeedback(event, this.localPlayerId, snapshot.players),
-    );
+    this.pendingExclusiveSkillEvents.push(...selectedSkillFeedback.events);
     const feedbackEvents = selectCombatFeedbackEvents(this.snapshot, snapshot, this.localPlayerId);
     this.playCombatFeedback(feedbackEvents);
     this.onCombatFeedback(feedbackEvents);
@@ -406,7 +426,7 @@ class ArenaScene extends Phaser.Scene {
     this.snapshot = snapshot;
     this.snapshotBuffer.push(snapshot);
     if (advancesAnchor) this.latestSnapshotReceivedAt = performance.now();
-    if (this.ready) this.syncSnapshot(snapshot, classifiedSkillFeedback);
+    if (this.ready) this.syncSnapshot(snapshot, this.drainExclusiveSkillFeedback(snapshot));
   }
 
   setLocalPlayerId(playerId: string | null): void {
@@ -456,6 +476,7 @@ class ArenaScene extends Phaser.Scene {
       ...state,
       origin: { ...state.origin },
       direction: { ...state.direction },
+      endpoint: { ...state.endpoint },
     } : null;
     if (!state) this.exclusiveSkillIndicatorGraphics?.setVisible(false).clear();
   }
@@ -642,7 +663,111 @@ class ArenaScene extends Phaser.Scene {
   private consumeExclusiveSkillFeedback(feedback: readonly ClassifiedExclusiveSkillFeedback[]): void {
     for (const item of feedback) {
       if (item.event.stage === "end") this.destroyExclusiveEffectView(item.event.playerId);
+      this.playExclusiveSkillEvent(item.event);
     }
+  }
+
+  private drainExclusiveSkillFeedback(snapshot: GameSnapshot): ClassifiedExclusiveSkillFeedback[] {
+    return this.pendingExclusiveSkillEvents.splice(0).map((event) =>
+      classifyExclusiveSkillFeedback(event, this.localPlayerId, snapshot.players),
+    );
+  }
+
+  private createExclusiveStagePools(): void {
+    for (const skillId of EXCLUSIVE_SKILL_IDS) {
+      const profile = getExclusiveSkillVfxProfile(skillId);
+      for (const stage of ["cast", "active", "end"] as const) {
+        const poolKey = `${skillId}:${stage}`;
+        this.exclusiveStagePools.set(poolKey, new ReusableObjectPool(
+          profile.poolCapacity,
+          () => {
+            const image = this.add.image(0, 0, profile.stages[stage].textureKey).setVisible(false);
+            const ring = this.add.circle(0, 0, 42, profile.stages[stage].color, 0.08)
+              .setStrokeStyle(5, profile.stages[stage].color, 0.8);
+            const graphics = this.add.graphics();
+            const container = this.add.container(0, 0, [ring, image, graphics]).setDepth(7).setVisible(false);
+            return { container, image, ring, graphics };
+          },
+          (view) => {
+            this.tweens.killTweensOf(view.container);
+            this.tweens.killTweensOf(view.image);
+            view.graphics.clear();
+            view.container.setVisible(false).setActive(false).setAlpha(1).setScale(1).setRotation(0);
+            view.image.setAlpha(1).setScale(1).setRotation(0).clearTint();
+            view.ring.setAlpha(1).setScale(1).setRadius(42).setFillStyle(0xffffff, 0).setStrokeStyle(0, 0xffffff, 0);
+          },
+        ));
+      }
+    }
+  }
+
+  private playExclusiveSkillEvent(event: ExclusiveSkillEvent): void {
+    const profile = getExclusiveSkillVfxProfile(event.skillId).stages[event.stage];
+    const pool = this.exclusiveStagePools.get(`${event.skillId}:${event.stage}`);
+    if (!pool) return;
+    const dx = event.target.x - event.origin.x;
+    const dy = event.target.y - event.origin.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const angle = Math.atan2(dy, dx);
+    const center = event.stage === "cast"
+      ? event.origin
+      : event.stage === "end"
+        ? event.target
+        : { x: event.origin.x + dx * 0.5, y: event.origin.y + dy * 0.5 };
+    const view = pool.acquire((item) => {
+      const blendMode = profile.blendMode === "add"
+        ? Phaser.BlendModes.ADD
+        : profile.blendMode === "screen"
+          ? Phaser.BlendModes.SCREEN
+          : Phaser.BlendModes.NORMAL;
+      item.container.setPosition(center.x, center.y).setVisible(true).setActive(true).setAlpha(profile.alpha).setScale(profile.scale);
+      item.image.setDisplaySize(150, 150).setTint(profile.color).setBlendMode(blendMode).setAlpha(profile.alpha * 0.78);
+      item.ring.setRadius(46).setFillStyle(profile.color, 0.08).setStrokeStyle(6, profile.color, 0.84).setBlendMode(blendMode);
+      item.graphics.setBlendMode(blendMode).lineStyle(10, profile.color, 0.72).fillStyle(profile.color, 0.12);
+      switch (profile.shape) {
+        case "path":
+        case "corridor":
+          item.graphics.lineBetween(-length / 2, 0, length / 2, 0);
+          item.graphics.fillCircle(length / 2, 0, profile.shape === "corridor" ? 30 : 22);
+          item.container.setRotation(angle);
+          break;
+        case "arc":
+          item.graphics.beginPath().arc(0, 0, 120, -0.72, 0.72, false).strokePath();
+          item.container.setRotation(angle);
+          break;
+        case "afterimage":
+          for (let index = 0; index < 4; index += 1) item.graphics.fillCircle(-index * 34, 0, 30 - index * 5);
+          item.container.setRotation(angle);
+          break;
+        case "field":
+          item.graphics.fillCircle(0, 0, 112).lineStyle(7, profile.color, 0.7).strokeCircle(0, 0, 138);
+          break;
+        case "ring":
+          item.graphics.lineStyle(8, profile.color, 0.86).strokeCircle(0, 0, 72);
+          break;
+      }
+    });
+    if (!view) return;
+    this.exclusiveStageLeases.set(view, pool);
+    this.tweens.add({ targets: view.container, alpha: 0, scale: profile.scale * 1.35, duration: profile.durationMs, ease: "Cubic.Out" });
+    this.tweens.add({ targets: view.image, angle: event.stage === "end" ? -18 : 18, duration: profile.durationMs, ease: "Sine.Out" });
+    const timer = this.time.delayedCall(profile.durationMs, () => {
+      this.exclusiveStageTimers.delete(timer);
+      if (this.exclusiveStageLeases.get(view) !== pool) return;
+      this.exclusiveStageLeases.delete(view);
+      pool.release(view);
+    });
+    this.exclusiveStageTimers.add(timer);
+  }
+
+  private clearExclusiveStageFeedback(): void {
+    for (const timer of this.exclusiveStageTimers) timer.remove(false);
+    this.exclusiveStageTimers.clear();
+    for (const [view, pool] of this.exclusiveStageLeases) pool.release(view);
+    this.exclusiveStageLeases.clear();
+    this.pendingExclusiveSkillEvents.length = 0;
+    for (const playerId of [...this.exclusiveEffectViews.keys()]) this.destroyExclusiveEffectView(playerId);
+    this.lastExclusiveSkillEventSeq = null;
   }
 
   private syncCombatStateVisual(view: PlayerView, player: PlayerSnapshot, serverTime: number, identity: string): void {
@@ -1067,8 +1192,19 @@ class ArenaScene extends Phaser.Scene {
     const origin = { x: view.container.x, y: view.container.y };
     const angle = Math.atan2(direction.y, direction.x);
     graphics.clear().setVisible(true);
-    graphics.fillStyle(profile.color, 0.11);
-    graphics.lineStyle(profile.thickness, profile.color, 0.42);
+    const skillId = getExclusiveSkill(preview.skillId).id;
+    const targeting = resolveExclusiveSkillTargeting({
+      skillId,
+      origin,
+      direction,
+      range: profile.range,
+      bounds: { width: ARENA_WIDTH, height: ARENA_HEIGHT },
+      playerRadius: PLAYER_RADIUS,
+      walls: getMapDefinition(this.mapId).walls,
+    });
+    const indicatorColor = targeting.valid ? profile.color : 0xff4d67;
+    graphics.fillStyle(indicatorColor, 0.11);
+    graphics.lineStyle(profile.thickness, indicatorColor, 0.42);
 
     const activeAnchor = preview.skillId === "blaze" && player.exclusiveSkillState?.skillId === "breach"
       ? player.exclusiveSkillState.anchor
@@ -1077,19 +1213,19 @@ class ArenaScene extends Phaser.Scene {
       graphics.lineBetween(origin.x, origin.y, activeAnchor.x, activeAnchor.y);
       graphics.fillCircle(activeAnchor.x, activeAnchor.y, 24);
       graphics.lineStyle(5, 0xfff2c2, 0.96).strokeCircle(activeAnchor.x, activeAnchor.y, 38);
-      graphics.lineStyle(3, profile.color, 0.88).strokeCircle(activeAnchor.x, activeAnchor.y, 54);
+      graphics.lineStyle(3, indicatorColor, 0.88).strokeCircle(activeAnchor.x, activeAnchor.y, 54);
       return;
     }
 
-    const target = { x: origin.x + direction.x * profile.range, y: origin.y + direction.y * profile.range };
+    const target = targeting.endpoint;
     switch (profile.shape) {
       case "dash-line":
       case "phase-line": {
         const sideX = -direction.y * 24;
         const sideY = direction.x * 24;
-        graphics.lineStyle(profile.thickness + 18, profile.color, 0.14);
+        graphics.lineStyle(profile.thickness + 18, indicatorColor, 0.14);
         graphics.lineBetween(origin.x, origin.y, target.x, target.y);
-        graphics.lineStyle(profile.thickness, profile.color, 0.7);
+        graphics.lineStyle(profile.thickness, indicatorColor, 0.7);
         graphics.lineBetween(origin.x, origin.y, target.x, target.y);
         graphics.fillCircle(target.x, target.y, profile.shape === "phase-line" ? 30 : 24);
         graphics.lineStyle(5, 0xffffff, 0.82).strokeCircle(target.x, target.y, profile.shape === "phase-line" ? 46 : 36);
@@ -1101,7 +1237,7 @@ class ArenaScene extends Phaser.Scene {
           target.x - direction.x * 28 - sideX,
           target.y - direction.y * 28 - sideY,
         );
-        graphics.lineStyle(4, profile.color, 0.9).strokeCircle(origin.x, origin.y, 34);
+        graphics.lineStyle(4, indicatorColor, 0.9).strokeCircle(origin.x, origin.y, 34);
         break;
       }
       case "heal-radius":
