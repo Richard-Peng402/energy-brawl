@@ -27,10 +27,8 @@ import {
   effectCapacity,
   projectileAngle,
   PROJECTILE_VIEW_CAPACITY,
-  shouldEmitProjectileTrail,
   shouldRenderProjectileImageEffect,
   shouldShowProjectileTrace,
-  type TrailMemory,
   selectCombatFeedbackEvents,
   type CombatFeedbackEvent,
 } from "./combat-feedback";
@@ -73,6 +71,12 @@ import {
   selectExclusiveSkillFeedback,
   type ClassifiedExclusiveSkillFeedback,
 } from "./exclusive-skill-feedback";
+import {
+  getProjectilePresentation,
+  selectProjectileTrailPoints,
+  type ProjectilePresentation,
+  type ProjectileVisualPart,
+} from "./projectile-presentation";
 
 interface PlayerView {
   container: Phaser.GameObjects.Container;
@@ -102,7 +106,8 @@ interface MovingView {
   traceSprite: Phaser.GameObjects.Image;
   ownerId: string;
   color: number;
-  lastTrail: TrailMemory;
+  presentation: ProjectilePresentation | null;
+  lastTrail: Vec2;
 }
 
 interface ExclusiveEffectView {
@@ -325,6 +330,18 @@ class ArenaScene extends Phaser.Scene {
     this.load.image("fx-impact-burst", PROJECTILE_FX_ASSETS.impact);
     this.load.image("fx-impact-spark", PROJECTILE_FX_ASSETS.spark);
     this.load.image("fx-impact-smoke", PROJECTILE_FX_ASSETS.smoke);
+    for (const character of CHARACTER_CATALOG) {
+      const presentation = getProjectilePresentation(character.id);
+      const parts = [
+        presentation.muzzle,
+        presentation.core,
+        presentation.trail,
+        presentation.impacts.wall,
+        presentation.impacts.player,
+        presentation.impacts.shield,
+      ];
+      for (const part of parts) this.load.image(part.textureKey, part.assetUrl);
+    }
     for (const type of SKILL_TYPES) this.load.svg(`skill-${type}`, SKILL_ICON_ASSETS[type], { width: 64, height: 64 });
     for (const character of CHARACTER_CATALOG) this.load.svg(`exclusive-fx:${character.id}`, `/assets/v4/fx/skills/${character.id}.svg`, { width: 256, height: 256 });
     for (const skillId of EXCLUSIVE_SKILL_IDS) {
@@ -1361,10 +1378,12 @@ class ArenaScene extends Phaser.Scene {
       if (!view) {
         const owner = lifecycleSnapshot.players.find((player) => player.id === projectile.ownerId);
         const color = Phaser.Display.Color.HexStringToColor(owner?.color ?? "#ffffff").color;
+        const presentation = getProjectilePresentation(owner?.characterId ?? "blaze");
         const acquired = this.projectilePool?.acquire((item) => {
           item.ownerId = projectile.ownerId;
           item.color = color;
-          item.lastTrail = { x: projectile.x, y: projectile.y, emittedAt: performance.now() };
+          item.presentation = presentation;
+          item.lastTrail = { x: projectile.x, y: projectile.y };
           item.container
             .setPosition(projectile.x, projectile.y)
             .setRotation(projectileAngle({ x: projectile.vx, y: projectile.vy }))
@@ -1372,8 +1391,17 @@ class ArenaScene extends Phaser.Scene {
             .setActive(true);
           item.core.setFillStyle(0xffffff, 1).setStrokeStyle(3, color, 1);
           item.glow.setFillStyle(color, 0.48);
-          item.coreSprite.setTint(color).setAlpha(1);
-          item.traceSprite.setTint(color).setAlpha(0.86).setVisible(shouldShowProjectileTrace(false));
+          item.coreSprite
+            .setTexture(presentation.core.textureKey)
+            .setDisplaySize(30 * presentation.core.scale, 30 * presentation.core.scale)
+            .setTint(color)
+            .setAlpha(presentation.core.alpha);
+          item.traceSprite
+            .setTexture(presentation.trail.textureKey)
+            .setDisplaySize(42 * presentation.trail.scale, 110 * presentation.trail.scale)
+            .setTint(color)
+            .setAlpha(presentation.trail.alpha)
+            .setVisible(shouldShowProjectileTrace(false));
         });
         if (!acquired) continue;
         view = acquired;
@@ -1384,7 +1412,7 @@ class ArenaScene extends Phaser.Scene {
           const muzzleX = owner.x + Math.cos(owner.angle) * 50;
           const muzzleY = owner.y + Math.sin(owner.angle) * 50;
           this.playCombatEffect("muzzle", muzzleX, muzzleY, color);
-          this.playProjectileImageEffect("muzzle", muzzleX, muzzleY, color, owner.angle);
+          this.playProjectileImageEffect("muzzle", muzzleX, muzzleY, color, owner.angle, presentation.muzzle);
           const localView = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : null;
           this.audio.playFire({
             local: owner.id === this.localPlayerId,
@@ -1398,11 +1426,17 @@ class ArenaScene extends Phaser.Scene {
       const x = Phaser.Math.Linear(start.x, end.x, alpha);
       const y = Phaser.Math.Linear(start.y, end.y, alpha);
       view.container.setPosition(x, y).setRotation(projectileAngle({ x: projectile.vx, y: projectile.vy }));
-      if (shouldEmitProjectileTrail(view.lastTrail, { x, y }, performance.now(), false)) {
-        this.playCombatEffect("trail", x, y, view.color);
-        this.playProjectileImageEffect("trail", x, y, view.color, projectileAngle({ x: projectile.vx, y: projectile.vy }));
-        view.lastTrail = { x, y, emittedAt: performance.now() };
+      const trailAngle = projectileAngle({ x: projectile.vx, y: projectile.vy });
+      const trailPoints = selectProjectileTrailPoints(
+        view.lastTrail,
+        { x, y },
+        view.presentation?.trailSpacingWorld ?? 28,
+      );
+      for (const point of trailPoints) {
+        this.playCombatEffect("trail", point.x, point.y, view.color);
+        this.playProjectileImageEffect("trail", point.x, point.y, view.color, trailAngle, view.presentation?.trail);
       }
+      if (trailPoints.length > 0) view.lastTrail = trailPoints.at(-1)!;
     }
   }
 
@@ -1563,7 +1597,7 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private createProjectilePool(): void {
-    this.projectilePool = new ReusableObjectPool(
+    this.projectilePool = new ReusableObjectPool<MovingView>(
       PROJECTILE_VIEW_CAPACITY,
       () => {
         const glow = this.add.circle(0, 0, 19, 0xffffff, 0.42).setBlendMode(Phaser.BlendModes.ADD);
@@ -1582,7 +1616,8 @@ class ArenaScene extends Phaser.Scene {
           traceSprite,
           ownerId: "",
           color: 0xffffff,
-          lastTrail: { x: 0, y: 0, emittedAt: 0 },
+          presentation: null,
+          lastTrail: { x: 0, y: 0 },
         };
       },
       (view) => {
@@ -1590,9 +1625,10 @@ class ArenaScene extends Phaser.Scene {
         view.container.setVisible(false).setActive(false).setPosition(0, 0).setRotation(0);
         view.ownerId = "";
         view.color = 0xffffff;
+        view.presentation = null;
         view.coreSprite.clearTint().setAlpha(1);
         view.traceSprite.clearTint().setAlpha(1).setVisible(false);
-        view.lastTrail = { x: 0, y: 0, emittedAt: 0 };
+        view.lastTrail = { x: 0, y: 0 };
       },
     );
   }
@@ -1629,21 +1665,31 @@ class ArenaScene extends Phaser.Scene {
     y: number,
     color: number,
     angle = 0,
+    visual?: ProjectileVisualPart,
   ): void {
     if (!shouldRenderProjectileImageEffect(kind, false)) return;
     const pool = this.projectileImagePools?.[kind];
     if (!pool) return;
     const image = pool.acquire((item) => {
+      if (visual) item.setTexture(visual.textureKey).setAlpha(visual.alpha);
       item.setPosition(x, y).setTint(color).setVisible(true).setActive(true);
-      if (kind === "muzzle") item.setDisplaySize(104, 54).setRotation(angle);
-      if (kind === "trail") item.setDisplaySize(14, 86).setRotation(angle - Math.PI / 2).setPosition(x - Math.cos(angle) * 28, y - Math.sin(angle) * 28);
+      if (kind === "muzzle") item.setDisplaySize(104 * (visual?.scale ?? 1), 54 * (visual?.scale ?? 1)).setRotation(angle);
+      if (kind === "trail") item.setDisplaySize(14 * (visual?.scale ?? 1), 86 * (visual?.scale ?? 1)).setRotation(angle - Math.PI / 2).setPosition(x - Math.cos(angle) * 28, y - Math.sin(angle) * 28);
       if (kind === "impact") item.setDisplaySize(94, 94).setRotation(Math.random() * Math.PI * 2);
       if (kind === "spark") item.setDisplaySize(64, 64).setRotation(Math.random() * Math.PI * 2);
       if (kind === "smoke") item.setDisplaySize(76, 76).setRotation(Math.random() * Math.PI * 2);
     });
     const duration = kind === "muzzle" ? 110 : kind === "trail" ? 150 : kind === "impact" ? 260 : kind === "smoke" ? 360 : 180;
-    const scale = kind === "muzzle" ? 1.18 : kind === "trail" ? 0.55 : kind === "impact" ? 1.35 : kind === "smoke" ? 1.55 : 0.7;
-    this.tweens.add({ targets: image, alpha: 0, scale, duration, ease: "Cubic.Out", onComplete: () => image.setVisible(false).setActive(false) });
+    const scaleMultiplier = kind === "muzzle" ? 1.18 : kind === "trail" ? 0.55 : kind === "impact" ? 1.35 : kind === "smoke" ? 1.55 : 0.7;
+    this.tweens.add({
+      targets: image,
+      alpha: 0,
+      scaleX: image.scaleX * scaleMultiplier,
+      scaleY: image.scaleY * scaleMultiplier,
+      duration,
+      ease: "Cubic.Out",
+      onComplete: () => image.setVisible(false).setActive(false),
+    });
   }
 
   private createEffectPools(): void {

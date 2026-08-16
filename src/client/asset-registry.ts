@@ -158,6 +158,26 @@ export const PROJECTILE_FX_ASSETS = {
   smoke: path("fx/projectiles/impact-smoke.png"),
 } as const;
 
+export type CharacterProjectileAssetKind = "muzzle" | "core" | "trail" | "wall-impact" | "player-impact" | "shield-impact";
+
+const characterProjectileAssets = (characterId: CharacterId): Readonly<Record<CharacterProjectileAssetKind, string>> => ({
+  muzzle: `/assets/v4/fx/projectiles/${characterId}/muzzle.png`,
+  core: `/assets/v4/fx/projectiles/${characterId}/core.png`,
+  trail: `/assets/v4/fx/projectiles/${characterId}/trail.png`,
+  "wall-impact": `/assets/v4/fx/projectiles/${characterId}/wall-impact.png`,
+  "player-impact": `/assets/v4/fx/projectiles/${characterId}/player-impact.png`,
+  "shield-impact": `/assets/v4/fx/projectiles/${characterId}/shield-impact.png`,
+});
+
+export const CHARACTER_PROJECTILE_ASSETS: Readonly<Record<CharacterId, Readonly<Record<CharacterProjectileAssetKind, string>>>> = {
+  blaze: characterProjectileAssets("blaze"),
+  medic: characterProjectileAssets("medic"),
+  fortress: characterProjectileAssets("fortress"),
+  arc: characterProjectileAssets("arc"),
+  phase: characterProjectileAssets("phase"),
+  runner: characterProjectileAssets("runner"),
+};
+
 export const WEAPON_ASSETS = {
   "cyan-heavy": path("weapons/cyan-heavy.png"),
   "violet-rifle": path("weapons/violet-rifle.png"),
