@@ -1,6 +1,7 @@
 import manifest from "../../public/assets/v3/manifest.json";
 
 import type { CharacterId } from "../shared/character-catalog";
+import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import type { MapId } from "../shared/map-catalog";
 
 export const APPROVED_ASSET_SOURCES = [
@@ -129,6 +130,17 @@ export const EXCLUSIVE_SKILL_ICON_ASSETS: Readonly<Record<CharacterId, string>> 
   arc: "/assets/v4/fx/skills/arc.svg",
   phase: "/assets/v4/fx/skills/phase.svg",
   runner: "/assets/v4/fx/skills/runner.svg",
+};
+
+export const EXCLUSIVE_SKILL_STAGE_ASSETS: Readonly<
+  Record<ExclusiveSkillId, Readonly<Record<"cast" | "active" | "end", string>>>
+> = {
+  breach: { cast: "/assets/v4/fx/skills/blaze.svg", active: "/assets/v4/fx/skills/blaze.svg", end: "/assets/v4/fx/skills/blaze.svg" },
+  "pulse-heal": { cast: "/assets/v4/fx/skills/medic.svg", active: "/assets/v4/fx/skills/medic.svg", end: "/assets/v4/fx/skills/medic.svg" },
+  "mobile-bulwark": { cast: "/assets/v4/fx/skills/fortress.svg", active: "/assets/v4/fx/skills/fortress.svg", end: "/assets/v4/fx/skills/fortress.svg" },
+  "capacitor-overload": { cast: "/assets/v4/fx/skills/arc.svg", active: "/assets/v4/fx/skills/arc.svg", end: "/assets/v4/fx/skills/arc.svg" },
+  "phase-shift": { cast: "/assets/v4/fx/skills/phase.svg", active: "/assets/v4/fx/skills/phase.svg", end: "/assets/v4/fx/skills/phase.svg" },
+  "afterimage-run": { cast: "/assets/v4/fx/skills/runner.svg", active: "/assets/v4/fx/skills/runner.svg", end: "/assets/v4/fx/skills/runner.svg" },
 };
 
 export const PROJECTILE_FX_ASSETS = {

@@ -25,6 +25,8 @@ export const EXCLUSIVE_SKILL_CATALOG: readonly ExclusiveSkillDefinition[] = [
   { id: "afterimage-run", characterId: "runner", name: "残像疾奔", description: "加速跑图并提高子弹伤害", cooldownMs: DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS, durationMs: 4_000, effectKind: "afterimage", balance: getExclusiveSkillBalance("afterimage-run") },
 ];
 
+export const EXCLUSIVE_SKILL_IDS = EXCLUSIVE_SKILL_CATALOG.map((skill) => skill.id) as readonly ExclusiveSkillId[];
+
 const BY_CHARACTER = new Map(EXCLUSIVE_SKILL_CATALOG.map((skill) => [skill.characterId, skill]));
 export function getExclusiveSkill(characterId: CharacterId): ExclusiveSkillDefinition { return BY_CHARACTER.get(characterId)!; }
 export function isExclusiveSkillId(value: unknown): value is ExclusiveSkillId { return typeof value === "string" && EXCLUSIVE_SKILL_CATALOG.some((skill) => skill.id === value); }
