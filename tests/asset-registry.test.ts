@@ -9,6 +9,7 @@ import {
   CHARACTER_DIRECTIONS,
   EXCLUSIVE_SKILL_STAGE_ASSETS,
   INITIAL_LOBBY_COMPRESSED_BYTES,
+  MAP_AMBIENCE_ASSETS,
   PICKUP_ASSETS,
   PROJECTILE_FX_ASSETS,
   WEAPON_ASSETS,
@@ -88,5 +89,13 @@ describe("v3 asset registry", () => {
       expect(Object.keys(stages).sort()).toEqual(["active", "cast", "end"]);
       for (const path of Object.values(stages)) expect(path).toMatch(/^\/assets\/v4\/fx\/exclusive-skills\/.+\/(cast|active|end)\.svg$/);
     }
+  });
+
+  it("registers one packaged ambience asset for every map", () => {
+    expect(MAP_AMBIENCE_ASSETS).toEqual({
+      "reactor-core": "/assets/v4/audio/maps/reactor-core/ambience.ogg",
+      "neon-docks": "/assets/v4/audio/maps/neon-docks/ambience.ogg",
+      "crystal-ruins": "/assets/v4/audio/maps/crystal-ruins/ambience.ogg",
+    });
   });
 });

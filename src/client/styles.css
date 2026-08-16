@@ -1673,6 +1673,16 @@ button:disabled {
 .touch-scale-label b { color: #f2c14e; }
 .touch-scale-label input { width: 100%; accent-color: #a77bff; }
 
+.audio-mix-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.audio-mix-controls .touch-scale-label {
+  min-width: 0;
+}
+
 /* Host dashboard */
 .host-shell {
   height: 100dvh;

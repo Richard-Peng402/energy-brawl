@@ -335,6 +335,14 @@ export class MobileApp {
       this.haptics.setMode(mode);
       saveHapticsMode(window.localStorage, mode);
     });
+    this.find<HTMLInputElement>("#effects-volume").addEventListener("input", (event) => {
+      this.audio.setEffectsLevel(Number((event.target as HTMLInputElement).value));
+      this.find("#effects-volume-value").textContent = `${Math.round(this.audio.effectsLevel * 100)}%`;
+    });
+    this.find<HTMLInputElement>("#ambience-volume").addEventListener("input", (event) => {
+      this.audio.setAmbienceLevel(Number((event.target as HTMLInputElement).value));
+      this.find("#ambience-volume-value").textContent = `${Math.round(this.audio.ambienceLevel * 100)}%`;
+    });
     this.find("#key-binding-list").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-bind-action]");
       if (!button) return;
@@ -430,6 +438,12 @@ export class MobileApp {
     this.find("#desktop-exclusive-key").textContent = formatKeyCode(this.controlSettings.keys.exclusiveSkill);
     this.find("#desktop-skill-key").textContent = formatKeyCode(this.controlSettings.keys.skill);
     this.find<HTMLSelectElement>("#haptics-mode").value = this.haptics.currentMode;
+    const effectsVolume = this.find<HTMLInputElement>("#effects-volume");
+    effectsVolume.value = String(this.audio.effectsLevel);
+    this.find("#effects-volume-value").textContent = `${Math.round(this.audio.effectsLevel * 100)}%`;
+    const ambienceVolume = this.find<HTMLInputElement>("#ambience-volume");
+    ambienceVolume.value = String(this.audio.ambienceLevel);
+    this.find("#ambience-volume-value").textContent = `${Math.round(this.audio.ambienceLevel * 100)}%`;
     const editLayout = this.find<HTMLButtonElement>("#controls-edit-layout");
     const phase = this.network.room?.phase;
     const canEditLayout = phase === "playing" || phase === "overtime" || phase === "finished";
@@ -589,6 +603,11 @@ export class MobileApp {
     this.find("#arena-screen").classList.toggle("is-hidden", !inGame);
 
     if (inGame && this.network.game) {
+      const mechanicPhase = this.network.game.mapMechanic?.phase;
+      this.audio.updateEnvironment({
+        mapId: this.network.game.mapId ?? "reactor-core",
+        warning: mechanicPhase === "warning" || mechanicPhase === "active",
+      });
       this.ensureRenderer(this.network.game.mapId ?? "reactor-core");
       this.renderer?.setLocalPlayerId(this.network.playerId);
       this.renderer?.setSnapshot(this.network.game);
@@ -597,6 +616,7 @@ export class MobileApp {
       this.renderResults(this.network.game);
       this.renderOpeningMechanicBanner(this.network.game);
     } else {
+      this.audio.stopEnvironment();
       this.haptics.stop();
       if (this.layoutEditing) this.setLayoutEditing(false);
       this.find("#results-overlay").classList.add("is-hidden");
@@ -1264,7 +1284,7 @@ function mobileTemplate(): string {
         <div class="controls-dialog-heading"><div><span class="eyebrow">PLAYER CONTROLS</span><h2>自定义键位</h2></div><button id="controls-close" type="button" aria-label="关闭">×</button></div>
         <div class="controls-dialog-grid">
           <section><h3>电脑按键</h3><p>鼠标移动控制瞄准，按住左键持续射击；长按专属技能键并移动鼠标，松键后朝瞄准位置释放。点击按键后按下新键即可重映射，冲突键位会自动交换。</p><div id="key-binding-list" class="key-binding-list"></div><button id="controls-reset-keys" class="secondary-control-button" type="button">恢复默认按键</button></section>
-          <section><h3>手机触控布局</h3><p>移动和攻击摇杆保持浮动；两个技能按钮可以自由拖动。</p><label class="touch-scale-label"><span>按钮大小 <b id="touch-scale-value">100%</b></span><input id="touch-scale" type="range" min="0.75" max="1.35" step="0.05" value="1" /></label><label class="touch-scale-label"><span>战斗震动</span><select id="haptics-mode"><option value="standard">标准</option><option value="light">轻微</option><option value="strong">强烈</option><option value="off">关闭</option></select></label><button id="controls-edit-layout" class="primary-button" type="button">进入布局编辑</button></section>
+           <section><h3>手机触控布局</h3><p>移动和攻击摇杆保持浮动；两个技能按钮可以自由拖动。</p><label class="touch-scale-label"><span>按钮大小 <b id="touch-scale-value">100%</b></span><input id="touch-scale" type="range" min="0.75" max="1.35" step="0.05" value="1" /></label><label class="touch-scale-label"><span>战斗震动</span><select id="haptics-mode"><option value="standard">标准</option><option value="light">轻微</option><option value="strong">强烈</option><option value="off">关闭</option></select></label><div class="audio-mix-controls"><label class="touch-scale-label"><span>战斗音效 <b id="effects-volume-value">100%</b></span><input id="effects-volume" type="range" min="0" max="1" step="0.05" value="1" /></label><label class="touch-scale-label"><span>环境音 <b id="ambience-volume-value">65%</b></span><input id="ambience-volume" type="range" min="0" max="1" step="0.05" value="0.65" /></label></div><button id="controls-edit-layout" class="primary-button" type="button">进入布局编辑</button></section>
         </div>
       </dialog>
       <div id="toast" class="toast" role="status"></div>

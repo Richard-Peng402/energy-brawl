@@ -1,4 +1,17 @@
 import type { MapMechanicKind } from "../shared/map-mechanics";
+import type { MapId } from "../shared/map-catalog";
+import { MAP_AMBIENCE_ASSETS } from "./asset-registry";
+import {
+  AMBIENCE_CROSSFADE_MS,
+  combatDuckingMultiplier,
+  createEnvironmentAudioState,
+  normalizeAudioMixSettings,
+  readAudioMixSettings,
+  updateEnvironmentAudio,
+  writeAudioMixSettings,
+  type AudioMixSettings,
+  type EnvironmentAudioState,
+} from "./environment-audio";
 import { getExclusiveSkillAudioProfile } from "./exclusive-skill-audio";
 import { EXCLUSIVE_SKILL_IDS, type ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import type { ExclusiveSkillEventStage } from "../shared/protocol";
@@ -157,6 +170,14 @@ export interface CombatAudioOptions {
   audioContextFactory?: () => AudioContext;
   killBufferLoader?: (context: AudioContext, url: string) => Promise<AudioBuffer>;
   skillBufferLoader?: (context: AudioContext, url: string) => Promise<AudioBuffer>;
+  environmentBufferLoader?: (context: AudioContext, url: string) => Promise<AudioBuffer>;
+}
+
+interface AmbienceVoice {
+  mapId: MapId;
+  sampled: boolean;
+  gain: GainNode;
+  stop: () => void;
 }
 
 const SOUND_MUTED_KEY = "energy-brawl.sound-muted";
@@ -271,14 +292,23 @@ export class CombatAudio {
   private readonly audioContextFactory: () => AudioContext;
   private readonly killBufferLoader: (context: AudioContext, url: string) => Promise<AudioBuffer>;
   private readonly skillBufferLoader: (context: AudioContext, url: string) => Promise<AudioBuffer>;
+  private readonly environmentBufferLoader: (context: AudioContext, url: string) => Promise<AudioBuffer>;
   private readonly killBuffers = new Map<KillStreakTier, AudioBuffer>();
   private readonly skillBuffers = new Map<string, AudioBuffer>();
+  private readonly environmentBuffers = new Map<MapId, AudioBuffer>();
+  private mixSettings: AudioMixSettings;
+  private environmentState: EnvironmentAudioState;
+  private ambienceVoice: AmbienceVoice | null = null;
+  private environmentRequested = false;
   private killBufferPreloadStarted = false;
   private skillBufferPreloadStarted = false;
+  private environmentBufferPreloadStarted = false;
   private audioPrimed = false;
 
   constructor(private readonly storage: SoundStorage, options: CombatAudioOptions = {}) {
     this.muted = readSoundMuted(storage);
+    this.mixSettings = readAudioMixSettings(storage);
+    this.environmentState = createEnvironmentAudioState(this.mixSettings);
     this.policy.setMuted(this.muted);
     this.audioContextFactory = options.audioContextFactory ?? (() => {
       const AudioContextClass = globalThis.AudioContext
@@ -288,17 +318,61 @@ export class CombatAudio {
     });
     this.killBufferLoader = options.killBufferLoader ?? loadAudioBuffer;
     this.skillBufferLoader = options.skillBufferLoader ?? loadAudioBuffer;
+    this.environmentBufferLoader = options.environmentBufferLoader ?? loadAudioBuffer;
   }
 
   get isMuted(): boolean {
     return this.muted;
   }
 
+  get effectsLevel(): number {
+    return this.mixSettings.effects;
+  }
+
+  get ambienceLevel(): number {
+    return this.mixSettings.ambience;
+  }
+
+  setEffectsLevel(level: number): void {
+    this.mixSettings = normalizeAudioMixSettings({ ...this.mixSettings, effects: level });
+    this.persistMixSettings();
+  }
+
+  setAmbienceLevel(level: number): void {
+    this.mixSettings = normalizeAudioMixSettings({ ...this.mixSettings, ambience: level });
+    this.environmentState = this.environmentState.activeMapId
+      ? updateEnvironmentAudio(this.environmentState, {
+        mapId: this.environmentState.activeMapId,
+        warning: this.environmentState.warning,
+        settings: this.mixSettings,
+      })
+      : createEnvironmentAudioState(this.mixSettings);
+    this.persistMixSettings();
+    this.applyAmbienceTarget(120);
+  }
+
   toggleMuted(): boolean {
     this.muted = !this.muted;
     this.policy.setMuted(this.muted);
     writeSoundMuted(this.storage, this.muted);
+    this.applyAmbienceTarget(120);
     return this.muted;
+  }
+
+  updateEnvironment(input: { mapId: MapId; warning: boolean }): void {
+    const previousMapId = this.environmentState.activeMapId;
+    const previousGain = this.environmentState.targetGain;
+    this.environmentRequested = true;
+    this.environmentState = updateEnvironmentAudio(this.environmentState, { ...input, settings: this.mixSettings });
+    if (previousMapId !== input.mapId) this.ensureAmbienceVoice();
+    else if (previousGain !== this.environmentState.targetGain) this.applyAmbienceTarget(120);
+  }
+
+  stopEnvironment(): void {
+    this.environmentRequested = false;
+    const voice = this.ambienceVoice;
+    this.ambienceVoice = null;
+    if (voice) this.fadeAndStopAmbienceVoice(voice);
   }
 
   async unlock(): Promise<void> {
@@ -311,6 +385,8 @@ export class CombatAudio {
       this.policy.unlock();
       this.preloadKillStreakBuffers(this.context);
       this.preloadExclusiveSkillBuffers(this.context);
+      this.preloadEnvironmentBuffers(this.context);
+      this.ensureAmbienceVoice();
     } catch {
       // Browsers may reject audio until a later user gesture.
     }
@@ -347,6 +423,117 @@ export class CombatAudio {
           });
       }
     }
+  }
+
+  private preloadEnvironmentBuffers(context: AudioContext): void {
+    if (this.environmentBufferPreloadStarted) return;
+    this.environmentBufferPreloadStarted = true;
+    for (const [mapId, url] of Object.entries(MAP_AMBIENCE_ASSETS) as Array<[MapId, string]>) {
+      void this.environmentBufferLoader(context, url)
+        .then((buffer) => {
+          if (this.context !== context) return;
+          this.environmentBuffers.set(mapId, buffer);
+          if (this.environmentState.activeMapId === mapId) this.ensureAmbienceVoice();
+        })
+        .catch(() => {
+          if (this.environmentState.activeMapId === mapId) this.ensureAmbienceVoice();
+        });
+    }
+  }
+
+  private ensureAmbienceVoice(): void {
+    const context = this.context;
+    const mapId = this.environmentState.activeMapId;
+    if (!this.environmentRequested || !context || context.state !== "running" || !mapId) return;
+    const buffer = this.environmentBuffers.get(mapId);
+    if (this.ambienceVoice?.mapId === mapId && (this.ambienceVoice.sampled || !buffer)) {
+      this.applyAmbienceTarget(120);
+      return;
+    }
+
+    const previous = this.ambienceVoice;
+    const next = buffer
+      ? this.createSampledAmbienceVoice(context, mapId, buffer)
+      : this.createProceduralAmbienceVoice(context, mapId);
+    this.ambienceVoice = next;
+    this.applyAmbienceTarget(AMBIENCE_CROSSFADE_MS);
+    if (previous) this.fadeAndStopAmbienceVoice(previous);
+  }
+
+  private createSampledAmbienceVoice(context: AudioContext, mapId: MapId, buffer: AudioBuffer): AmbienceVoice {
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    source.loop = true;
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    source.connect(gain).connect(context.destination);
+    source.start(context.currentTime);
+    return {
+      mapId,
+      sampled: true,
+      gain,
+      stop: () => {
+        try { source.stop(); } catch { /* The source may already be stopped. */ }
+        source.disconnect();
+        gain.disconnect();
+      },
+    };
+  }
+
+  private createProceduralAmbienceVoice(context: AudioContext, mapId: MapId): AmbienceVoice {
+    const frequencies: Readonly<Record<MapId, readonly [number, number]>> = {
+      "reactor-core": [46, 92],
+      "neon-docks": [64, 128],
+      "crystal-ruins": [72, 216],
+    };
+    const gain = context.createGain();
+    const oscillators = frequencies[mapId].map((frequency, index) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = index === 0 ? "sine" : "triangle";
+      oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime);
+      return oscillator;
+    });
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.connect(context.destination);
+    return {
+      mapId,
+      sampled: false,
+      gain,
+      stop: () => {
+        for (const oscillator of oscillators) {
+          try { oscillator.stop(); } catch { /* The oscillator may already be stopped. */ }
+          oscillator.disconnect();
+        }
+        gain.disconnect();
+      },
+    };
+  }
+
+  private applyAmbienceTarget(transitionMs: number): void {
+    const context = this.context;
+    const voice = this.ambienceVoice;
+    if (!context || !voice) return;
+    const target = this.muted || !this.environmentRequested
+      ? 0.0001
+      : Math.max(0.0001, this.environmentState.targetGain * (voice.sampled ? 1 : 0.12));
+    voice.gain.gain.cancelScheduledValues(context.currentTime);
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), context.currentTime);
+    voice.gain.gain.linearRampToValueAtTime(target, context.currentTime + transitionMs / 1_000);
+  }
+
+  private fadeAndStopAmbienceVoice(voice: AmbienceVoice): void {
+    const context = this.context;
+    if (!context) { voice.stop(); return; }
+    voice.gain.gain.cancelScheduledValues(context.currentTime);
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), context.currentTime);
+    voice.gain.gain.linearRampToValueAtTime(0.0001, context.currentTime + AMBIENCE_CROSSFADE_MS / 1_000);
+    globalThis.setTimeout(() => voice.stop(), AMBIENCE_CROSSFADE_MS + 40);
+  }
+
+  private persistMixSettings(): void {
+    writeAudioMixSettings(this.storage, this.mixSettings);
   }
 
   private primeAudioOutput(context: AudioContext): void {
@@ -405,6 +592,9 @@ export class CombatAudio {
     if (this.activeVoices >= MAX_ACTIVE_VOICES && approved.kind !== "hurt" && approved.kind !== "kill") return;
     const categoryVoices = this.activeVoicesByKind.get(approved.kind) ?? 0;
     if (categoryVoices >= MAX_ACTIVE_VOICES_BY_KIND[approved.kind] && approved.priority < 80) return;
+    const mixedGain = approved.gain
+      * this.mixSettings.effects
+      * combatDuckingMultiplier(request, this.environmentState.warning);
     this.activeVoices += 1;
     this.activeVoicesByKind.set(approved.kind, categoryVoices + 1);
     let finished = false;
@@ -419,23 +609,23 @@ export class CombatAudio {
     try {
       switch (approved.kind) {
         case "fire":
-          this.playTone(context, "sine", 760, 210, 0.07, approved.gain * 0.16, 0, finish);
+          this.playTone(context, "sine", 760, 210, 0.07, mixedGain * 0.16, 0, finish);
           break;
         case "impact":
-          this.playNoiseImpact(context, 180, 70, 0.11, approved.gain * 0.18, finish);
+          this.playNoiseImpact(context, 180, 70, 0.11, mixedGain * 0.18, finish);
           break;
         case "hurt":
-          this.playNoiseImpact(context, 150, 82, 0.13, approved.gain * 0.22, finish, "square");
+          this.playNoiseImpact(context, 150, 82, 0.13, mixedGain * 0.22, finish, "square");
           break;
         case "pickup":
-          this.playTone(context, "sine", 520, 620, 0.075, approved.gain * 0.12, 0);
-          this.playTone(context, "sine", 780, 900, 0.075, approved.gain * 0.13, 0.075, finish);
+          this.playTone(context, "sine", 520, 620, 0.075, mixedGain * 0.12, 0);
+          this.playTone(context, "sine", 780, 900, 0.075, mixedGain * 0.13, 0.075, finish);
           break;
         case "kill": {
           const cue = killStreakCue(approved.streak ?? 1);
           const buffer = this.killBuffers.get(cue.tier);
           if (buffer) {
-            this.playBuffer(context, buffer, KILL_STREAK_GAIN * approved.gain, finish);
+            this.playBuffer(context, buffer, KILL_STREAK_GAIN * mixedGain, finish);
             break;
           }
           const finalTone = cue.tones.reduce((latest, tone) =>
@@ -448,7 +638,7 @@ export class CombatAudio {
               tone.startFrequency,
               tone.endFrequency,
               tone.duration,
-              tone.volume * approved.gain,
+              tone.volume * mixedGain,
               tone.delay,
               tone === finalTone ? finish : undefined,
             );
@@ -465,7 +655,7 @@ export class CombatAudio {
           };
           const stage: ObjectiveSoundStage = approved.objectiveStage ?? "capture-start";
           const [startFrequency, endFrequency] = tones[stage];
-          this.playTone(context, "triangle", startFrequency, endFrequency, 0.18, approved.gain * 0.42, 0, finish);
+          this.playTone(context, "triangle", startFrequency, endFrequency, 0.18, mixedGain * 0.42, 0, finish);
           break;
         }
         case "map-mechanic": {
@@ -480,7 +670,7 @@ export class CombatAudio {
               tone.startFrequency,
               tone.endFrequency,
               tone.duration,
-              tone.volume * approved.gain,
+              tone.volume * mixedGain,
               tone.delay,
               tone === finalTone ? finish : undefined,
             );
@@ -493,7 +683,7 @@ export class CombatAudio {
           const profile = getExclusiveSkillAudioProfile(skillId, stage);
           const buffer = this.skillBuffers.get(`${skillId}:${stage}`);
           if (buffer) {
-            this.playBuffer(context, buffer, approved.gain, finish, approved.pan);
+            this.playBuffer(context, buffer, mixedGain, finish, approved.pan);
             break;
           }
           const finalTone = profile.fallbackTones.reduce((latest, tone) =>
@@ -506,7 +696,7 @@ export class CombatAudio {
               tone.startFrequency,
               tone.endFrequency,
               tone.duration,
-              tone.volume * approved.gain,
+              tone.volume * mixedGain,
               tone.delay,
               tone === finalTone ? finish : undefined,
               approved.pan,

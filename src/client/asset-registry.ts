@@ -112,6 +112,12 @@ export const MAP_ARENA_ASSETS: Readonly<Record<MapId, ArenaMapAssetBundle>> = {
   "crystal-ruins": arenaMap("crystal-ruins"),
 };
 
+export const MAP_AMBIENCE_ASSETS: Readonly<Record<MapId, string>> = {
+  "reactor-core": "/assets/v4/audio/maps/reactor-core/ambience.ogg",
+  "neon-docks": "/assets/v4/audio/maps/neon-docks/ambience.ogg",
+  "crystal-ruins": "/assets/v4/audio/maps/crystal-ruins/ambience.ogg",
+};
+
 export const PICKUP_ASSETS = {
   energyCore: path("pickups/energy-core.svg"),
 } as const;

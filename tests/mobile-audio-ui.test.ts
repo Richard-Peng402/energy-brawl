@@ -30,6 +30,14 @@ describe("mobile combat audio controls", () => {
     expect(styles).toContain("pointer-events: auto");
   });
 
+  it("offers persistent effects and ambience controls in the settings dialog", () => {
+    expect(app).toContain('id="effects-volume" type="range"');
+    expect(app).toContain('id="ambience-volume" type="range"');
+    expect(app).toContain("this.audio.setEffectsLevel");
+    expect(app).toContain("this.audio.setAmbienceLevel");
+    expect(styles).toContain(".audio-mix-controls");
+  });
+
   it("routes authoritative map phase edges to audio, haptics, and visual fallback", () => {
     expect(app).toContain("selectMapMechanicFeedback");
     expect(app).toContain("this.audio.playMapMechanic");
