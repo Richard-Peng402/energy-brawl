@@ -55,12 +55,14 @@ import {
 import type {
   AdminStats,
   EnergySnapshot,
+  ExclusiveSkillEvent,
   GamePhase,
   GameSnapshot,
   KillFeedEvent,
   MapMechanicContribution,
   PlayerInput,
   PlayerSnapshot,
+  ProjectileImpactEvent,
   ProjectileSnapshot,
   Vec2,
 } from "../shared/protocol";
@@ -120,6 +122,10 @@ export interface GameWorld {
   nextEnergyPoint: number;
   killFeed: KillFeedEvent[];
   nextKillFeedId: number;
+  nextExclusiveSkillEventSeq: number;
+  exclusiveSkillEvents: ExclusiveSkillEvent[];
+  nextProjectileImpactEventSeq: number;
+  projectileImpactEvents: ProjectileImpactEvent[];
   matchMode: MatchMode;
   teamScores: Map<TeamId, number>;
   captureScores: Map<TeamId, number>;
@@ -249,6 +255,10 @@ export function createGameWorld(
     nextEnergyPoint: 0,
     killFeed: [],
     nextKillFeedId: 1,
+    nextExclusiveSkillEventSeq: 1,
+    exclusiveSkillEvents: [],
+    nextProjectileImpactEventSeq: 1,
+    projectileImpactEvents: [],
     matchMode,
     teamScores: new Map(
       TEAM_IDS.slice(0, getModeDefinition(matchMode).teamCount).map((teamId) => [teamId, 0] as const),
@@ -528,6 +538,8 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
     killFeed: [...world.killFeed],
+    exclusiveSkillEvents: [...world.exclusiveSkillEvents],
+    projectileImpactEvents: [...world.projectileImpactEvents],
     matchMode: world.matchMode,
     teamScores: [...world.teamScores].map(([teamId, score]) => ({
       teamId,

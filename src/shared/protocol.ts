@@ -187,6 +187,8 @@ export interface GameSnapshot {
   captureScores?: TeamScoreSnapshot[];
   capturePoint?: CapturePointSnapshot | null;
   mapMechanic?: MapMechanicSnapshot | null;
+  exclusiveSkillEvents?: readonly ExclusiveSkillEvent[];
+  projectileImpactEvents?: readonly ProjectileImpactEvent[];
 }
 
 export interface CapturePointSnapshot extends Vec2 {
@@ -204,17 +206,27 @@ export interface TeamScoreSnapshot {
   targetScore: number;
 }
 
-export type ExclusiveSkillEventStage = "telegraph" | "cast" | "impact" | "end";
+export type ExclusiveSkillEventStage = "cast" | "active" | "end";
 
 export interface ExclusiveSkillEvent {
   eventSeq: number;
   serverTime: number;
   playerId: string;
-  skillId: CharacterId;
+  skillId: ExclusiveSkillId;
   stage: ExclusiveSkillEventStage;
   origin: Vec2;
   target: Vec2;
-  result: "applied" | "rejected";
+  reason?: "expired" | "death" | "reset" | "return";
+}
+
+export interface ProjectileImpactEvent {
+  eventSeq: number;
+  serverTime: number;
+  projectileId: string;
+  ownerId: string;
+  targetId: string | null;
+  kind: "wall" | "player" | "shield";
+  position: Vec2;
 }
 
 export interface KillFeedEvent {
@@ -278,7 +290,6 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   roomState: (snapshot: RoomSnapshot) => void;
   gameState: (snapshot: GameSnapshot | null) => void;
-  skillEvent: (event: ExclusiveSkillEvent) => void;
   notice: (message: string) => void;
   diagnosticsSession: (session: { matchId: string | null }) => void;
   hostDiagnostics: (snapshot: HostDiagnosticsSnapshot) => void;

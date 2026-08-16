@@ -162,6 +162,41 @@ describe("reactor venting", () => {
   });
 });
 
+describe("presentation event snapshots", () => {
+  it("initializes empty histories and serializes copied event arrays", () => {
+    const world = createWorld();
+    expect(world.nextExclusiveSkillEventSeq).toBe(1);
+    expect(world.nextProjectileImpactEventSeq).toBe(1);
+    expect(world.exclusiveSkillEvents).toEqual([]);
+    expect(world.projectileImpactEvents).toEqual([]);
+
+    world.exclusiveSkillEvents.push({
+      eventSeq: 1,
+      serverTime: 10,
+      playerId: "red",
+      skillId: "breach",
+      stage: "cast",
+      origin: { x: 10, y: 20 },
+      target: { x: 40, y: 20 },
+    });
+    world.projectileImpactEvents.push({
+      eventSeq: 1,
+      serverTime: 11,
+      projectileId: "projectile-1",
+      ownerId: "red",
+      targetId: null,
+      kind: "wall",
+      position: { x: 60, y: 20 },
+    });
+
+    const snapshot = worldToSnapshot(world);
+    expect(snapshot.exclusiveSkillEvents).toEqual(world.exclusiveSkillEvents);
+    expect(snapshot.projectileImpactEvents).toEqual(world.projectileImpactEvents);
+    expect(snapshot.exclusiveSkillEvents).not.toBe(world.exclusiveSkillEvents);
+    expect(snapshot.projectileImpactEvents).not.toBe(world.projectileImpactEvents);
+  });
+});
+
 describe("neon overdrive", () => {
   it("combines movement, firing, projectile and suppression multipliers without replacing host stats", () => {
     const world = createGameWorld([
