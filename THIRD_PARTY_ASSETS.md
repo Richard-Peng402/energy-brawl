@@ -1,3 +1,10 @@
+# v4.5 presentation pack
+
+- Kenney Digital Audio: <https://kenney.nl/assets/digital-audio>, author Kenney, CC0 1.0. Selected OGG files are renamed into exclusive-skill lifecycle, character projectile, and map ambience slots without lossy re-encoding. License copy: `public/assets/v4/KENNEY-DIGITAL-AUDIO-LICENSE.txt`.
+- Kenney Particle Pack: <https://kenney.nl/assets/particle-pack>, author Kenney, CC0 1.0. Existing full-resolution PNGs are copied into character-specific projectile slots without recompression; runtime tinting and geometry provide variation. License copy: `public/assets/v4/KENNEY-PARTICLE-LICENSE.txt`.
+- Energy Brawl exclusive skill vectors: project-authored MIT assets. Original vectors and explicit cast/active/end runtime copies remain SVG and are not raster-compressed.
+- Complete outputs and modification notes are in `public/assets/v4/manifest.json` and enforced by `npm run assets:presentation`.
+
 # 素材来源与许可证
 
 ## v4 专属技能特效

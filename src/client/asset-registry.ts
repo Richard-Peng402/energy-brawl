@@ -132,21 +132,21 @@ export const EXCLUSIVE_SKILL_ICON_ASSETS: Readonly<Record<CharacterId, string>> 
   runner: "/assets/v4/fx/skills/runner.svg",
 };
 
-const stageFallback = (asset: string): Readonly<Record<"cast" | "active" | "end", string>> => ({
-  cast: asset,
-  active: asset,
-  end: asset,
+const exclusiveSkillStages = (skillId: ExclusiveSkillId): Readonly<Record<"cast" | "active" | "end", string>> => ({
+  cast: `/assets/v4/fx/exclusive-skills/${skillId}/cast.svg`,
+  active: `/assets/v4/fx/exclusive-skills/${skillId}/active.svg`,
+  end: `/assets/v4/fx/exclusive-skills/${skillId}/end.svg`,
 });
 
 export const EXCLUSIVE_SKILL_STAGE_ASSETS: Readonly<
   Record<ExclusiveSkillId, Readonly<Record<"cast" | "active" | "end", string>>>
 > = {
-  breach: stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.blaze),
-  "pulse-heal": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.medic),
-  "mobile-bulwark": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.fortress),
-  "capacitor-overload": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.arc),
-  "phase-shift": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.phase),
-  "afterimage-run": stageFallback(EXCLUSIVE_SKILL_ICON_ASSETS.runner),
+  breach: exclusiveSkillStages("breach"),
+  "pulse-heal": exclusiveSkillStages("pulse-heal"),
+  "mobile-bulwark": exclusiveSkillStages("mobile-bulwark"),
+  "capacitor-overload": exclusiveSkillStages("capacitor-overload"),
+  "phase-shift": exclusiveSkillStages("phase-shift"),
+  "afterimage-run": exclusiveSkillStages("afterimage-run"),
 };
 
 export const PROJECTILE_FX_ASSETS = {

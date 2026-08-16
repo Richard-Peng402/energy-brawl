@@ -1,13 +1,39 @@
 {
-  "version": "v4.0",
-  "generatedBy": "project-authored-svg-effects",
+  "version": "v4.5-presentation-pack",
+  "generatedBy": "energy-brawl-asset-pipeline",
   "maxTextureDimension": 512,
   "entries": [
-    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/blaze.svg"] },
-    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/medic.svg"] },
-    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/fortress.svg"] },
-    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/arc.svg"] },
-    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/phase.svg"] },
-    { "source": "Project-authored vector effect", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4", "outputFiles": ["/assets/v4/fx/skills/runner.svg"] }
+    {
+      "source": "Energy Brawl exclusive skill vector set", "author": "Energy Brawl project", "license": "MIT", "sourceUrl": "local://energy-brawl-v4-exclusive-skill-vectors",
+      "modifications": "Project-authored vectors are preserved without raster compression and copied into explicit cast, active, and end runtime slots; Phaser applies stage-specific tint, blend, geometry, and animation.",
+      "outputFiles": [
+        "/assets/v4/fx/skills/blaze.svg", "/assets/v4/fx/skills/medic.svg", "/assets/v4/fx/skills/fortress.svg", "/assets/v4/fx/skills/arc.svg", "/assets/v4/fx/skills/phase.svg", "/assets/v4/fx/skills/runner.svg",
+        "/assets/v4/fx/exclusive-skills/breach/cast.svg", "/assets/v4/fx/exclusive-skills/breach/active.svg", "/assets/v4/fx/exclusive-skills/breach/end.svg", "/assets/v4/fx/exclusive-skills/pulse-heal/cast.svg", "/assets/v4/fx/exclusive-skills/pulse-heal/active.svg", "/assets/v4/fx/exclusive-skills/pulse-heal/end.svg", "/assets/v4/fx/exclusive-skills/mobile-bulwark/cast.svg", "/assets/v4/fx/exclusive-skills/mobile-bulwark/active.svg", "/assets/v4/fx/exclusive-skills/mobile-bulwark/end.svg", "/assets/v4/fx/exclusive-skills/capacitor-overload/cast.svg", "/assets/v4/fx/exclusive-skills/capacitor-overload/active.svg", "/assets/v4/fx/exclusive-skills/capacitor-overload/end.svg", "/assets/v4/fx/exclusive-skills/phase-shift/cast.svg", "/assets/v4/fx/exclusive-skills/phase-shift/active.svg", "/assets/v4/fx/exclusive-skills/phase-shift/end.svg", "/assets/v4/fx/exclusive-skills/afterimage-run/cast.svg", "/assets/v4/fx/exclusive-skills/afterimage-run/active.svg", "/assets/v4/fx/exclusive-skills/afterimage-run/end.svg"
+      ]
+    },
+    {
+      "source": "Kenney Digital Audio", "author": "Kenney", "license": "CC0 1.0", "sourceUrl": "https://kenney.nl/assets/digital-audio",
+      "modifications": "Selected short laser, phase, power-up, and tonal OGG files were renamed by skill and lifecycle stage; original OGG bytes are retained without lossy re-encoding.",
+      "outputFiles": [
+        "/assets/v4/audio/exclusive-skills/breach/cast.ogg", "/assets/v4/audio/exclusive-skills/breach/active.ogg", "/assets/v4/audio/exclusive-skills/breach/end.ogg", "/assets/v4/audio/exclusive-skills/pulse-heal/cast.ogg", "/assets/v4/audio/exclusive-skills/pulse-heal/active.ogg", "/assets/v4/audio/exclusive-skills/pulse-heal/end.ogg", "/assets/v4/audio/exclusive-skills/mobile-bulwark/cast.ogg", "/assets/v4/audio/exclusive-skills/mobile-bulwark/active.ogg", "/assets/v4/audio/exclusive-skills/mobile-bulwark/end.ogg", "/assets/v4/audio/exclusive-skills/capacitor-overload/cast.ogg", "/assets/v4/audio/exclusive-skills/capacitor-overload/active.ogg", "/assets/v4/audio/exclusive-skills/capacitor-overload/end.ogg", "/assets/v4/audio/exclusive-skills/phase-shift/cast.ogg", "/assets/v4/audio/exclusive-skills/phase-shift/active.ogg", "/assets/v4/audio/exclusive-skills/phase-shift/end.ogg", "/assets/v4/audio/exclusive-skills/afterimage-run/cast.ogg", "/assets/v4/audio/exclusive-skills/afterimage-run/active.ogg", "/assets/v4/audio/exclusive-skills/afterimage-run/end.ogg"
+      ]
+    },
+    {
+      "source": "Kenney Particle Pack", "author": "Kenney", "license": "CC0 1.0", "sourceUrl": "https://kenney.nl/assets/particle-pack",
+      "modifications": "Existing full-resolution project copies were duplicated into character-specific muzzle, core, trail, wall-impact, player-impact, and shield-impact slots; runtime tinting supplies character identity without recompression.",
+      "outputFiles": [
+        "/assets/v4/fx/projectiles/blaze/muzzle.png", "/assets/v4/fx/projectiles/blaze/core.png", "/assets/v4/fx/projectiles/blaze/trail.png", "/assets/v4/fx/projectiles/blaze/wall-impact.png", "/assets/v4/fx/projectiles/blaze/player-impact.png", "/assets/v4/fx/projectiles/blaze/shield-impact.png", "/assets/v4/fx/projectiles/medic/muzzle.png", "/assets/v4/fx/projectiles/medic/core.png", "/assets/v4/fx/projectiles/medic/trail.png", "/assets/v4/fx/projectiles/medic/wall-impact.png", "/assets/v4/fx/projectiles/medic/player-impact.png", "/assets/v4/fx/projectiles/medic/shield-impact.png", "/assets/v4/fx/projectiles/fortress/muzzle.png", "/assets/v4/fx/projectiles/fortress/core.png", "/assets/v4/fx/projectiles/fortress/trail.png", "/assets/v4/fx/projectiles/fortress/wall-impact.png", "/assets/v4/fx/projectiles/fortress/player-impact.png", "/assets/v4/fx/projectiles/fortress/shield-impact.png", "/assets/v4/fx/projectiles/arc/muzzle.png", "/assets/v4/fx/projectiles/arc/core.png", "/assets/v4/fx/projectiles/arc/trail.png", "/assets/v4/fx/projectiles/arc/wall-impact.png", "/assets/v4/fx/projectiles/arc/player-impact.png", "/assets/v4/fx/projectiles/arc/shield-impact.png", "/assets/v4/fx/projectiles/phase/muzzle.png", "/assets/v4/fx/projectiles/phase/core.png", "/assets/v4/fx/projectiles/phase/trail.png", "/assets/v4/fx/projectiles/phase/wall-impact.png", "/assets/v4/fx/projectiles/phase/player-impact.png", "/assets/v4/fx/projectiles/phase/shield-impact.png", "/assets/v4/fx/projectiles/runner/muzzle.png", "/assets/v4/fx/projectiles/runner/core.png", "/assets/v4/fx/projectiles/runner/trail.png", "/assets/v4/fx/projectiles/runner/wall-impact.png", "/assets/v4/fx/projectiles/runner/player-impact.png", "/assets/v4/fx/projectiles/runner/shield-impact.png"
+      ]
+    },
+    {
+      "source": "Kenney Digital Audio", "author": "Kenney", "license": "CC0 1.0", "sourceUrl": "https://kenney.nl/assets/digital-audio",
+      "modifications": "Six laser shots and six impact or zap sounds were renamed into character-specific local-fire and impact slots; original OGG bytes are retained.",
+      "outputFiles": ["/assets/v4/audio/projectiles/blaze/local-fire.ogg", "/assets/v4/audio/projectiles/blaze/impact.ogg", "/assets/v4/audio/projectiles/medic/local-fire.ogg", "/assets/v4/audio/projectiles/medic/impact.ogg", "/assets/v4/audio/projectiles/fortress/local-fire.ogg", "/assets/v4/audio/projectiles/fortress/impact.ogg", "/assets/v4/audio/projectiles/arc/local-fire.ogg", "/assets/v4/audio/projectiles/arc/impact.ogg", "/assets/v4/audio/projectiles/phase/local-fire.ogg", "/assets/v4/audio/projectiles/phase/impact.ogg", "/assets/v4/audio/projectiles/runner/local-fire.ogg", "/assets/v4/audio/projectiles/runner/impact.ogg"]
+    },
+    {
+      "source": "Kenney Digital Audio", "author": "Kenney", "license": "CC0 1.0", "sourceUrl": "https://kenney.nl/assets/digital-audio",
+      "modifications": "Three restrained tonal beds were assigned to the reactor, neon, and crystal map ambience slots; final looping and ducking are handled by the runtime ambience task.",
+      "outputFiles": ["/assets/v4/audio/maps/reactor-core/ambience.ogg", "/assets/v4/audio/maps/neon-docks/ambience.ogg", "/assets/v4/audio/maps/crystal-ruins/ambience.ogg"]
+    }
   ]
 }

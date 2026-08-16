@@ -86,7 +86,7 @@ describe("v3 asset registry", () => {
     expect(Object.keys(EXCLUSIVE_SKILL_STAGE_ASSETS)).toHaveLength(6);
     for (const stages of Object.values(EXCLUSIVE_SKILL_STAGE_ASSETS)) {
       expect(Object.keys(stages).sort()).toEqual(["active", "cast", "end"]);
-      for (const path of Object.values(stages)) expect(path).toMatch(/^\/assets\/v4\/fx\/skills\/.+\.svg$/);
+      for (const path of Object.values(stages)) expect(path).toMatch(/^\/assets\/v4\/fx\/exclusive-skills\/.+\/(cast|active|end)\.svg$/);
     }
   });
 });

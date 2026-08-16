@@ -11,6 +11,7 @@
     "server": "tsx src/server/index.ts",
     "assets:v3": "node scripts/import-v3-assets.mjs",
     "assets:v4": "node scripts/validate-v4-assets.mjs",
+    "assets:presentation": "node scripts/validate-vfx-audio-assets.mjs",
     "audio:killstreak": "node scripts/generate-killstreak-audio.mjs",
     "load-test": "tsx scripts/load-test.ts",
     "load-test:v3": "tsx scripts/v3-load-test.ts",
