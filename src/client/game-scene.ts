@@ -66,6 +66,7 @@ import {
   getExclusiveSkillVfxProfile,
   resolveExclusiveSkillAreaFeedback,
   resolveExclusiveSkillEndVariant,
+  resolveExclusiveTimedVisualState,
 } from "./exclusive-skill-vfx";
 import {
   classifyExclusiveSkillFeedback,
@@ -111,6 +112,8 @@ interface ExclusiveEffectView {
   outer: Phaser.GameObjects.Arc;
   orbit: Phaser.GameObjects.Arc;
   graphics: Phaser.GameObjects.Graphics;
+  weaponAccent: Phaser.GameObjects.Image;
+  muzzleAccent: Phaser.GameObjects.Arc;
   skillId: ExclusiveSkillId;
   startedAt: number;
 }
@@ -120,6 +123,11 @@ interface ExclusiveStageView {
   image: Phaser.GameObjects.Image;
   ring: Phaser.GameObjects.Arc;
   graphics: Phaser.GameObjects.Graphics;
+}
+
+interface RunnerAfterimageView {
+  sprite: Phaser.GameObjects.Sprite;
+  ownerId: string;
 }
 
 const CHARACTER_RENDER_STATES: readonly CharacterAssetState[] = ["idle", "move", "attack", "hit", "death", "fallback"];
@@ -259,6 +267,7 @@ class ArenaScene extends Phaser.Scene {
   private readonly exclusiveStagePools = new Map<string, ReusableObjectPool<ExclusiveStageView>>();
   private readonly exclusiveStageLeases = new Map<ExclusiveStageView, ReusableObjectPool<ExclusiveStageView>>();
   private readonly exclusiveStageTimers = new Set<Phaser.Time.TimerEvent>();
+  private readonly runnerAfterimageLastEmittedAt = new Map<string, number>();
   private readonly snapshotBuffer = new SnapshotBuffer<GameSnapshot>();
   private readonly inputReconciler: InputReconciler;
   private snapshot: GameSnapshot | null = null;
@@ -275,6 +284,7 @@ class ArenaScene extends Phaser.Scene {
   private mapMechanicGraphics: Phaser.GameObjects.Graphics | null = null;
   private mapMechanicPulse: Phaser.GameObjects.Arc | null = null;
   private mapMechanicParticlePool: FixedObjectPool<Phaser.GameObjects.Image> | null = null;
+  private runnerAfterimagePool: FixedObjectPool<RunnerAfterimageView> | null = null;
   private mapMechanicRevision = "hidden";
   private latestSnapshotReceivedAt = 0;
   private renderDelayMs = 100;
@@ -343,6 +353,7 @@ class ArenaScene extends Phaser.Scene {
     this.drawArena();
     this.createEffectPools();
     this.createExclusiveStagePools();
+    this.createRunnerAfterimagePool();
     this.createProjectileImagePools();
     this.createProjectilePool();
     this.resizeCamera(this.scale.width, this.scale.height);
@@ -398,6 +409,7 @@ class ArenaScene extends Phaser.Scene {
       if (player) this.updatePlayerVisual(view, player, now);
       if (view.shield) view.shield.setPosition(view.container.x, view.container.y);
     }
+    this.emitRunnerAfterimages(now);
     this.updateCamera();
     this.updateAimGuide();
     this.updateExclusiveSkillIndicator();
@@ -706,6 +718,11 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private playExclusiveSkillEvent(event: ExclusiveSkillEvent): void {
+    if (event.stage === "end" && event.skillId === "afterimage-run") {
+      const player = this.snapshot?.players.find((candidate) => candidate.id === event.playerId);
+      const playerView = this.playerViews.get(event.playerId);
+      this.mergeRunnerAfterimages(event.playerId, playerView?.container ?? player ?? event.target);
+    }
     const profile = getExclusiveSkillVfxProfile(event.skillId).stages[event.stage];
     const endVariant = event.stage === "end" ? resolveExclusiveSkillEndVariant(event.skillId, event.reason) : "standard";
     const pool = this.exclusiveStagePools.get(`${event.skillId}:${event.stage}`);
@@ -751,16 +768,28 @@ class ArenaScene extends Phaser.Scene {
           item.graphics.lineStyle(8, profile.color, 0.86).strokeCircle(0, 0, 72);
           if (endVariant === "return-collapse") item.graphics.lineStyle(5, 0xffffff, 0.72).strokeCircle(0, 0, 108);
           if (endVariant === "phase-closure") item.graphics.lineStyle(4, 0xe7c8ff, 0.8).strokeEllipse(0, 0, 38, 124);
+          if (endVariant === "safe-discharge") {
+            for (let index = 0; index < 8; index += 1) {
+              const ray = (Math.PI * 2 * index) / 8;
+              item.graphics.lineBetween(Math.cos(ray) * 62, Math.sin(ray) * 62, Math.cos(ray) * 126, Math.sin(ray) * 126);
+            }
+          }
+          if (endVariant === "merge-end") {
+            item.graphics.lineStyle(4, 0xfff3c4, 0.76).strokeCircle(0, 0, 112);
+          }
           break;
       }
     });
     if (!view) return;
-    const targetScale = endVariant === "return-collapse" || endVariant === "phase-closure"
+    const targetScale = endVariant === "return-collapse" || endVariant === "phase-closure" || endVariant === "merge-end"
       ? profile.scale * 0.24
+      : endVariant === "safe-discharge"
+        ? profile.scale * 1.7
       : endVariant === "anchor-dissolve"
         ? profile.scale * 0.92
         : profile.scale * 1.35;
-    this.tweens.add({ targets: view.container, alpha: 0, scale: targetScale, duration: profile.durationMs, ease: endVariant === "return-collapse" ? "Back.In" : "Cubic.Out" });
+    const endEase = endVariant === "return-collapse" || endVariant === "merge-end" ? "Back.In" : "Cubic.Out";
+    this.tweens.add({ targets: view.container, alpha: 0, scale: targetScale, duration: profile.durationMs, ease: endEase });
     this.tweens.add({ targets: view.image, angle: endVariant === "return-collapse" ? -40 : event.stage === "end" ? -18 : 18, duration: profile.durationMs, ease: "Sine.Out" });
     this.releaseExclusiveStageViewAfter(view, pool, profile.durationMs);
     this.playExclusiveSkillAreaFeedback(event);
@@ -849,7 +878,107 @@ class ArenaScene extends Phaser.Scene {
     this.exclusiveStageLeases.clear();
     this.pendingExclusiveSkillEvents.length = 0;
     for (const playerId of [...this.exclusiveEffectViews.keys()]) this.destroyExclusiveEffectView(playerId);
+    this.runnerAfterimageLastEmittedAt.clear();
+    this.runnerAfterimagePool?.forEach((view) => {
+      this.tweens.killTweensOf(view.sprite);
+      view.ownerId = "";
+      view.sprite.setVisible(false).setActive(false);
+    });
     this.lastExclusiveSkillEventSeq = null;
+  }
+
+  private createRunnerAfterimagePool(): void {
+    this.runnerAfterimagePool = new FixedObjectPool(
+      getExclusiveSkillVfxProfile("afterimage-run").poolCapacity,
+      () => ({
+        sprite: this.add.sprite(0, 0, characterTextureKey("runner", "fallback"))
+          .setDepth(3.9)
+          .setVisible(false)
+          .setActive(false)
+          .setBlendMode(Phaser.BlendModes.ADD),
+        ownerId: "",
+      }),
+      (view) => {
+        this.tweens.killTweensOf(view.sprite);
+        view.ownerId = "";
+        view.sprite.setVisible(false).setActive(false).setAlpha(1).setScale(1).setRotation(0).clearTint();
+      },
+    );
+  }
+
+  private emitRunnerAfterimages(now: number): void {
+    const snapshot = this.snapshot;
+    const pool = this.runnerAfterimagePool;
+    if (!snapshot || !pool) return;
+    for (const player of snapshot.players) {
+      const state = player.exclusiveSkillState;
+      if (!player.alive || state?.skillId !== "afterimage-run" || state.expiresAt <= snapshot.serverTime) {
+        this.runnerAfterimageLastEmittedAt.delete(player.id);
+        continue;
+      }
+      const playerView = this.playerViews.get(player.id);
+      if (!playerView) continue;
+      const visual = resolveExclusiveTimedVisualState(state.skillId, state.startedAt, state.expiresAt, snapshot.serverTime);
+      const intervalMs = Math.max(46, 92 - visual.intensity * 34);
+      if (now - (this.runnerAfterimageLastEmittedAt.get(player.id) ?? -Infinity) < intervalMs) continue;
+      this.runnerAfterimageLastEmittedAt.set(player.id, now);
+      const movementLength = Math.hypot(player.vx, player.vy);
+      const direction = movementLength > 8
+        ? { x: player.vx / movementLength, y: player.vy / movementLength }
+        : { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+      const trailDistance = 24 + visual.afterimageCount * 5;
+      const afterimage = pool.acquire((item) => {
+        item.ownerId = player.id;
+        item.sprite
+          .setTexture(playerView.sprite.texture.key)
+          .setPosition(playerView.container.x, playerView.container.y)
+          .setDisplaySize(playerView.sprite.displayWidth, playerView.sprite.displayHeight)
+          .setTint(0xffd166)
+          .setAlpha(0.38 + visual.intensity * 0.22)
+          .setVisible(true)
+          .setActive(true);
+      });
+      const targetScaleX = afterimage.sprite.scaleX * 0.82;
+      const targetScaleY = afterimage.sprite.scaleY * 0.82;
+      this.tweens.add({
+        targets: afterimage.sprite,
+        x: playerView.container.x - direction.x * trailDistance,
+        y: playerView.container.y - direction.y * trailDistance,
+        alpha: 0,
+        scaleX: targetScaleX,
+        scaleY: targetScaleY,
+        duration: 360,
+        ease: "Cubic.Out",
+        onComplete: () => {
+          afterimage.ownerId = "";
+          afterimage.sprite.setVisible(false).setActive(false);
+        },
+      });
+    }
+  }
+
+  private mergeRunnerAfterimages(playerId: string, target: Vec2): void {
+    this.runnerAfterimageLastEmittedAt.delete(playerId);
+    this.runnerAfterimagePool?.forEach((view) => {
+      if (view.ownerId !== playerId || !view.sprite.visible) return;
+      this.tweens.killTweensOf(view.sprite);
+      const targetScaleX = view.sprite.scaleX * 0.35;
+      const targetScaleY = view.sprite.scaleY * 0.35;
+      this.tweens.add({
+        targets: view.sprite,
+        x: target.x,
+        y: target.y,
+        alpha: 0,
+        scaleX: targetScaleX,
+        scaleY: targetScaleY,
+        duration: 220,
+        ease: "Back.In",
+        onComplete: () => {
+          view.ownerId = "";
+          view.sprite.setVisible(false).setActive(false);
+        },
+      });
+    });
   }
 
   private syncCombatStateVisual(view: PlayerView, player: PlayerSnapshot, serverTime: number, identity: string): void {
@@ -1011,12 +1140,20 @@ class ArenaScene extends Phaser.Scene {
       .setStrokeStyle(3, 0xffffff, 0.52)
       .setBlendMode(Phaser.BlendModes.ADD);
     const graphics = this.add.graphics().setBlendMode(Phaser.BlendModes.ADD);
-    const container = this.add.container(player.x, player.y, [outer, inner, orbit, sprite, graphics]).setDepth(6);
+    const weaponAccent = this.add.image(0, 0, `weapon:${characterWeaponKind(player.characterId)}`)
+      .setDisplaySize(72, 72)
+      .setVisible(false)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const muzzleAccent = this.add.circle(0, 0, 16, color, 0.34)
+      .setStrokeStyle(4, 0xffffff, 0.82)
+      .setVisible(false)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const container = this.add.container(player.x, player.y, [outer, inner, orbit, sprite, graphics, weaponAccent, muzzleAccent]).setDepth(6);
     this.tweens.add({ targets: inner, scale: 1.22, alpha: 0.22, duration: profile.pulseMs, yoyo: true, repeat: -1, ease: "Sine.InOut" });
     this.tweens.add({ targets: outer, scale: 1.08, alpha: 0.36, duration: profile.pulseMs * 1.35, yoyo: true, repeat: -1, ease: "Sine.InOut" });
     this.tweens.add({ targets: orbit, angle: 360, duration: profile.rotationMs, repeat: -1, ease: "Linear" });
     this.tweens.add({ targets: sprite, angle: skillId === "afterimage-run" ? -8 : 12, scale: 1.12, alpha: 0.48, duration: profile.pulseMs * 0.8, yoyo: true, repeat: -1, ease: "Sine.InOut" });
-    return { container, sprite, inner, outer, orbit, graphics, skillId, startedAt };
+    return { container, sprite, inner, outer, orbit, graphics, weaponAccent, muzzleAccent, skillId, startedAt };
   }
 
   private updateExclusiveEffectView(effect: ExclusiveEffectView, player: PlayerSnapshot): void {
@@ -1024,7 +1161,11 @@ class ArenaScene extends Phaser.Scene {
     if (!state) return;
     const color = Phaser.Display.Color.HexStringToColor(player.color).color;
     const graphics = effect.graphics;
+    const serverTime = this.snapshot?.serverTime ?? state.startedAt;
+    const timedVisual = resolveExclusiveTimedVisualState(effect.skillId, state.startedAt, state.expiresAt, serverTime);
     effect.container.setPosition(player.x, player.y);
+    effect.weaponAccent.setVisible(false);
+    effect.muzzleAccent.setVisible(false);
     graphics.clear().fillStyle(color, 0.16).lineStyle(effect.skillId === "mobile-bulwark" ? 12 : 7, color, 0.88);
     if (effect.skillId === "breach" && state.anchor) {
       const localAnchor = { x: state.anchor.x - player.x, y: state.anchor.y - player.y };
@@ -1047,19 +1188,37 @@ class ArenaScene extends Phaser.Scene {
       graphics.strokePath();
       graphics.lineStyle(5, 0xffffff, 0.62).strokeCircle(0, 0, 280);
     } else if (effect.skillId === "capacitor-overload") {
+      const weaponTransform = resolveWeaponTransform(player.angle, PLAYER_RADIUS + 10);
+      const muzzleTransform = resolveWeaponTransform(player.angle, PLAYER_RADIUS + 52);
+      const weaponAccentSize = 68 + timedVisual.intensity * 12;
+      effect.weaponAccent
+        .setVisible(true)
+        .setPosition(weaponTransform.x, weaponTransform.y)
+        .setRotation(weaponTransform.rotation)
+        .setTint(0x66efff)
+        .setAlpha(0.28 + timedVisual.intensity * 0.42)
+        .setDisplaySize(weaponAccentSize, weaponAccentSize);
+      effect.muzzleAccent
+        .setVisible(true)
+        .setPosition(muzzleTransform.x, muzzleTransform.y)
+        .setRadius(12 + timedVisual.intensity * 9)
+        .setFillStyle(0x66efff, 0.22 + timedVisual.intensity * 0.28)
+        .setStrokeStyle(4, 0xffffff, 0.58 + timedVisual.intensity * 0.3);
       for (let index = 0; index < 8; index += 1) {
         const angle = (Math.PI * 2 * index) / 8 + player.angle;
         const innerRadius = 62 + (index % 2) * 8;
-        graphics.lineBetween(Math.cos(angle) * innerRadius, Math.sin(angle) * innerRadius, Math.cos(angle) * 112, Math.sin(angle) * 112);
+        const outerRadius = 102 + timedVisual.intensity * 20;
+        graphics.lineBetween(Math.cos(angle) * innerRadius, Math.sin(angle) * innerRadius, Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
       }
-      graphics.lineStyle(4, 0xffffff, 0.84).strokeCircle(0, 0, 84);
+      graphics.lineStyle(4 + timedVisual.intensity * 2, 0xffffff, 0.7 + timedVisual.intensity * 0.22).strokeCircle(0, 0, 78 + timedVisual.intensity * 10);
     } else if (effect.skillId === "afterimage-run") {
       for (let index = 1; index <= 3; index += 1) {
         const x = -Math.cos(player.angle) * index * 48;
         const y = -Math.sin(player.angle) * index * 48;
-        graphics.fillEllipse(x, y, 96 - index * 14, 48 - index * 6);
+        graphics.fillEllipse(x, y, (96 - index * 14) * timedVisual.intensity, (48 - index * 6) * timedVisual.intensity);
       }
-      graphics.lineStyle(5, 0xffffff, 0.64).lineBetween(-Math.cos(player.angle) * 170, -Math.sin(player.angle) * 170, Math.cos(player.angle) * 70, Math.sin(player.angle) * 70);
+      graphics.lineStyle(5 + timedVisual.intensity * 2, 0xffffff, 0.52 + timedVisual.intensity * 0.2)
+        .lineBetween(-Math.cos(player.angle) * 170, -Math.sin(player.angle) * 170, Math.cos(player.angle) * 70, Math.sin(player.angle) * 70);
     } else {
       const backwardX = -Math.cos(player.angle) * 150;
       const backwardY = -Math.sin(player.angle) * 150;
@@ -1071,7 +1230,7 @@ class ArenaScene extends Phaser.Scene {
   private destroyExclusiveEffectView(playerId: string): void {
     const effect = this.exclusiveEffectViews.get(playerId);
     if (!effect) return;
-    this.tweens.killTweensOf([effect.inner, effect.outer, effect.orbit, effect.sprite]);
+    this.tweens.killTweensOf([effect.inner, effect.outer, effect.orbit, effect.sprite, effect.weaponAccent, effect.muzzleAccent]);
     effect.container.destroy(true);
     this.exclusiveEffectViews.delete(playerId);
   }

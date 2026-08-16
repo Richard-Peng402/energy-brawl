@@ -28,11 +28,23 @@ export type ExclusiveSkillVfxFeature =
   | "weapon-charge" | "active-current" | "enhanced-muzzle" | "safe-discharge"
   | "acceleration-burst" | "pooled-afterimages" | "enhanced-projectile-exhaust" | "merge-end";
 
-export type ExclusiveSkillEndVariant = "return-collapse" | "anchor-dissolve" | "phase-closure" | "standard";
+export type ExclusiveSkillEndVariant =
+  | "return-collapse"
+  | "anchor-dissolve"
+  | "phase-closure"
+  | "safe-discharge"
+  | "merge-end"
+  | "standard";
 
 export interface ExclusiveSkillAreaFeedback {
   kind: "healing-flow" | "cleanse-sparkle" | "ally-shimmer" | "enemy-suppression";
   targetId: string;
+}
+
+export interface ExclusiveTimedVisualState {
+  progress: number;
+  intensity: number;
+  afterimageCount: number;
 }
 
 const stageTextureKey = (skillId: ExclusiveSkillId, stage: ExclusiveSkillVfxStage): string =>
@@ -75,7 +87,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "capacitor-overload": {
     skillId: "capacitor-overload",
     poolCapacity: 16,
-    features: [],
+    features: ["weapon-charge", "active-current", "enhanced-muzzle", "safe-discharge"],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("capacitor-overload", "telegraph"), blendMode: "add", scale: 0.9, alpha: 0.76, color: 0x47e4ff, shape: "ring" },
       cast: { durationMs: 140, textureKey: stageTextureKey("capacitor-overload", "cast"), blendMode: "add", scale: 1.06, alpha: 1, color: 0x66efff, shape: "corridor" },
@@ -97,7 +109,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "afterimage-run": {
     skillId: "afterimage-run",
     poolCapacity: 18,
-    features: [],
+    features: ["acceleration-burst", "pooled-afterimages", "enhanced-projectile-exhaust", "merge-end"],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("afterimage-run", "telegraph"), blendMode: "normal", scale: 1, alpha: 0.66, color: 0xffd166, shape: "path" },
       cast: { durationMs: 100, textureKey: stageTextureKey("afterimage-run", "cast"), blendMode: "add", scale: 1.02, alpha: 0.96, color: 0xffdf7d, shape: "ring" },
@@ -128,7 +140,27 @@ export function resolveExclusiveSkillEndVariant(
   if (skillId === "breach" && reason === "return") return "return-collapse";
   if (skillId === "breach" && reason === "expired") return "anchor-dissolve";
   if (skillId === "phase-shift") return "phase-closure";
+  if (skillId === "capacitor-overload") return "safe-discharge";
+  if (skillId === "afterimage-run") return "merge-end";
   return "standard";
+}
+
+export function resolveExclusiveTimedVisualState(
+  skillId: ExclusiveSkillId,
+  startedAt: number,
+  expiresAt: number,
+  serverTime: number,
+): ExclusiveTimedVisualState {
+  const duration = Math.max(1, expiresAt - startedAt);
+  const progress = Math.min(1, Math.max(0, (serverTime - startedAt) / duration));
+  const envelope = Math.sin(progress * Math.PI);
+  if (skillId === "capacitor-overload") {
+    return { progress, intensity: 0.72 + envelope * 0.28, afterimageCount: 0 };
+  }
+  if (skillId === "afterimage-run") {
+    return { progress, intensity: 0.68 + envelope * 0.32, afterimageCount: 3 + Math.round(envelope * 2) };
+  }
+  return { progress, intensity: 1, afterimageCount: 0 };
 }
 
 export function resolveExclusiveSkillAreaFeedback(
