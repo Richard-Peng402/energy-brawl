@@ -9,7 +9,7 @@ import {
 } from "../shared/constants";
 import { CHARACTER_CATALOG, getCharacter, isCharacterId, type CharacterId } from "../shared/character-catalog";
 import { resolveMapSelection, type MapId, type MapSelection } from "../shared/map-catalog";
-import { getModeDefinition, isMatchMode, type MatchMode, type TeamId } from "../shared/mode-catalog";
+import { getModeDefinition, isCaptureMode, isMatchMode, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import type {
   Ack,
   AdminStat,
@@ -469,7 +469,9 @@ export class GameRoom {
       activeMapId: this.activeMapId,
       mapMechanicsEnabled: this.mapMechanicsEnabled,
       teamScores: this.world
-        ? worldToSnapshot(this.world).teamScores
+        ? isCaptureMode(this.matchMode)
+          ? worldToSnapshot(this.world).captureScores
+          : worldToSnapshot(this.world).teamScores
         : [...new Set([...this.seats.values()].map((seat) => seat.teamId).filter((teamId): teamId is TeamId => teamId !== null))].map((teamId) => ({
             teamId,
             score: 0,

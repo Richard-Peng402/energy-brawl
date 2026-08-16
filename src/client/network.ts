@@ -11,6 +11,7 @@ import type {
   Ack,
   ClientToServerEvents,
   GameSnapshot,
+  GamePhase,
   HostCommand,
   HostAdminCommand,
   JoinPayload,
@@ -49,6 +50,18 @@ export function isCharacterSelectionDisabled(
   characterId: CharacterId,
 ): boolean {
   return unavailable || Boolean(ownSeat?.ready && ownSeat.characterId !== characterId);
+}
+
+export function shouldRequireCharacterReselection(
+  previousPhase: GamePhase | null,
+  nextPhase: GamePhase,
+  hasSeat: boolean,
+): boolean {
+  return hasSeat && previousPhase !== null && previousPhase !== "lobby" && nextPhase === "lobby";
+}
+
+export function canReadyAfterCharacterSelection(hasSelectedCharacter: boolean, currentlyReady: boolean): boolean {
+  return currentlyReady || hasSelectedCharacter;
 }
 
 const TOKEN_KEY = "energy-brawl.reconnect-token";

@@ -30,6 +30,13 @@ describe("v4.4 tactical HUD UI", () => {
     expect(styles).toContain(".result-row.is-mvp");
   });
 
+  it("renders authoritative map-mechanic contribution without obscuring phone results", () => {
+    expect(app).toContain("mapMechanicContributionSummary");
+    expect(app).toContain("result-mechanic");
+    expect(styles).toContain(".result-mechanic");
+    expect(extractBlock(styles, ".result-mechanic")).toContain("white-space: normal");
+  });
+
   it("labels team identity in the lobby roster and in-match leaderboard", () => {
     expect(app).toContain("teamLabel(player.teamId)");
     expect(app).toContain("leader-team");

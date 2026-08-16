@@ -3,7 +3,7 @@ import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import { getExclusiveSkill, getExclusiveSkillCounterSummary } from "../shared/exclusive-skill-catalog";
 import { getMapDefinition, type MapId } from "../shared/map-catalog";
-import type { GameSnapshot, PlayerSnapshot } from "../shared/protocol";
+import type { GamePhase, GameSnapshot, MapMechanicSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
 import { didPickUpLocalSkill, selectLatestKillFeedback, type CombatFeedbackEvent } from "./combat-feedback";
@@ -11,7 +11,13 @@ import { CombatHaptics, type HapticsMode } from "./combat-haptics";
 import { ClientDiagnosticsCollector } from "./diagnostics-collector";
 import { collectDeviceProfile, type DeviceProfileNavigator } from "./device-profile";
 import { GameRenderer } from "./game-scene";
-import { buildCharacterSelection, GameNetworkClient, isCharacterSelectionDisabled } from "./network";
+import {
+  buildCharacterSelection,
+  canReadyAfterCharacterSelection,
+  GameNetworkClient,
+  isCharacterSelectionDisabled,
+  shouldRequireCharacterReselection,
+} from "./network";
 import { MobileViewport } from "./mobile-viewport";
 import { capturePointRevision, gameLeaderboardRevision, roomUiRevision } from "./render-throttle";
 import { canPressExclusiveSkill, exclusiveSkillButtonMode } from "./exclusive-skill-ui";
@@ -39,10 +45,12 @@ import { buildRadarFrame, buildTacticalCues } from "./tactical-radar";
 import { teamLabel } from "./team-label";
 import {
   mapMechanicLobbyView,
+  mapMechanicContributionSummary,
   mapMechanicMatchKey,
   mapMechanicPresentationProfile,
   mapMechanicStatusText,
   randomMapMechanicSummaries,
+  selectMapMechanicFeedback,
 } from "./map-mechanic-visuals";
 
 const NAME_KEY = "energy-brawl.nickname";
@@ -105,7 +113,9 @@ export class MobileApp {
   private lastResultsRevision = "";
   private lastCapturePointRevision = "";
   private activeMechanicMatchKey: string | null = null;
+  private previousMapMechanicSnapshot: MapMechanicSnapshot | null = null;
   private mechanicBannerTimer = 0;
+  private lastObservedRoomPhase: GamePhase | null = null;
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = mobileTemplate();
@@ -192,13 +202,21 @@ export class MobileApp {
         return;
       }
       void this.network.changeCharacter(characterId).then((result) => {
-        if (result.ok) this.hasSelectedCharacter = true;
+        if (result.ok) {
+          this.hasSelectedCharacter = true;
+          this.renderColors();
+          this.renderRoster();
+        }
         if (!result.ok) this.showToast(result.error ?? "无法更换角色");
       });
     });
 
     this.find("#ready-button").addEventListener("click", async () => {
       const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
+      if (!canReadyAfterCharacterSelection(this.hasSelectedCharacter, ownSeat?.ready === true)) {
+        this.showToast("请先重新选择本局角色");
+        return;
+      }
       const result = await this.network.setReady(!ownSeat?.ready);
       if (!result.ok) this.showToast(result.error ?? "无法修改准备状态");
     });
@@ -558,6 +576,13 @@ export class MobileApp {
     }
 
     const phase = this.network.room?.phase ?? "lobby";
+    const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
+    if (shouldRequireCharacterReselection(this.lastObservedRoomPhase, phase, Boolean(ownSeat))) {
+      this.hasSelectedCharacter = false;
+      this.lastLobbyPreviewCharacterId = null;
+      this.showToast("已回到房间，请重新选择本局角色");
+    }
+    this.lastObservedRoomPhase = phase;
     const inGame = phase === "playing" || phase === "overtime" || phase === "finished";
     this.find("#lobby-screen").classList.toggle("is-hidden", inGame);
     this.find("#arena-screen").classList.toggle("is-hidden", !inGame);
@@ -586,6 +611,7 @@ export class MobileApp {
       this.lastKillFeedRevision = "";
       this.lastResultsRevision = "";
       this.lastCapturePointRevision = "";
+      this.previousMapMechanicSnapshot = null;
       this.clearOpeningMechanicBanner(true);
     }
 
@@ -686,8 +712,9 @@ export class MobileApp {
     this.find("#join-form").classList.toggle("is-hidden", hasJoined);
     const readyButton = this.find<HTMLButtonElement>("#ready-button");
     readyButton.classList.toggle("is-hidden", !hasJoined);
-    readyButton.textContent = ownSeat?.ready ? "取消准备" : "准备";
+    readyButton.textContent = ownSeat?.ready ? "取消准备" : this.hasSelectedCharacter ? "准备" : "选择角色后准备";
     readyButton.classList.toggle("is-ready", ownSeat?.ready === true);
+    readyButton.disabled = hasJoined && !canReadyAfterCharacterSelection(this.hasSelectedCharacter, ownSeat?.ready === true);
     this.find("#lobby-status").textContent = room?.canStart
       ? "全员就绪，等待主机开局"
       : hasJoined
@@ -750,6 +777,7 @@ export class MobileApp {
   }
 
   private renderHud(snapshot: GameSnapshot): void {
+    this.syncMapMechanicFeedback(snapshot);
     const own = snapshot.players.find((player) => player.id === this.network.playerId);
     const leaders = [...snapshot.players].sort((a, b) => b.score - a.score || b.kills - a.kills);
     const ownTeamScore = own?.teamId ? snapshot.teamScores?.find((team) => team.teamId === own.teamId) : undefined;
@@ -829,6 +857,15 @@ export class MobileApp {
     this.renderExclusiveSkillButton(own, snapshot.serverTime);
   }
 
+  private syncMapMechanicFeedback(snapshot: GameSnapshot): void {
+    const next = snapshot.mapMechanic ?? null;
+    const event = selectMapMechanicFeedback(this.previousMapMechanicSnapshot, next, snapshot.serverTime);
+    this.previousMapMechanicSnapshot = next;
+    if (!event) return;
+    this.audio.playMapMechanic(event.kind, event.stage);
+    this.haptics.handleMapMechanicEvent(event);
+  }
+
   private renderExclusiveSkillButton(player: PlayerSnapshot | undefined, serverTime: number): void {
     const button = this.find<HTMLButtonElement>("#exclusive-skill-button");
     if (!player) { button.disabled = true; return; }
@@ -886,11 +923,11 @@ export class MobileApp {
       this.find("#result-mvp").innerHTML = mvp
         ? `<span>MVP</span><i style="--player-color:${mvp.color}"></i><b>${escapeHtml(mvp.nickname)}</b><strong>${snapshot.matchMvpScore ?? 0}</strong><small>综合贡献</small>`
         : `<span>MVP</span><b>无</b>`;
-      this.find("#result-list").innerHTML = `<div class="result-table-head"><span>#</span><span>玩家</span><span>K/D/A</span><span>伤害</span><span>治疗</span><span>承伤</span><span>技能</span><span>积分</span></div>` + ranking
+      this.find("#result-list").innerHTML = `<div class="result-table-head"><span>#</span><span>玩家</span><span>K/D/A</span><span>伤害</span><span>治疗</span><span>承伤</span><span>技能</span><span>地图机制</span><span>积分</span></div>` + ranking
         .map(
           (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}${player.id === snapshot.matchMvpId ? " is-mvp" : ""}">
             <span class="result-rank">${index + 1}</span><span class="result-player"><i style="--player-color:${player.color}"></i><em class="result-team">${teamLabel(player.teamId)}</em><b>${escapeHtml(player.nickname)}</b></span>
-            <span>${player.kills}/${player.deaths ?? 0}/${player.assists ?? 0}</span><span>${Math.round(player.damageDealt ?? 0)}</span><span>${Math.round(player.healingDone ?? 0)}</span><span>${Math.round(player.damageTaken ?? 0)}</span><span>${player.skillContribution ?? 0}</span><strong>${player.score}</strong>
+            <span>${player.kills}/${player.deaths ?? 0}/${player.assists ?? 0}</span><span>${Math.round(player.damageDealt ?? 0)}</span><span>${Math.round(player.healingDone ?? 0)}</span><span>${Math.round(player.damageTaken ?? 0)}</span><span>${player.skillContribution ?? 0}</span><span class="result-mechanic">${mapMechanicContributionSummary(player.mapMechanicContribution)}</span><strong>${player.score}</strong>
           </div>`,
         )
         .join("");
@@ -943,12 +980,12 @@ export class MobileApp {
     this.haptics.handleEvents(events);
   }
 
-  private showCombatFallback(type: CombatFeedbackEvent["type"]): void {
+  private showCombatFallback(type: CombatFeedbackEvent["type"] | "map-mechanic"): void {
     const arena = this.find("#arena-screen");
     arena.dataset.combatFeedback = type;
     window.setTimeout(() => {
       if (arena.dataset.combatFeedback === type) delete arena.dataset.combatFeedback;
-    }, type === "kill" ? 420 : 220);
+    }, type === "kill" ? 420 : type === "map-mechanic" ? 300 : 220);
   }
 
   private readonly handleVisibilityChange = (): void => {
@@ -1208,7 +1245,7 @@ function mobileTemplate(): string {
           <div id="layout-editor" class="layout-editor is-hidden"><strong>拖动两个技能按钮调整位置</strong><span>移动与攻击摇杆仍可在左右半屏任意位置呼出</span><button id="layout-reset" type="button">恢复默认</button><button id="layout-save" type="button">保存布局</button></div>
         </div>
         <div id="results-overlay" class="results-overlay is-hidden">
-          <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-mvp" class="result-mvp"></div><div id="result-list" class="result-list"></div><p id="return-countdown"></p><button id="return-lobby" class="primary-button" type="button">返回大厅</button></div>
+           <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-mvp" class="result-mvp"></div><div id="result-list" class="result-list"></div><p id="return-countdown"></p><button id="return-lobby" class="primary-button" type="button">回到大厅并重新选角</button></div>
         </div>
       </section>
       <dialog id="controls-dialog" class="controls-dialog">

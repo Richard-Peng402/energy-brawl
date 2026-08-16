@@ -5,6 +5,7 @@ import {
   createMapMechanicState,
   mapMechanicSnapshot,
   updateCrystalParticipant,
+  updateReactorEscapeParticipant,
 } from "../src/server/map-mechanic-system";
 
 describe("map mechanic lifecycle", () => {
@@ -95,5 +96,18 @@ describe("crystal resonance participation", () => {
     expect(updateCrystalParticipant(neon, "p1", true, 25_000)).toBe(false);
     expect(crystal.participantChargeStartedAt.size).toBe(0);
     expect(neon.participantChargeStartedAt.size).toBe(0);
+  });
+});
+
+describe("reactor escape participation", () => {
+  it("awards one escape only after a warned player leaves the zone", () => {
+    const state = createMapMechanicState("reactor-core", 0, true)!;
+    advanceMapMechanicState(state, 20_000, true);
+
+    expect(updateReactorEscapeParticipant(state, "p1", false, 20_100)).toBe(false);
+    expect(updateReactorEscapeParticipant(state, "p1", true, 20_200)).toBe(false);
+    expect(updateReactorEscapeParticipant(state, "p1", false, 20_300)).toBe(true);
+    expect(updateReactorEscapeParticipant(state, "p1", true, 20_400)).toBe(false);
+    expect(updateReactorEscapeParticipant(state, "p1", false, 20_500)).toBe(false);
   });
 });

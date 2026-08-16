@@ -66,4 +66,18 @@ describe("combat haptics", () => {
     haptics.handleEvents([event("death", "death:stop")]);
     expect(vibrate).toHaveBeenCalledWith([110, 40, 110]);
   });
+
+  it("plays distinct map-mechanic feedback through the shared haptics mode", () => {
+    const vibrate = vi.fn(() => true);
+    const haptics = new CombatHaptics({ vibrate, now: () => 1_000 });
+
+    haptics.handleMapMechanicEvent({
+      key: "crystal-resonance:1:2:active",
+      kind: "crystal-resonance",
+      stage: "active",
+      at: 1_000,
+    });
+
+    expect(vibrate).toHaveBeenCalledWith([38, 28, 38, 28, 62]);
+  });
 });

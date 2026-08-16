@@ -29,4 +29,11 @@ describe("mobile combat audio controls", () => {
     expect(styles).toContain(".arena-sound");
     expect(styles).toContain("pointer-events: auto");
   });
+
+  it("routes authoritative map phase edges to audio, haptics, and visual fallback", () => {
+    expect(app).toContain("selectMapMechanicFeedback");
+    expect(app).toContain("this.audio.playMapMechanic");
+    expect(app).toContain("this.haptics.handleMapMechanicEvent");
+    expect(styles).toContain('[data-combat-feedback="map-mechanic"]');
+  });
 });

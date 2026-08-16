@@ -55,7 +55,7 @@ import { predictLocalPosition } from "./prediction";
 import { shouldAdvanceSnapshotAnchor, SnapshotBuffer } from "./snapshot-buffer";
 import type { SkillIndicatorState } from "./skill-indicator";
 import { getSkillIndicatorProfile } from "./skill-indicator";
-import { combatCameraImpulse, getExclusiveEffectProfile, getStatusEffectVisualProfile } from "./skill-effects";
+import { combatCameraImpulse, getExclusiveEffectProfile, getStatusEffectVisualProfile, selectCombatCameraFeedback } from "./skill-effects";
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
@@ -635,7 +635,7 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private playCombatFeedback(events: readonly CombatFeedbackEvent[]): void {
-    const event = events.find((candidate) => candidate.type === "death") ?? events.find((candidate) => candidate.type === "hurt");
+    const event = selectCombatCameraFeedback(events);
     if (!event) return;
     const profile = combatCameraImpulse(event.type);
     const now = performance.now();

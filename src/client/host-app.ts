@@ -231,7 +231,11 @@ export class HostApp {
     const hasToken = this.token.length > 0;
     this.find<HTMLButtonElement>("#host-start").disabled = !hasToken || !room?.canStart || phase !== "lobby";
     this.find<HTMLButtonElement>("#host-end").disabled = !hasToken || (phase !== "playing" && phase !== "overtime");
-    this.find<HTMLButtonElement>("#host-reset").disabled = !hasToken || phase === "lobby";
+    const resetButton = this.find<HTMLButtonElement>("#host-reset");
+    resetButton.disabled = !hasToken || phase === "lobby";
+    resetButton.title = phase === "finished" ? "返回大厅重新选角" : "返回大厅";
+    const resetLabel = resetButton.querySelector("span");
+    if (resetLabel) resetLabel.textContent = phase === "finished" ? "赛后重开" : "重置";
     this.renderDiagnostics();
   }
 

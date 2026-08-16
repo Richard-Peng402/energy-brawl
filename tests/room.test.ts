@@ -74,6 +74,22 @@ describe("game room", () => {
     expect(room.snapshot().players.find((player) => player.id === joined.data!.playerId)?.teamId).toBeDefined();
   });
 
+  it("reports capture progress instead of combat score in domination host snapshots", () => {
+    const room = new GameRoom();
+    expect(room.setMatchMode("domination3v3")).toEqual({ ok: true });
+    join(room, "socket-domination-host-score", "Domination Host", "blaze");
+    room.setReady("socket-domination-host-score", true);
+    expect(room.startMatch()).toEqual({ ok: true });
+
+    const world = room.gameWorld()!;
+    world.teamScores.set("red", 113);
+    world.captureScores.set("red", 35);
+
+    expect(room.gameSnapshot()?.teamScores).toContainEqual({ teamId: "red", score: 113, targetScore: 100 });
+    expect(room.gameSnapshot()?.captureScores).toContainEqual({ teamId: "red", score: 35, targetScore: 100 });
+    expect(room.snapshot().teamScores).toContainEqual({ teamId: "red", score: 35, targetScore: 100 });
+  });
+
   it("allows the same character on opposing teams but rejects it on one team", () => {
     const room = new GameRoom();
     room.setMatchMode("team3v3");
@@ -459,6 +475,22 @@ describe("game room", () => {
       phase: "lobby",
       players: [{ nickname: "Host", connected: true, ready: false, isBot: false }],
     });
+    expect(room.snapshot().players).toHaveLength(1);
+  });
+
+  it("rotates a random rematch away from the previous active map", () => {
+    const room = new GameRoom();
+    room.setMapSelection("random");
+    join(room, "socket-rotation", "Rotation", "blaze");
+    room.setReady("socket-rotation", true);
+    room.startMatch();
+    const firstMap = room.gameSnapshot()!.mapId;
+    room.endMatch();
+    room.returnToLobby("socket-rotation");
+    room.setReady("socket-rotation", true);
+    room.startMatch();
+
+    expect(room.gameSnapshot()!.mapId).not.toBe(firstMap);
   });
 
   it("allows only a connected seated human to return a finished match early", () => {

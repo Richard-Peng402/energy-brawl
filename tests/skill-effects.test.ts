@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { combatCameraImpulse, getExclusiveEffectProfile, getStatusEffectVisualProfile } from "../src/client/skill-effects";
+import {
+  combatCameraImpulse,
+  getExclusiveEffectProfile,
+  getStatusEffectVisualProfile,
+  selectCombatCameraFeedback,
+} from "../src/client/skill-effects";
 
 describe("exclusive skill visual profiles", () => {
   it("keeps every timed buff visible with multiple additive layers", () => {
@@ -30,6 +35,16 @@ describe("exclusive skill visual profiles", () => {
 
   it("caps camera feedback to the approved duration and displacement", () => {
     expect(combatCameraImpulse("hurt")).toMatchObject({ maxCssPx: 6, durationMs: 90, throttleMs: 300 });
+    expect(combatCameraImpulse("kill")).toMatchObject({ maxCssPx: 7, durationMs: 120, throttleMs: 240 });
     expect(combatCameraImpulse("death")).toMatchObject({ maxCssPx: 10, durationMs: 160, throttleMs: 300 });
+  });
+
+  it("prioritizes death, then kill, then hurt for one camera impulse", () => {
+    const hurt = { type: "hurt" as const, key: "hurt:1", at: 1 };
+    const kill = { type: "kill" as const, key: "kill:1", at: 1, streak: 2 };
+    const death = { type: "death" as const, key: "death:1", at: 1 };
+    expect(selectCombatCameraFeedback([hurt, kill])).toBe(kill);
+    expect(selectCombatCameraFeedback([hurt, kill, death])).toBe(death);
+    expect(selectCombatCameraFeedback([])).toBeNull();
   });
 });

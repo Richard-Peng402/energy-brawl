@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatMechanicCountdown,
+  mapMechanicContributionSummary,
   mapMechanicLobbyView,
   mapMechanicMatchKey,
   mapMechanicPresentationProfile,
   mapMechanicRenderProfile,
   mapMechanicStatusText,
+  mapMechanicVibrationPattern,
   mapMechanicVisualRevision,
   randomMapMechanicSummaries,
+  selectMapMechanicFeedback,
 } from "../src/client/map-mechanic-visuals";
 import type { GameSnapshot } from "../src/shared/protocol";
 
@@ -58,11 +61,48 @@ describe("map mechanic presentation", () => {
     expect(mapMechanicStatusText(mechanic({ kind: "crystal-resonance", phase: "active", participants: [{ playerId: "p1", chargeProgress: 0.42, claimed: false }] }), "p1", 25_000)).toBe("晶脉共鸣 · 共鸣进度 42%");
   });
 
+  it("formats only non-zero authoritative post-match contributions", () => {
+    expect(mapMechanicContributionSummary({
+      reactorEscapes: 2,
+      neonDamage: 200,
+      crystalResonances: 3,
+      mechanicHealing: 40,
+      mechanicEliminations: 2,
+    })).toBe("逃生 2 · 过载伤害 200 · 共鸣 3 · 机制治疗 40 · 机制击杀 2");
+    expect(mapMechanicContributionSummary(undefined)).toBe("无");
+  });
+
   it("keeps duplicate visual revisions stable and clears hidden phases", () => {
     const active = mechanic({ kind: "neon-overdrive", phase: "active", round: 1, zoneIndex: 1 });
     expect(mapMechanicVisualRevision(active)).toBe(mapMechanicVisualRevision({ ...active, phaseEndsAt: active.phaseEndsAt + 50 }));
     expect(mapMechanicVisualRevision(null)).toBe("hidden");
     expect(mapMechanicVisualRevision(mechanic({ phase: "cooldown" }))).toBe("hidden");
+  });
+
+  it("emits one feedback edge for warning and activation but not duplicate snapshots", () => {
+    const warning = mechanic({ kind: "reactor-vent", phase: "warning", round: 2, zoneIndex: 0 });
+    const active = { ...warning, phase: "active" as const, phaseStartedAt: warning.phaseEndsAt, phaseEndsAt: warning.phaseEndsAt + 8_000 };
+
+    expect(selectMapMechanicFeedback(null, warning, 20_000)).toMatchObject({
+      key: "reactor-vent:2:0:warning",
+      kind: "reactor-vent",
+      stage: "warning",
+    });
+    expect(selectMapMechanicFeedback(warning, warning, 20_100)).toBeNull();
+    expect(selectMapMechanicFeedback(warning, active, 24_000)).toMatchObject({
+      key: "reactor-vent:2:0:active",
+      stage: "active",
+    });
+  });
+
+  it("uses six distinct bounded map-mechanic vibration rhythms", () => {
+    const patterns = (["reactor-vent", "neon-overdrive", "crystal-resonance"] as const)
+      .flatMap((kind) => (["warning", "active"] as const).map((stage) => mapMechanicVibrationPattern(kind, stage)));
+    expect(new Set(patterns.map((pattern) => JSON.stringify(pattern))).size).toBe(6);
+    for (const pattern of patterns) {
+      expect(pattern.every((segment) => segment <= 120)).toBe(true);
+      expect(pattern.reduce((total, segment) => total + segment, 0)).toBeLessThanOrEqual(300);
+    }
   });
 });
 

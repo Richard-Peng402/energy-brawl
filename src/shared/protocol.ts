@@ -59,6 +59,14 @@ export interface MapMechanicSnapshot {
   participants: MapMechanicParticipantSnapshot[];
 }
 
+export interface MapMechanicContribution {
+  reactorEscapes: number;
+  neonDamage: number;
+  crystalResonances: number;
+  mechanicHealing: number;
+  mechanicEliminations: number;
+}
+
 export interface PlayerSnapshot extends Vec2 {
   id: string;
   nickname: string;
@@ -84,6 +92,7 @@ export interface PlayerSnapshot extends Vec2 {
   healingDone?: number;
   damageTaken?: number;
   skillContribution?: number;
+  mapMechanicContribution?: MapMechanicContribution;
   lastDamageSourceId?: string | null;
   lastDamagedAt?: number | null;
   energyCollected: number;

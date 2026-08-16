@@ -57,6 +57,11 @@ describe("host dashboard layout", () => {
     expect(hostApp).toContain("动态机制已关闭");
     expect(hostApp).toContain("host-map-mechanic-description");
   });
+
+  it("presents the finished-state reset command as a rematch action", () => {
+    expect(hostApp).toContain("赛后重开");
+    expect(hostApp).toContain("返回大厅重新选角");
+  });
 });
 
 function extractBlock(css: string, header: string): string {

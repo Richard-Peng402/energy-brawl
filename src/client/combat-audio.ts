@@ -1,5 +1,8 @@
-export type CombatSoundKind = "fire" | "impact" | "hurt" | "pickup" | "kill" | "objective";
+import type { MapMechanicKind } from "../shared/map-mechanics";
+
+export type CombatSoundKind = "fire" | "impact" | "hurt" | "pickup" | "kill" | "objective" | "map-mechanic";
 export type ObjectiveSoundStage = "capture-start" | "contested" | "captured" | "overtime" | "finish";
+export type MapMechanicSoundStage = "warning" | "active";
 
 export interface CombatSoundRequest {
   kind: CombatSoundKind;
@@ -8,6 +11,8 @@ export interface CombatSoundRequest {
   distance?: number;
   streak?: number;
   objectiveStage?: ObjectiveSoundStage;
+  mapMechanicKind?: MapMechanicKind;
+  mapMechanicStage?: MapMechanicSoundStage;
 }
 
 export interface ApprovedCombatSound {
@@ -15,6 +20,8 @@ export interface ApprovedCombatSound {
   gain: number;
   streak?: number;
   objectiveStage?: ObjectiveSoundStage;
+  mapMechanicKind?: MapMechanicKind;
+  mapMechanicStage?: MapMechanicSoundStage;
 }
 
 export type KillStreakTier = 1 | 2 | 3 | 4 | 5;
@@ -30,6 +37,12 @@ export interface SynthTone {
 
 export interface KillStreakCue {
   tier: KillStreakTier;
+  tones: readonly SynthTone[];
+}
+
+export interface MapMechanicAudioCue {
+  kind: MapMechanicKind;
+  stage: MapMechanicSoundStage;
   tones: readonly SynthTone[];
 }
 
@@ -76,6 +89,45 @@ const KILL_STREAK_CUES: Readonly<Record<KillStreakTier, KillStreakCue>> = {
     ],
   },
 };
+
+const MAP_MECHANIC_TONES: Readonly<Record<MapMechanicKind, Readonly<Record<MapMechanicSoundStage, readonly SynthTone[]>>>> = {
+  "reactor-vent": {
+    warning: [
+      { type: "sawtooth", startFrequency: 520, endFrequency: 280, duration: 0.12, volume: 0.2, delay: 0 },
+      { type: "sawtooth", startFrequency: 420, endFrequency: 220, duration: 0.14, volume: 0.22, delay: 0.16 },
+    ],
+    active: [
+      { type: "triangle", startFrequency: 108, endFrequency: 46, duration: 0.42, volume: 0.34, delay: 0 },
+      { type: "square", startFrequency: 92, endFrequency: 48, duration: 0.24, volume: 0.16, delay: 0.05 },
+    ],
+  },
+  "neon-overdrive": {
+    warning: [
+      { type: "sine", startFrequency: 460, endFrequency: 720, duration: 0.1, volume: 0.14, delay: 0 },
+      { type: "sine", startFrequency: 620, endFrequency: 980, duration: 0.13, volume: 0.2, delay: 0.11 },
+    ],
+    active: [
+      { type: "triangle", startFrequency: 420, endFrequency: 680, duration: 0.1, volume: 0.15, delay: 0 },
+      { type: "triangle", startFrequency: 680, endFrequency: 1_020, duration: 0.12, volume: 0.18, delay: 0.1 },
+      { type: "sine", startFrequency: 1_020, endFrequency: 1_520, duration: 0.16, volume: 0.2, delay: 0.22 },
+    ],
+  },
+  "crystal-resonance": {
+    warning: [
+      { type: "sine", startFrequency: 440, endFrequency: 520, duration: 0.16, volume: 0.15, delay: 0 },
+      { type: "sine", startFrequency: 660, endFrequency: 780, duration: 0.18, volume: 0.17, delay: 0.22 },
+    ],
+    active: [
+      { type: "sine", startFrequency: 520, endFrequency: 620, duration: 0.18, volume: 0.14, delay: 0 },
+      { type: "sine", startFrequency: 780, endFrequency: 900, duration: 0.2, volume: 0.16, delay: 0.12 },
+      { type: "triangle", startFrequency: 1_040, endFrequency: 1_360, duration: 0.24, volume: 0.2, delay: 0.26 },
+    ],
+  },
+};
+
+export function mapMechanicAudioCue(kind: MapMechanicKind, stage: MapMechanicSoundStage): MapMechanicAudioCue {
+  return { kind, stage, tones: MAP_MECHANIC_TONES[kind][stage] };
+}
 
 export function killStreakCue(streak: number): KillStreakCue {
   const tier = Math.min(5, Math.max(1, Number.isFinite(streak) ? Math.trunc(streak) : 1)) as KillStreakTier;
@@ -135,9 +187,11 @@ export class CombatAudioPolicy {
     }
     return {
       kind: request.kind,
-      gain: request.kind === "hurt" ? 1 : request.kind === "kill" || request.kind === "objective" ? 0.92 : request.local ? 0.78 : 0.45,
+      gain: request.kind === "hurt" ? 1 : request.kind === "kill" || request.kind === "objective" || request.kind === "map-mechanic" ? 0.92 : request.local ? 0.78 : 0.45,
       streak: request.streak,
       objectiveStage: request.objectiveStage,
+      mapMechanicKind: request.mapMechanicKind,
+      mapMechanicStage: request.mapMechanicStage,
     };
   }
 }
@@ -256,6 +310,10 @@ export class CombatAudio {
     this.play({ kind: "objective", local: true, objectiveStage: stage });
   }
 
+  playMapMechanic(kind: MapMechanicKind, stage: MapMechanicSoundStage): void {
+    this.play({ kind: "map-mechanic", local: true, mapMechanicKind: kind, mapMechanicStage: stage });
+  }
+
   private play(request: CombatSoundRequest): void {
     const approved = this.policy.request(request, performance.now());
     const context = this.context;
@@ -318,6 +376,25 @@ export class CombatAudio {
           const stage: ObjectiveSoundStage = approved.objectiveStage ?? "capture-start";
           const [startFrequency, endFrequency] = tones[stage];
           this.playTone(context, "triangle", startFrequency, endFrequency, 0.18, approved.gain * 0.42, 0, finish);
+          break;
+        }
+        case "map-mechanic": {
+          const cue = mapMechanicAudioCue(approved.mapMechanicKind ?? "reactor-vent", approved.mapMechanicStage ?? "warning");
+          const finalTone = cue.tones.reduce((latest, tone) =>
+            tone.delay + tone.duration > latest.delay + latest.duration ? tone : latest,
+          );
+          for (const tone of cue.tones) {
+            this.playTone(
+              context,
+              tone.type,
+              tone.startFrequency,
+              tone.endFrequency,
+              tone.duration,
+              tone.volume * approved.gain,
+              tone.delay,
+              tone === finalTone ? finish : undefined,
+            );
+          }
           break;
         }
       }

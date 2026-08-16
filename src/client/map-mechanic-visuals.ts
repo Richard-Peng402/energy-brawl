@@ -1,7 +1,7 @@
 import { MATCH_DURATION_MS } from "../shared/constants";
 import { MAP_CATALOG, type MapId } from "../shared/map-catalog";
 import { getMapMechanicDefinition, type MapMechanicKind, type MapMechanicPhase } from "../shared/map-mechanics";
-import type { GameSnapshot, MapMechanicSnapshot } from "../shared/protocol";
+import type { GameSnapshot, MapMechanicContribution, MapMechanicSnapshot } from "../shared/protocol";
 
 export interface MapMechanicLobbyView {
   mapId: MapId;
@@ -27,6 +27,13 @@ export interface MapMechanicRenderProfile {
   strokeWidth: number;
   fillAlpha: number;
   shapeMotion: "expand" | "flow" | "converge";
+}
+
+export interface MapMechanicFeedbackEvent {
+  key: string;
+  kind: MapMechanicKind;
+  stage: "warning" | "active";
+  at: number;
 }
 
 const PRESENTATION_PROFILES: Readonly<Record<MapMechanicKind, MapMechanicPresentationProfile>> = {
@@ -112,6 +119,38 @@ export function mapMechanicStatusText(
   if (local?.claimed) return `${definition.name} · 共鸣增益已获得`;
   if (local) return `${definition.name} · 共鸣进度 ${Math.round(local.chargeProgress * 100)}%`;
   return `${definition.name} · 驻留充能可获得减伤与治疗`;
+}
+
+export function mapMechanicContributionSummary(contribution: MapMechanicContribution | undefined): string {
+  if (!contribution) return "无";
+  const entries = [
+    contribution.reactorEscapes > 0 ? `逃生 ${contribution.reactorEscapes}` : "",
+    contribution.neonDamage > 0 ? `过载伤害 ${Math.round(contribution.neonDamage)}` : "",
+    contribution.crystalResonances > 0 ? `共鸣 ${contribution.crystalResonances}` : "",
+    contribution.mechanicHealing > 0 ? `机制治疗 ${Math.round(contribution.mechanicHealing)}` : "",
+    contribution.mechanicEliminations > 0 ? `机制击杀 ${contribution.mechanicEliminations}` : "",
+  ].filter(Boolean);
+  return entries.length > 0 ? entries.join(" · ") : "无";
+}
+
+export function selectMapMechanicFeedback(
+  previous: MapMechanicSnapshot | null | undefined,
+  next: MapMechanicSnapshot | null | undefined,
+  serverTime: number,
+): MapMechanicFeedbackEvent | null {
+  if (!next || (next.phase !== "warning" && next.phase !== "active")) return null;
+  const key = `${next.kind}:${next.round}:${next.zoneIndex}:${next.phase}`;
+  if (previous && `${previous.kind}:${previous.round}:${previous.zoneIndex}:${previous.phase}` === key) return null;
+  return { key, kind: next.kind, stage: next.phase, at: serverTime };
+}
+
+export function mapMechanicVibrationPattern(
+  kind: MapMechanicKind,
+  stage: "warning" | "active",
+): readonly number[] {
+  if (kind === "reactor-vent") return stage === "warning" ? [45, 35, 45] : [110];
+  if (kind === "neon-overdrive") return stage === "warning" ? [24, 24, 40, 24, 56] : [24, 22, 24, 22, 24];
+  return stage === "warning" ? [28, 42, 28, 42] : [38, 28, 38, 28, 62];
 }
 
 export function mapMechanicVisualRevision(snapshot: MapMechanicSnapshot | null | undefined): string {

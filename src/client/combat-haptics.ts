@@ -1,4 +1,5 @@
 import type { CombatFeedbackEvent, CombatFeedbackEventType } from "./combat-feedback";
+import { mapMechanicVibrationPattern, type MapMechanicFeedbackEvent } from "./map-mechanic-visuals";
 
 export type HapticsMode = "off" | "light" | "standard" | "strong";
 
@@ -6,7 +7,7 @@ export interface CombatHapticsOptions {
   vibrate?: (pattern: number | readonly number[]) => boolean;
   now?: () => number;
   mode?: HapticsMode;
-  onFallback?: (type: CombatFeedbackEventType) => void;
+  onFallback?: (type: CombatFeedbackEventType | "map-mechanic") => void;
 }
 
 const MAX_SEGMENT_MS = 120;
@@ -49,7 +50,7 @@ function basePattern(event: CombatFeedbackEvent): readonly number[] {
 export class CombatHaptics {
   private readonly vibrate: ((pattern: number | readonly number[]) => boolean) | null;
   private readonly now: () => number;
-  private readonly onFallback: (type: CombatFeedbackEventType) => void;
+  private readonly onFallback: (type: CombatFeedbackEventType | "map-mechanic") => void;
   private mode: HapticsMode;
   private readonly seenKeys = new Set<string>();
   private readonly lastAt = new Map<CombatFeedbackEventType, number>();
@@ -90,6 +91,19 @@ export class CombatHaptics {
       } else {
         this.onFallback(event.type);
       }
+    }
+  }
+
+  handleMapMechanicEvent(event: MapMechanicFeedbackEvent): void {
+    if (this.seenKeys.has(event.key)) return;
+    this.seenKeys.add(event.key);
+    if (this.seenKeys.size > 256) this.seenKeys.delete(this.seenKeys.values().next().value as string);
+    if (this.mode === "off") return;
+    const pattern = scalePattern(mapMechanicVibrationPattern(event.kind, event.stage), this.mode);
+    if (this.vibrate) {
+      try { this.vibrate(pattern); } catch { this.onFallback("map-mechanic"); }
+    } else {
+      this.onFallback("map-mechanic");
     }
   }
 

@@ -81,6 +81,22 @@ describe("reactor venting", () => {
     });
   });
 
+  it("counts one successful warning-zone escape per reactor round", () => {
+    const world = reactorWorld();
+    const target = world.players.get("p1")!;
+    target.x = 1_440; target.y = 810;
+
+    stepWorld(world, 20_001);
+    target.x = 300; target.y = 300;
+    stepWorld(world, 16);
+    target.x = 1_440; target.y = 810;
+    stepWorld(world, 16);
+    target.x = 300; target.y = 300;
+    stepWorld(world, 16);
+
+    expect(target.mapMechanicContribution).toMatchObject({ reactorEscapes: 1 });
+  });
+
   it("does not duplicate ticks and cannot kill the full-health phase sniper in one vent", () => {
     const world = reactorWorld();
     const target = world.players.get("p1")!;
@@ -193,6 +209,27 @@ describe("neon overdrive", () => {
     stepWorld(world, expiresAt - world.now);
     expect(runner.statusEffects.has("neon-overdrive")).toBe(false);
   });
+
+  it("records post-mitigation damage and eliminations while the attacker is overdriven", () => {
+    const world = createGameWorld([
+      { id: "attacker", nickname: "Attacker", characterId: "arc", isBot: false },
+      { id: "victim", nickname: "Victim", characterId: "blaze", isBot: false },
+    ], 0, "solo", "neon-docks", { mapMechanicsEnabled: true });
+    const attacker = world.players.get("attacker")!;
+    const victim = world.players.get("victim")!;
+    attacker.x = 1_200; attacker.y = 660; attacker.shieldUntil = 0;
+    victim.x = 300; victim.y = 300; victim.shieldUntil = 0;
+    stepWorld(world, 24_001);
+
+    expect(damagePlayer(world, victim.id, attacker.id, 20)).toBe(true);
+    victim.health = 10;
+    expect(damagePlayer(world, victim.id, attacker.id, 20)).toBe(true);
+
+    expect(attacker.mapMechanicContribution).toMatchObject({
+      neonDamage: 40,
+      mechanicEliminations: 1,
+    });
+  });
 });
 
 describe("crystal resonance", () => {
@@ -216,6 +253,7 @@ describe("crystal resonance", () => {
     ]);
     stepWorld(world, 1);
     expect(medic.statusEffects.get("crystal-resonance")).toMatchObject({ expiresAt: 31_250, purifiable: false });
+    expect(medic.mapMechanicContribution).toMatchObject({ crystalResonances: 1 });
 
     medic.health = medic.maxHealth - 10;
     medic.healingDone = 0;
@@ -223,12 +261,14 @@ describe("crystal resonance", () => {
     stepWorld(world, 1_000);
     expect(medic.health).toBe(medic.maxHealth - 7);
     expect(medic.healingDone).toBe(3);
+    expect(medic.mapMechanicContribution).toMatchObject({ mechanicHealing: 3 });
 
     medic.health = medic.maxHealth - 1;
     medic.lastCombatAt = world.now;
     stepWorld(world, 1_000);
     expect(medic.health).toBe(medic.maxHealth);
     expect(medic.healingDone).toBe(4);
+    expect(medic.mapMechanicContribution).toMatchObject({ mechanicHealing: 4 });
 
     expect(damagePlayer(world, medic.id, enemy.id, 20)).toBe(true);
     expect(medic.health).toBe(medic.maxHealth - 17);

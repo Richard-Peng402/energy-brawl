@@ -1,6 +1,6 @@
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import type { StatusEffectId } from "../server/status-effects";
-import type { CombatFeedbackEventType } from "./combat-feedback";
+import type { CombatFeedbackEvent, CombatFeedbackEventType } from "./combat-feedback";
 
 export interface ExclusiveEffectProfile {
   persistent: boolean;
@@ -40,5 +40,13 @@ export function getStatusEffectVisualProfile(id: StatusEffectId): StatusEffectVi
 export interface CombatCameraImpulse { maxCssPx: number; durationMs: number; throttleMs: number; }
 export function combatCameraImpulse(type: CombatFeedbackEventType): CombatCameraImpulse {
   if (type === "death") return { maxCssPx: 10, durationMs: 160, throttleMs: 300 };
+  if (type === "kill") return { maxCssPx: 7, durationMs: 120, throttleMs: 240 };
   return { maxCssPx: type === "hurt" ? 6 : 4, durationMs: type === "hurt" ? 90 : 80, throttleMs: 300 };
+}
+
+export function selectCombatCameraFeedback(events: readonly CombatFeedbackEvent[]): CombatFeedbackEvent | null {
+  return events.find((event) => event.type === "death")
+    ?? events.find((event) => event.type === "kill")
+    ?? events.find((event) => event.type === "hurt")
+    ?? null;
 }

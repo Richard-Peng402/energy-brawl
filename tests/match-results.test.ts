@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateMvpScore, selectMatchMvp } from "../src/shared/match-results";
+import {
+  calculateMapMechanicContributionScore,
+  calculateMvpScore,
+  selectMatchMvp,
+} from "../src/shared/match-results";
 import type { PlayerSnapshot } from "../src/shared/protocol";
 
 describe("match MVP", () => {
@@ -9,6 +13,19 @@ describe("match MVP", () => {
       kills: 2, assists: 3, deaths: 1, score: 4,
       damageDealt: 500, healingDone: 100, damageTaken: 200, skillContribution: 2,
     }))).toBe(1_765);
+  });
+
+  it("adds bounded map-mechanic contribution weights to the MVP score", () => {
+    const mapMechanicContribution = {
+      reactorEscapes: 2,
+      neonDamage: 200,
+      crystalResonances: 3,
+      mechanicHealing: 40,
+      mechanicEliminations: 2,
+    };
+
+    expect(calculateMapMechanicContributionScore(mapMechanicContribution)).toBe(515);
+    expect(calculateMvpScore(player({ mapMechanicContribution }))).toBe(515);
   });
 
   it("breaks equal scores by fewer deaths, then assists, then stable id", () => {

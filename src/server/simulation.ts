@@ -58,6 +58,7 @@ import type {
   GamePhase,
   GameSnapshot,
   KillFeedEvent,
+  MapMechanicContribution,
   PlayerInput,
   PlayerSnapshot,
   ProjectileSnapshot,
@@ -68,6 +69,7 @@ import {
   createMapMechanicState,
   mapMechanicSnapshot,
   updateCrystalParticipant,
+  updateReactorEscapeParticipant,
   type MapMechanicState,
 } from "./map-mechanic-system";
 
@@ -144,6 +146,16 @@ const EMPTY_INPUT: PlayerInput = {
   firing: false,
 };
 
+function createMapMechanicContribution(): MapMechanicContribution {
+  return {
+    reactorEscapes: 0,
+    neonDamage: 0,
+    crystalResonances: 0,
+    mechanicHealing: 0,
+    mechanicEliminations: 0,
+  };
+}
+
 export function createGameWorld(
   seeds: readonly PlayerSeed[],
   now = 0,
@@ -189,6 +201,7 @@ export function createGameWorld(
       healingDone: 0,
       damageTaken: 0,
       skillContribution: 0,
+      mapMechanicContribution: createMapMechanicContribution(),
       lastDamageSourceId: null,
       lastDamagedAt: null,
       alive: true,
@@ -372,6 +385,9 @@ function applyWorldDamage(
   victim.damageTaken = (victim.damageTaken ?? 0) + roundedDamage;
   if (attacker && attacker.id !== victim.id) {
     attacker.damageDealt = (attacker.damageDealt ?? 0) + roundedDamage;
+    if (hasActiveStatusEffect(attacker.statusEffects, "neon-overdrive", eventAt)) {
+      attacker.mapMechanicContribution!.neonDamage += roundedDamage;
+    }
     victim.recentDamageSources.set(attacker.id, eventAt);
     victim.lastDamageSourceId = attacker.id;
     victim.lastDamagedAt = eventAt;
@@ -397,6 +413,12 @@ function applyWorldDamage(
   clearAllStatusEffects(victim.statusEffects);
 
   if (attacker && attacker.id !== victim.id) {
+    if (
+      hasActiveStatusEffect(attacker.statusEffects, "neon-overdrive", eventAt)
+      || hasActiveStatusEffect(attacker.statusEffects, "crystal-resonance", eventAt)
+    ) {
+      attacker.mapMechanicContribution!.mechanicEliminations += 1;
+    }
     attacker.killStreak += 1;
     world.killFeed.push({
       id: `kill-${world.nextKillFeedId++}`,
@@ -545,10 +567,26 @@ function advanceWorldMapMechanic(world: GameWorld, startedAt: number, endedAt: n
       if (state.definition.kind === "reactor-vent") applyReactorDamageThrough(world, state, segmentEnd);
       if (state.definition.kind === "neon-overdrive") applyNeonOverdrive(world, state, segmentEnd);
       if (state.definition.kind === "crystal-resonance") applyCrystalResonance(world, state, cursor, segmentEnd);
+    } else if (state.phase === "warning" && state.definition.kind === "reactor-vent") {
+      trackReactorEscapes(world, state, segmentEnd);
     }
     advanceMapMechanicState(state, segmentEnd, world.phase === "playing");
     if (segmentEnd === cursor && state.phaseEndsAt <= cursor) break;
     cursor = segmentEnd;
+  }
+}
+
+function trackReactorEscapes(world: GameWorld, state: MapMechanicState, now: number): void {
+  if (state.definition.kind !== "reactor-vent") return;
+  const zone = state.definition.zones[state.zoneIndex]!;
+  for (const player of world.players.values()) {
+    const escaped = updateReactorEscapeParticipant(
+      state,
+      player.id,
+      player.alive && zoneContainsPoint(zone, player),
+      now,
+    );
+    if (escaped) player.mapMechanicContribution!.reactorEscapes += 1;
   }
 }
 
@@ -573,6 +611,7 @@ function applyCrystalResonance(world: GameWorld, state: MapMechanicState, segmen
     if (claimed) {
       addStatusEffect(player.statusEffects, "crystal-resonance", segmentEnd, state.definition.effect.durationMs);
       player.mapHealingAccumulatorMs = 0;
+      player.mapMechanicContribution!.crystalResonances += 1;
     }
   }
 }
@@ -943,6 +982,7 @@ function advanceCrystalHealing(world: GameWorld, intervalStart: number, interval
       const healed = Math.min(points, player.maxHealth - player.health);
       player.health += healed;
       player.healingDone = (player.healingDone ?? 0) + healed;
+      player.mapMechanicContribution!.mechanicHealing += healed;
     }
     if (intervalEnd >= effect.expiresAt) player.mapHealingAccumulatorMs = 0;
   }

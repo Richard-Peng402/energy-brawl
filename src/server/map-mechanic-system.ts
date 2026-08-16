@@ -19,6 +19,8 @@ export interface MapMechanicState {
   participantChargeStartedAt: Map<string, number>;
   claimedPlayerIds: Set<string>;
   reactorDamageAt: Map<string, number>;
+  reactorWarnedPlayerIds: Set<string>;
+  reactorEscapedPlayerIds: Set<string>;
 }
 
 export function createMapMechanicState(mapId: MapId, now: number, enabled: boolean): MapMechanicState | null {
@@ -35,6 +37,8 @@ export function createMapMechanicState(mapId: MapId, now: number, enabled: boole
     participantChargeStartedAt: new Map(),
     claimedPlayerIds: new Set(),
     reactorDamageAt: new Map(),
+    reactorWarnedPlayerIds: new Set(),
+    reactorEscapedPlayerIds: new Set(),
   };
 }
 
@@ -98,6 +102,23 @@ export function updateCrystalParticipant(
   return true;
 }
 
+export function updateReactorEscapeParticipant(
+  state: MapMechanicState,
+  playerId: string,
+  inside: boolean,
+  now: number,
+): boolean {
+  state.now = Math.max(state.now, now);
+  if (state.definition.kind !== "reactor-vent" || state.phase !== "warning") return false;
+  if (inside) {
+    state.reactorWarnedPlayerIds.add(playerId);
+    return false;
+  }
+  if (!state.reactorWarnedPlayerIds.has(playerId) || state.reactorEscapedPlayerIds.has(playerId)) return false;
+  state.reactorEscapedPlayerIds.add(playerId);
+  return true;
+}
+
 export function mapMechanicSnapshot(state: MapMechanicState): MapMechanicSnapshot {
   const participantIds = new Set([...state.participantChargeStartedAt.keys(), ...state.claimedPlayerIds]);
   const chargeMs = state.definition.kind === "crystal-resonance" ? state.definition.effect.chargeMs : 1;
@@ -132,4 +153,6 @@ function clearRoundState(state: MapMechanicState): void {
   state.participantChargeStartedAt.clear();
   state.claimedPlayerIds.clear();
   state.reactorDamageAt.clear();
+  state.reactorWarnedPlayerIds.clear();
+  state.reactorEscapedPlayerIds.clear();
 }

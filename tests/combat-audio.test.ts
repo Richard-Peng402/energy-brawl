@@ -5,6 +5,7 @@ import {
   CombatAudioPolicy,
   killStreakAssetUrl,
   killStreakCue,
+  mapMechanicAudioCue,
   readSoundMuted,
   writeSoundMuted,
 } from "../src/client/combat-audio";
@@ -56,6 +57,17 @@ describe("v3.3 combat audio policy", () => {
     const policy = new CombatAudioPolicy();
     policy.unlock();
     expect(policy.request({ kind: "objective", local: true, objectiveStage: "captured" }, 1_000)).toMatchObject({ kind: "objective", gain: 0.92 });
+  });
+
+  it("defines six distinct map-mechanic warning and activation cues", () => {
+    const cues = (["reactor-vent", "neon-overdrive", "crystal-resonance"] as const)
+      .flatMap((kind) => (["warning", "active"] as const).map((stage) => mapMechanicAudioCue(kind, stage)));
+    expect(new Set(cues.map((cue) => JSON.stringify(cue.tones))).size).toBe(6);
+
+    const policy = new CombatAudioPolicy();
+    policy.unlock();
+    expect(policy.request({ kind: "map-mechanic", local: true, mapMechanicKind: "neon-overdrive", mapMechanicStage: "active" }, 1_000))
+      .toMatchObject({ kind: "map-mechanic", gain: 0.92, mapMechanicKind: "neon-overdrive", mapMechanicStage: "active" });
   });
 
   it("persists only the mute preference", () => {
