@@ -8,6 +8,7 @@ import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSE
 import { CombatAudio } from "./combat-audio";
 import { didPickUpLocalSkill, selectLatestKillFeedback, type CombatFeedbackEvent } from "./combat-feedback";
 import { CombatHaptics, type HapticsMode } from "./combat-haptics";
+import type { ClassifiedExclusiveSkillFeedback } from "./exclusive-skill-feedback";
 import { ClientDiagnosticsCollector } from "./diagnostics-collector";
 import { collectDeviceProfile, type DeviceProfileNavigator } from "./device-profile";
 import { GameRenderer } from "./game-scene";
@@ -971,7 +972,7 @@ export class MobileApp {
         onFrame: (deltaMs) => this.diagnostics.recordFrame(deltaMs),
         onCorrection: (distancePx, hard) => this.diagnostics.recordCorrection(distancePx, hard),
         onAuthoritativeInput: (lastProcessedInput) => this.diagnostics.acknowledgeInputs(lastProcessedInput, performance.now()),
-      }, (events) => this.handleCombatFeedback(events));
+      }, (events) => this.handleCombatFeedback(events), (events) => this.handleExclusiveSkillFeedback(events));
       this.rendererMapId = mapId;
     }
   }
@@ -980,12 +981,23 @@ export class MobileApp {
     this.haptics.handleEvents(events);
   }
 
-  private showCombatFallback(type: CombatFeedbackEvent["type"] | "map-mechanic"): void {
+  private handleExclusiveSkillFeedback(events: readonly ClassifiedExclusiveSkillFeedback[]): void {
+    for (const item of events) {
+      this.haptics.handleExclusiveSkillEvent({
+        key: `exclusive-skill:${item.event.eventSeq}`,
+        skillId: item.event.skillId,
+        stage: item.event.stage,
+        relationship: item.relationship,
+      });
+    }
+  }
+
+  private showCombatFallback(type: CombatFeedbackEvent["type"] | "map-mechanic" | "exclusive-skill"): void {
     const arena = this.find("#arena-screen");
     arena.dataset.combatFeedback = type;
     window.setTimeout(() => {
       if (arena.dataset.combatFeedback === type) delete arena.dataset.combatFeedback;
-    }, type === "kill" ? 420 : type === "map-mechanic" ? 300 : 220);
+    }, type === "kill" ? 420 : type === "map-mechanic" || type === "exclusive-skill" ? 300 : 220);
   }
 
   private readonly handleVisibilityChange = (): void => {

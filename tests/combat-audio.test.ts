@@ -7,6 +7,7 @@ import {
   killStreakCue,
   mapMechanicAudioCue,
   readSoundMuted,
+  soundPriority,
   writeSoundMuted,
 } from "../src/client/combat-audio";
 
@@ -51,6 +52,32 @@ describe("v3.3 combat audio policy", () => {
     expect(policy.request({ kind: "fire", local: false, sourceId: "enemy", distance: 400 }, 1_000)?.gain).toBeLessThan(1);
     expect(policy.request({ kind: "fire", local: false, sourceId: "enemy", distance: 400 }, 1_080)).toBeNull();
     expect(policy.request({ kind: "hurt", local: true }, 1_080)).toMatchObject({ kind: "hurt", gain: 1 });
+  });
+
+  it("prioritizes local skill over remote fire but below local kill", () => {
+    expect(soundPriority({ kind: "kill", local: true })).toBeGreaterThan(soundPriority({ kind: "exclusive-skill", local: true }));
+    expect(soundPriority({ kind: "exclusive-skill", local: true })).toBeGreaterThan(soundPriority({ kind: "fire", local: false }));
+  });
+
+  it("clamps exclusive skill pan and distance gain", () => {
+    const policy = new CombatAudioPolicy();
+    policy.unlock();
+    expect(policy.request({
+      kind: "exclusive-skill",
+      local: false,
+      skillId: "phase-shift",
+      skillStage: "cast",
+      distance: 420,
+      pan: 4,
+    }, 1_000)).toMatchObject({ kind: "exclusive-skill", pan: 0.75 });
+    expect(policy.request({
+      kind: "exclusive-skill",
+      local: false,
+      skillId: "phase-shift",
+      skillStage: "cast",
+      distance: 99_000,
+      pan: -4,
+    }, 2_000)).toMatchObject({ gain: 0, pan: -0.75 });
   });
 
   it("approves objective feedback as a local combat cue", () => {

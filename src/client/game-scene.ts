@@ -147,6 +147,7 @@ export interface GameDiagnosticHooks {
 }
 
 export type CombatFeedbackHandler = (events: readonly CombatFeedbackEvent[]) => void;
+export type ExclusiveSkillFeedbackHandler = (events: readonly ClassifiedExclusiveSkillFeedback[]) => void;
 
 const NOOP_DIAGNOSTIC_HOOKS: GameDiagnosticHooks = {
   onFrame: () => {},
@@ -168,9 +169,10 @@ export class GameRenderer {
     mapId: MapId = "reactor-core",
     diagnosticHooks: GameDiagnosticHooks = NOOP_DIAGNOSTIC_HOOKS,
     onCombatFeedback: CombatFeedbackHandler = () => {},
+    onExclusiveSkillFeedback: ExclusiveSkillFeedbackHandler = () => {},
   ) {
     this.container = container;
-    this.scene = new ArenaScene(localPlayerId, audio, mapId, diagnosticHooks, onCombatFeedback);
+    this.scene = new ArenaScene(localPlayerId, audio, mapId, diagnosticHooks, onCombatFeedback, onExclusiveSkillFeedback);
     const width = Math.max(1, container.clientWidth || VIEW_WIDTH);
     const height = Math.max(1, container.clientHeight || VIEW_HEIGHT);
     this.renderMetrics = resolveRenderMetrics(width, height, window.devicePixelRatio || 1);
@@ -302,6 +304,7 @@ class ArenaScene extends Phaser.Scene {
     private readonly mapId: MapId,
     private readonly diagnosticHooks: GameDiagnosticHooks,
     private readonly onCombatFeedback: CombatFeedbackHandler,
+    private readonly onExclusiveSkillFeedback: ExclusiveSkillFeedbackHandler,
   ) {
     super({ key: "arena" });
     this.inputReconciler = new InputReconciler(mapId, (distance, hard) => this.diagnosticHooks.onCorrection(distance, hard));
@@ -677,10 +680,23 @@ class ArenaScene extends Phaser.Scene {
   }
 
   private consumeExclusiveSkillFeedback(feedback: readonly ClassifiedExclusiveSkillFeedback[]): void {
+    const localPlayer = this.localPlayerId
+      ? this.snapshot?.players.find((player) => player.id === this.localPlayerId)
+      : undefined;
     for (const item of feedback) {
+      const pan = localPlayer ? (item.sourcePosition.x - localPlayer.x) / 720 : 0;
+      this.audio.playExclusiveSkill({
+        skillId: item.event.skillId,
+        stage: item.event.stage,
+        local: item.relationship === "local",
+        sourceId: item.event.playerId,
+        distance: item.distance ?? undefined,
+        pan,
+      });
       if (item.event.stage === "end") this.destroyExclusiveEffectView(item.event.playerId);
       this.playExclusiveSkillEvent(item.event);
     }
+    if (feedback.length > 0) this.onExclusiveSkillFeedback(feedback);
   }
 
   private drainExclusiveSkillFeedback(snapshot: GameSnapshot): ClassifiedExclusiveSkillFeedback[] {

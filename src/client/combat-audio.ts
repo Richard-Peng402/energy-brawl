@@ -1,6 +1,9 @@
 import type { MapMechanicKind } from "../shared/map-mechanics";
+import { getExclusiveSkillAudioProfile } from "./exclusive-skill-audio";
+import { EXCLUSIVE_SKILL_IDS, type ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
+import type { ExclusiveSkillEventStage } from "../shared/protocol";
 
-export type CombatSoundKind = "fire" | "impact" | "hurt" | "pickup" | "kill" | "objective" | "map-mechanic";
+export type CombatSoundKind = "fire" | "impact" | "hurt" | "pickup" | "kill" | "objective" | "map-mechanic" | "exclusive-skill";
 export type ObjectiveSoundStage = "capture-start" | "contested" | "captured" | "overtime" | "finish";
 export type MapMechanicSoundStage = "warning" | "active";
 
@@ -13,6 +16,9 @@ export interface CombatSoundRequest {
   objectiveStage?: ObjectiveSoundStage;
   mapMechanicKind?: MapMechanicKind;
   mapMechanicStage?: MapMechanicSoundStage;
+  skillId?: ExclusiveSkillId;
+  skillStage?: ExclusiveSkillEventStage;
+  pan?: number;
 }
 
 export interface ApprovedCombatSound {
@@ -22,6 +28,10 @@ export interface ApprovedCombatSound {
   objectiveStage?: ObjectiveSoundStage;
   mapMechanicKind?: MapMechanicKind;
   mapMechanicStage?: MapMechanicSoundStage;
+  skillId?: ExclusiveSkillId;
+  skillStage?: ExclusiveSkillEventStage;
+  pan: number;
+  priority: number;
 }
 
 export type KillStreakTier = 1 | 2 | 3 | 4 | 5;
@@ -146,17 +156,37 @@ export interface SoundStorage {
 export interface CombatAudioOptions {
   audioContextFactory?: () => AudioContext;
   killBufferLoader?: (context: AudioContext, url: string) => Promise<AudioBuffer>;
+  skillBufferLoader?: (context: AudioContext, url: string) => Promise<AudioBuffer>;
 }
 
 const SOUND_MUTED_KEY = "energy-brawl.sound-muted";
 const REMOTE_FIRE_INTERVAL_MS = 140;
 const MAX_ACTIVE_VOICES = 8;
 const KILL_STREAK_GAIN = 1.6;
+const MAX_ACTIVE_VOICES_BY_KIND: Readonly<Record<CombatSoundKind, number>> = {
+  fire: 3,
+  impact: 2,
+  hurt: 2,
+  pickup: 1,
+  kill: 2,
+  objective: 2,
+  "map-mechanic": 2,
+  "exclusive-skill": 4,
+};
 
 async function loadAudioBuffer(context: AudioContext, url: string): Promise<AudioBuffer> {
   const response = await fetch(url, { cache: "force-cache" });
   if (!response.ok) throw new Error(`Unable to load combat audio: ${response.status}`);
   return context.decodeAudioData(await response.arrayBuffer());
+}
+
+export function soundPriority(request: Pick<CombatSoundRequest, "kind" | "local">): number {
+  if (request.kind === "kill" && request.local) return 100;
+  if (request.kind === "hurt" && request.local) return 90;
+  if (request.kind === "exclusive-skill") return request.local ? 76 : 58;
+  if (request.kind === "objective" || request.kind === "map-mechanic") return 70;
+  if (request.kind === "fire") return request.local ? 42 : 20;
+  return request.local ? 48 : 32;
 }
 
 export class CombatAudioPolicy {
@@ -183,6 +213,23 @@ export class CombatAudioPolicy {
       return {
         kind: "fire",
         gain: Math.max(0.12, 0.48 * (1 - Math.min(distance, 1_200) / 1_200)),
+        pan: Math.max(-0.75, Math.min(0.75, request.pan ?? 0)),
+        priority: soundPriority(request),
+      };
+    }
+    if (request.kind === "exclusive-skill") {
+      const skillId = request.skillId ?? "breach";
+      const skillStage = request.skillStage ?? "cast";
+      const profile = getExclusiveSkillAudioProfile(skillId, skillStage);
+      const distance = Math.max(0, request.distance ?? 0);
+      const distanceGain = request.local ? 1 : Math.max(0, Math.min(1, 1 - distance / profile.maxDistance));
+      return {
+        kind: request.kind,
+        gain: Math.max(0, Math.min(1, profile.gain * (request.local ? 1 : 0.68) * distanceGain)),
+        skillId,
+        skillStage,
+        pan: Math.max(-0.75, Math.min(0.75, request.pan ?? 0)),
+        priority: soundPriority(request),
       };
     }
     return {
@@ -192,6 +239,8 @@ export class CombatAudioPolicy {
       objectiveStage: request.objectiveStage,
       mapMechanicKind: request.mapMechanicKind,
       mapMechanicStage: request.mapMechanicStage,
+      pan: Math.max(-0.75, Math.min(0.75, request.pan ?? 0)),
+      priority: soundPriority(request),
     };
   }
 }
@@ -217,11 +266,15 @@ export class CombatAudio {
   private context: AudioContext | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private activeVoices = 0;
+  private readonly activeVoicesByKind = new Map<CombatSoundKind, number>();
   private muted: boolean;
   private readonly audioContextFactory: () => AudioContext;
   private readonly killBufferLoader: (context: AudioContext, url: string) => Promise<AudioBuffer>;
+  private readonly skillBufferLoader: (context: AudioContext, url: string) => Promise<AudioBuffer>;
   private readonly killBuffers = new Map<KillStreakTier, AudioBuffer>();
+  private readonly skillBuffers = new Map<string, AudioBuffer>();
   private killBufferPreloadStarted = false;
+  private skillBufferPreloadStarted = false;
   private audioPrimed = false;
 
   constructor(private readonly storage: SoundStorage, options: CombatAudioOptions = {}) {
@@ -234,6 +287,7 @@ export class CombatAudio {
       return new AudioContextClass();
     });
     this.killBufferLoader = options.killBufferLoader ?? loadAudioBuffer;
+    this.skillBufferLoader = options.skillBufferLoader ?? loadAudioBuffer;
   }
 
   get isMuted(): boolean {
@@ -256,6 +310,7 @@ export class CombatAudio {
       this.noiseBuffer ??= this.createNoiseBuffer(this.context);
       this.policy.unlock();
       this.preloadKillStreakBuffers(this.context);
+      this.preloadExclusiveSkillBuffers(this.context);
     } catch {
       // Browsers may reject audio until a later user gesture.
     }
@@ -273,6 +328,24 @@ export class CombatAudio {
         .catch(() => {
           // Procedural cues remain available when a device cannot fetch or decode a WAV asset.
         });
+    }
+  }
+
+  private preloadExclusiveSkillBuffers(context: AudioContext): void {
+    if (this.skillBufferPreloadStarted) return;
+    this.skillBufferPreloadStarted = true;
+    for (const skillId of EXCLUSIVE_SKILL_IDS) {
+      for (const stage of ["cast", "active", "end"] as const) {
+        const profile = getExclusiveSkillAudioProfile(skillId, stage);
+        const key = `${skillId}:${stage}`;
+        void this.skillBufferLoader(context, profile.sampleUrl)
+          .then((buffer) => {
+            if (this.context === context) this.skillBuffers.set(key, buffer);
+          })
+          .catch(() => {
+            // Procedural skill cues remain available when samples are absent or unsupported.
+          });
+      }
     }
   }
 
@@ -314,17 +387,34 @@ export class CombatAudio {
     this.play({ kind: "map-mechanic", local: true, mapMechanicKind: kind, mapMechanicStage: stage });
   }
 
+  playExclusiveSkill(options: {
+    skillId: ExclusiveSkillId;
+    stage: ExclusiveSkillEventStage;
+    local: boolean;
+    sourceId?: string;
+    distance?: number;
+    pan?: number;
+  }): void {
+    this.play({ kind: "exclusive-skill", skillStage: options.stage, ...options });
+  }
+
   private play(request: CombatSoundRequest): void {
     const approved = this.policy.request(request, performance.now());
     const context = this.context;
     if (!approved || !context || context.state !== "running") return;
     if (this.activeVoices >= MAX_ACTIVE_VOICES && approved.kind !== "hurt" && approved.kind !== "kill") return;
+    const categoryVoices = this.activeVoicesByKind.get(approved.kind) ?? 0;
+    if (categoryVoices >= MAX_ACTIVE_VOICES_BY_KIND[approved.kind] && approved.priority < 80) return;
     this.activeVoices += 1;
+    this.activeVoicesByKind.set(approved.kind, categoryVoices + 1);
     let finished = false;
     const finish = () => {
       if (finished) return;
       finished = true;
       this.activeVoices = Math.max(0, this.activeVoices - 1);
+      const remaining = Math.max(0, (this.activeVoicesByKind.get(approved.kind) ?? 1) - 1);
+      if (remaining === 0) this.activeVoicesByKind.delete(approved.kind);
+      else this.activeVoicesByKind.set(approved.kind, remaining);
     };
     try {
       switch (approved.kind) {
@@ -397,13 +487,40 @@ export class CombatAudio {
           }
           break;
         }
+        case "exclusive-skill": {
+          const skillId = approved.skillId ?? "breach";
+          const stage = approved.skillStage ?? "cast";
+          const profile = getExclusiveSkillAudioProfile(skillId, stage);
+          const buffer = this.skillBuffers.get(`${skillId}:${stage}`);
+          if (buffer) {
+            this.playBuffer(context, buffer, approved.gain, finish, approved.pan);
+            break;
+          }
+          const finalTone = profile.fallbackTones.reduce((latest, tone) =>
+            tone.delay + tone.duration > latest.delay + latest.duration ? tone : latest,
+          );
+          for (const tone of profile.fallbackTones) {
+            this.playTone(
+              context,
+              tone.type,
+              tone.startFrequency,
+              tone.endFrequency,
+              tone.duration,
+              tone.volume * approved.gain,
+              tone.delay,
+              tone === finalTone ? finish : undefined,
+              approved.pan,
+            );
+          }
+          break;
+        }
       }
     } catch {
       finish();
     }
   }
 
-  private playBuffer(context: AudioContext, buffer: AudioBuffer, volume: number, onEnded: () => void): void {
+  private playBuffer(context: AudioContext, buffer: AudioBuffer, volume: number, onEnded: () => void, pan = 0): void {
     const source = context.createBufferSource();
     const gain = context.createGain();
     const compressor = context.createDynamicsCompressor();
@@ -414,13 +531,17 @@ export class CombatAudio {
     compressor.ratio.setValueAtTime(4, context.currentTime);
     compressor.attack.setValueAtTime(0.002, context.currentTime);
     compressor.release.setValueAtTime(0.22, context.currentTime);
+    const panner = typeof context.createStereoPanner === "function" ? context.createStereoPanner() : null;
+    panner?.pan.setValueAtTime(Math.max(-0.75, Math.min(0.75, pan)), context.currentTime);
     source.connect(gain);
     gain.connect(compressor);
-    compressor.connect(context.destination);
+    if (panner) compressor.connect(panner).connect(context.destination);
+    else compressor.connect(context.destination);
     source.onended = () => {
       source.disconnect();
       gain.disconnect();
       compressor.disconnect();
+      panner?.disconnect();
       onEnded();
     };
     source.start(context.currentTime);
@@ -435,6 +556,7 @@ export class CombatAudio {
     volume: number,
     delay: number,
     onEnded?: () => void,
+    pan = 0,
   ): void {
     const start = context.currentTime + delay;
     const oscillator = context.createOscillator();
@@ -445,10 +567,15 @@ export class CombatAudio {
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), start + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    oscillator.connect(gain).connect(context.destination);
+    const panner = typeof context.createStereoPanner === "function" ? context.createStereoPanner() : null;
+    panner?.pan.setValueAtTime(Math.max(-0.75, Math.min(0.75, pan)), start);
+    oscillator.connect(gain);
+    if (panner) gain.connect(panner).connect(context.destination);
+    else gain.connect(context.destination);
     oscillator.onended = () => {
       oscillator.disconnect();
       gain.disconnect();
+      panner?.disconnect();
       onEnded?.();
     };
     oscillator.start(start);

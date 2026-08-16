@@ -80,4 +80,19 @@ describe("combat haptics", () => {
 
     expect(vibrate).toHaveBeenCalledWith([38, 28, 38, 28, 62]);
   });
+
+  it("plays deduplicated local exclusive skill stages and ignores remote skills", () => {
+    const vibrate = vi.fn(() => true);
+    const haptics = new CombatHaptics({ vibrate, now: () => 1_000 });
+    const localCast = { key: "skill:1", skillId: "breach" as const, stage: "cast" as const, relationship: "local" as const };
+
+    haptics.handleExclusiveSkillEvent(localCast);
+    haptics.handleExclusiveSkillEvent(localCast);
+    haptics.handleExclusiveSkillEvent({ key: "skill:2", skillId: "phase-shift", stage: "cast", relationship: "enemy" });
+    haptics.handleExclusiveSkillEvent({ key: "skill:3", skillId: "breach", stage: "end", relationship: "local" });
+
+    expect(vibrate).toHaveBeenCalledTimes(2);
+    const calls = vibrate.mock.calls as unknown as Array<[number | readonly number[]]>;
+    expect(calls[0]?.[0]).not.toEqual(calls[1]?.[0]);
+  });
 });

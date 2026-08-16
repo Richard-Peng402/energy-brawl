@@ -1,5 +1,9 @@
 import type { CombatFeedbackEvent, CombatFeedbackEventType } from "./combat-feedback";
 import { mapMechanicVibrationPattern, type MapMechanicFeedbackEvent } from "./map-mechanic-visuals";
+import { exclusiveSkillHapticPattern } from "./exclusive-skill-audio";
+import type { ExclusiveSkillRelationship } from "./exclusive-skill-feedback";
+import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
+import type { ExclusiveSkillEventStage } from "../shared/protocol";
 
 export type HapticsMode = "off" | "light" | "standard" | "strong";
 
@@ -7,7 +11,14 @@ export interface CombatHapticsOptions {
   vibrate?: (pattern: number | readonly number[]) => boolean;
   now?: () => number;
   mode?: HapticsMode;
-  onFallback?: (type: CombatFeedbackEventType | "map-mechanic") => void;
+  onFallback?: (type: CombatFeedbackEventType | "map-mechanic" | "exclusive-skill") => void;
+}
+
+export interface ExclusiveSkillHapticEvent {
+  key: string;
+  skillId: ExclusiveSkillId;
+  stage: ExclusiveSkillEventStage;
+  relationship: ExclusiveSkillRelationship;
 }
 
 const MAX_SEGMENT_MS = 120;
@@ -50,7 +61,7 @@ function basePattern(event: CombatFeedbackEvent): readonly number[] {
 export class CombatHaptics {
   private readonly vibrate: ((pattern: number | readonly number[]) => boolean) | null;
   private readonly now: () => number;
-  private readonly onFallback: (type: CombatFeedbackEventType | "map-mechanic") => void;
+  private readonly onFallback: (type: CombatFeedbackEventType | "map-mechanic" | "exclusive-skill") => void;
   private mode: HapticsMode;
   private readonly seenKeys = new Set<string>();
   private readonly lastAt = new Map<CombatFeedbackEventType, number>();
@@ -104,6 +115,19 @@ export class CombatHaptics {
       try { this.vibrate(pattern); } catch { this.onFallback("map-mechanic"); }
     } else {
       this.onFallback("map-mechanic");
+    }
+  }
+
+  handleExclusiveSkillEvent(event: ExclusiveSkillHapticEvent): void {
+    if (event.relationship !== "local" || this.seenKeys.has(event.key)) return;
+    this.seenKeys.add(event.key);
+    if (this.seenKeys.size > 256) this.seenKeys.delete(this.seenKeys.values().next().value as string);
+    if (this.mode === "off") return;
+    const pattern = scalePattern(exclusiveSkillHapticPattern(event.skillId, event.stage), this.mode);
+    if (this.vibrate) {
+      try { this.vibrate(pattern); } catch { this.onFallback("exclusive-skill"); }
+    } else {
+      this.onFallback("exclusive-skill");
     }
   }
 
