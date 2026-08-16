@@ -1,5 +1,5 @@
 import type { CharacterId } from "../shared/character-catalog";
-import type { Vec2 } from "../shared/protocol";
+import type { ProjectileImpactEvent, Vec2 } from "../shared/protocol";
 import { CHARACTER_PROJECTILE_ASSETS } from "./asset-registry";
 
 export interface ProjectileVisualPart {
@@ -72,4 +72,23 @@ export function selectProjectileTrailPoints(
     x: previous.x + unitX * spacingWorld * (index + 1),
     y: previous.y + unitY * spacingWorld * (index + 1),
   }));
+}
+
+export interface SelectedProjectileImpactFeedback {
+  events: ProjectileImpactEvent[];
+  lastSequence: number;
+}
+
+export function selectProjectileImpactFeedback(
+  events: readonly ProjectileImpactEvent[],
+  lastSequence: number | null,
+): SelectedProjectileImpactFeedback {
+  if (lastSequence === null) {
+    return { events: [], lastSequence: events.at(-1)?.eventSeq ?? 0 };
+  }
+  const selected = events.filter((event) => event.eventSeq > lastSequence);
+  return {
+    events: selected.map((event) => ({ ...event, position: { ...event.position } })),
+    lastSequence: selected.at(-1)?.eventSeq ?? lastSequence,
+  };
 }

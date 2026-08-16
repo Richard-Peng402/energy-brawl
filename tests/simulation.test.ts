@@ -11,6 +11,7 @@ import {
   MAX_HEALTH,
   PLAYER_RADIUS,
   PROJECTILE_DAMAGE,
+  PROJECTILE_RADIUS,
   RESPAWN_DELAY_MS,
   SKILL_ORB_SPAWN_MIN_MS,
   SPAWN_SHIELD_MS,
@@ -1453,6 +1454,18 @@ describe("authoritative simulation", () => {
 
     expect(target.health).toBe(target.maxHealth);
     expect(world.projectiles.size).toBe(0);
+    expect(world.projectileImpactEvents).toEqual([
+      expect.objectContaining({
+        projectileId: "tunneling",
+        ownerId: "red",
+        targetId: null,
+        kind: "wall",
+        position: {
+          x: scaleArenaPosition(930) - PROJECTILE_RADIUS,
+          y: scaleArenaPosition(500),
+        },
+      }),
+    ]);
   });
 
   it("resolves a player hit before a later wall and applies one damage event", () => {
@@ -1475,5 +1488,57 @@ describe("authoritative simulation", () => {
 
     expect(target.health).toBe(target.maxHealth - world.players.get("red")!.damage);
     expect(world.projectiles.size).toBe(0);
+    expect(world.projectileImpactEvents).toEqual([
+      expect.objectContaining({
+        projectileId: "player-first",
+        ownerId: "red",
+        targetId: "blue",
+        kind: "player",
+        position: {
+          x: target.x - PLAYER_RADIUS - PROJECTILE_RADIUS,
+          y: target.y,
+        },
+      }),
+    ]);
+  });
+
+  it("classifies projectile contact with spawn protection as a shield impact", () => {
+    const world = createWorld();
+    const target = world.players.get("blue")!;
+    target.x = scaleArenaPosition(900);
+    target.y = scaleArenaPosition(500);
+    target.shieldUntil = world.now + 5_000;
+    world.projectiles.set("spawn-shield", {
+      id: "spawn-shield", ownerId: "red", x: scaleArenaPosition(850), y: target.y,
+      vx: 5_000, vy: 0, distanceTraveled: 0,
+    });
+
+    stepWorld(world, 100);
+
+    expect(target.health).toBe(target.maxHealth);
+    expect(world.projectileImpactEvents).toEqual([
+      expect.objectContaining({ projectileId: "spawn-shield", targetId: "blue", kind: "shield" }),
+    ]);
+  });
+
+  it("classifies any skill-shield absorption as one shield impact", () => {
+    const world = createWorld();
+    const target = world.players.get("blue")!;
+    target.x = scaleArenaPosition(900);
+    target.y = scaleArenaPosition(500);
+    target.shieldUntil = 0;
+    target.skillShieldHealth = 10;
+    target.skillShieldUntil = world.now + 5_000;
+    world.projectiles.set("skill-shield", {
+      id: "skill-shield", ownerId: "red", x: scaleArenaPosition(850), y: target.y,
+      vx: 5_000, vy: 0, distanceTraveled: 0, damage: 25,
+    });
+
+    stepWorld(world, 100);
+
+    expect(target.health).toBe(target.maxHealth - 15);
+    expect(world.projectileImpactEvents).toEqual([
+      expect.objectContaining({ projectileId: "skill-shield", targetId: "blue", kind: "shield" }),
+    ]);
   });
 });

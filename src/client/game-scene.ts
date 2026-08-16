@@ -4,7 +4,7 @@ import { CHARACTER_CATALOG } from "../shared/character-catalog";
 import { getMapDefinition, type MapId } from "../shared/map-catalog";
 import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_MAX_DISTANCE, VIEW_HEIGHT, VIEW_WIDTH } from "../shared/constants";
 import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
-import type { CapturePointSnapshot, ExclusiveSkillEvent, GameSnapshot, MapMechanicSnapshot, PlayerInput, PlayerSnapshot, Vec2 } from "../shared/protocol";
+import type { CapturePointSnapshot, ExclusiveSkillEvent, GameSnapshot, MapMechanicSnapshot, PlayerInput, PlayerSnapshot, ProjectileImpactEvent, Vec2 } from "../shared/protocol";
 import { AIM_GUIDE_LINE_WIDTH, calculateAimGuide } from "./aim-guide";
 import {
   ARENA_ASSETS,
@@ -73,6 +73,7 @@ import {
 } from "./exclusive-skill-feedback";
 import {
   getProjectilePresentation,
+  selectProjectileImpactFeedback,
   selectProjectileTrailPoints,
   type ProjectilePresentation,
   type ProjectileVisualPart,
@@ -279,7 +280,9 @@ class ArenaScene extends Phaser.Scene {
   private readonly inputReconciler: InputReconciler;
   private snapshot: GameSnapshot | null = null;
   private lastExclusiveSkillEventSeq: number | null = null;
+  private lastProjectileImpactEventSeq: number | null = null;
   private readonly pendingExclusiveSkillEvents: ExclusiveSkillEvent[] = [];
+  private readonly pendingProjectileImpactEvents: ProjectileImpactEvent[] = [];
   private localInput: Vec2 = { x: 0, y: 0 };
   private localAim: Vec2 = { x: 0, y: 0 };
   private aimCorridor: Phaser.GameObjects.Rectangle | null = null;
@@ -401,7 +404,13 @@ class ArenaScene extends Phaser.Scene {
     this.aimEnd = this.add.circle(0, 0, 5, 0xfff1bf, 0.9).setStrokeStyle(2, 0xff8c58, 0.95).setDepth(9).setVisible(false);
     this.ready = true;
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.clearExclusiveStageFeedback());
-    if (this.snapshot) this.syncSnapshot(this.snapshot, this.drainExclusiveSkillFeedback(this.snapshot));
+    if (this.snapshot) {
+      this.syncSnapshot(
+        this.snapshot,
+        this.drainExclusiveSkillFeedback(this.snapshot),
+        this.drainProjectileImpactFeedback(),
+      );
+    }
   }
 
   override update(_time: number, delta: number): void {
@@ -447,7 +456,9 @@ class ArenaScene extends Phaser.Scene {
       snapshot.finishedAt === this.snapshot.finishedAt &&
       snapshot.winnerIds.join(",") === this.snapshot.winnerIds.join(",") &&
       (snapshot.exclusiveSkillEvents?.at(-1)?.eventSeq ?? 0)
-        === (this.snapshot.exclusiveSkillEvents?.at(-1)?.eventSeq ?? 0)
+        === (this.snapshot.exclusiveSkillEvents?.at(-1)?.eventSeq ?? 0) &&
+      (snapshot.projectileImpactEvents?.at(-1)?.eventSeq ?? 0)
+        === (this.snapshot.projectileImpactEvents?.at(-1)?.eventSeq ?? 0)
     ) return;
     const selectedSkillFeedback = selectExclusiveSkillFeedback(
       snapshot.exclusiveSkillEvents ?? [],
@@ -455,6 +466,12 @@ class ArenaScene extends Phaser.Scene {
     );
     this.lastExclusiveSkillEventSeq = selectedSkillFeedback.lastSequence;
     this.pendingExclusiveSkillEvents.push(...selectedSkillFeedback.events);
+    const selectedProjectileImpacts = selectProjectileImpactFeedback(
+      snapshot.projectileImpactEvents ?? [],
+      this.lastProjectileImpactEventSeq,
+    );
+    this.lastProjectileImpactEventSeq = selectedProjectileImpacts.lastSequence;
+    this.pendingProjectileImpactEvents.push(...selectedProjectileImpacts.events);
     const feedbackEvents = selectCombatFeedbackEvents(this.snapshot, snapshot, this.localPlayerId);
     this.playCombatFeedback(feedbackEvents);
     this.onCombatFeedback(feedbackEvents);
@@ -462,7 +479,13 @@ class ArenaScene extends Phaser.Scene {
     this.snapshot = snapshot;
     this.snapshotBuffer.push(snapshot);
     if (advancesAnchor) this.latestSnapshotReceivedAt = performance.now();
-    if (this.ready) this.syncSnapshot(snapshot, this.drainExclusiveSkillFeedback(snapshot));
+    if (this.ready) {
+      this.syncSnapshot(
+        snapshot,
+        this.drainExclusiveSkillFeedback(snapshot),
+        this.drainProjectileImpactFeedback(),
+      );
+    }
   }
 
   setLocalPlayerId(playerId: string | null): void {
@@ -621,8 +644,10 @@ class ArenaScene extends Phaser.Scene {
   private syncSnapshot(
     snapshot: GameSnapshot,
     skillFeedback: readonly ClassifiedExclusiveSkillFeedback[] = [],
+    projectileImpactFeedback: readonly ProjectileImpactEvent[] = [],
   ): void {
     this.consumeExclusiveSkillFeedback(skillFeedback);
+    this.consumeProjectileImpactFeedback(projectileImpactFeedback, snapshot);
     const activePlayers = new Set(snapshot.players.map((player) => player.id));
     let localPlayerRespawned = false;
     for (const [id, view] of this.playerViews) {
@@ -720,6 +745,10 @@ class ArenaScene extends Phaser.Scene {
     return this.pendingExclusiveSkillEvents.splice(0).map((event) =>
       classifyExclusiveSkillFeedback(event, this.localPlayerId, snapshot.players),
     );
+  }
+
+  private drainProjectileImpactFeedback(): ProjectileImpactEvent[] {
+    return this.pendingProjectileImpactEvents.splice(0);
   }
 
   private createExclusiveStagePools(): void {
@@ -910,6 +939,7 @@ class ArenaScene extends Phaser.Scene {
     for (const [view, pool] of this.exclusiveStageLeases) pool.release(view);
     this.exclusiveStageLeases.clear();
     this.pendingExclusiveSkillEvents.length = 0;
+    this.pendingProjectileImpactEvents.length = 0;
     for (const playerId of [...this.exclusiveEffectViews.keys()]) this.destroyExclusiveEffectView(playerId);
     this.runnerAfterimageLastEmittedAt.clear();
     this.runnerAfterimagePool?.forEach((view) => {
@@ -918,6 +948,7 @@ class ArenaScene extends Phaser.Scene {
       view.sprite.setVisible(false).setActive(false);
     });
     this.lastExclusiveSkillEventSeq = null;
+    this.lastProjectileImpactEventSeq = null;
   }
 
   private createRunnerAfterimagePool(): void {
@@ -1368,7 +1399,6 @@ class ArenaScene extends Phaser.Scene {
     const active = new Set(lifecycleSnapshot.projectiles.map((projectile) => projectile.id));
     for (const [id, view] of this.projectileViews) {
       if (!active.has(id)) {
-        this.playProjectileImpact(view);
         this.projectilePool?.release(view);
         this.projectileViews.delete(id);
       }
@@ -1675,7 +1705,7 @@ class ArenaScene extends Phaser.Scene {
       item.setPosition(x, y).setTint(color).setVisible(true).setActive(true);
       if (kind === "muzzle") item.setDisplaySize(104 * (visual?.scale ?? 1), 54 * (visual?.scale ?? 1)).setRotation(angle);
       if (kind === "trail") item.setDisplaySize(14 * (visual?.scale ?? 1), 86 * (visual?.scale ?? 1)).setRotation(angle - Math.PI / 2).setPosition(x - Math.cos(angle) * 28, y - Math.sin(angle) * 28);
-      if (kind === "impact") item.setDisplaySize(94, 94).setRotation(Math.random() * Math.PI * 2);
+      if (kind === "impact") item.setDisplaySize(94 * (visual?.scale ?? 1), 94 * (visual?.scale ?? 1)).setRotation(Math.random() * Math.PI * 2);
       if (kind === "spark") item.setDisplaySize(64, 64).setRotation(Math.random() * Math.PI * 2);
       if (kind === "smoke") item.setDisplaySize(76, 76).setRotation(Math.random() * Math.PI * 2);
     });
@@ -1733,11 +1763,31 @@ class ArenaScene extends Phaser.Scene {
     this.tweens.add({ targets: effect, scale: config.scale, alpha: 0, duration: config.duration, ease: "Cubic.Out", onComplete: () => effect.setVisible(false) });
   }
 
-  private playProjectileImpact(view: MovingView): void {
-    const x = view.container.x;
-    const y = view.container.y;
-    this.playCombatEffect("impact", x, y, view.color);
-    if (view.ownerId === this.localPlayerId) this.audio.playImpact();
+  private consumeProjectileImpactFeedback(events: readonly ProjectileImpactEvent[], snapshot: GameSnapshot): void {
+    const localPlayer = this.localPlayerId
+      ? snapshot.players.find((player) => player.id === this.localPlayerId)
+      : undefined;
+    for (const event of events) {
+      const owner = snapshot.players.find((player) => player.id === event.ownerId);
+      const presentation = getProjectilePresentation(owner?.characterId ?? "blaze");
+      const color = Phaser.Display.Color.HexStringToColor(owner?.color ?? "#ffffff").color;
+      const visual = presentation.impacts[event.kind];
+      this.playProjectileImpact(event.position.x, event.position.y, event.ownerId, color, visual, localPlayer);
+    }
+  }
+
+  private playProjectileImpact(
+    x: number,
+    y: number,
+    ownerId: string,
+    color: number,
+    visual: ProjectileVisualPart,
+    localPlayer: PlayerSnapshot | undefined,
+  ): void {
+    this.playCombatEffect("impact", x, y, color);
+    this.playProjectileImageEffect("impact", x, y, color, 0, visual);
+    const distance = localPlayer ? Math.hypot(x - localPlayer.x, y - localPlayer.y) : Number.POSITIVE_INFINITY;
+    if (ownerId === this.localPlayerId || distance <= 900) this.audio.playImpact();
     if (!shouldRenderEffect("spark", false)) return;
     const pool = this.effectPools?.spark;
     if (!pool) return;
@@ -1746,8 +1796,8 @@ class ArenaScene extends Phaser.Scene {
       const spark = pool.acquire((item) => item
         .setPosition(x, y)
         .setRadius(4)
-        .setFillStyle(view.color, 0.82)
-        .setStrokeStyle(0, view.color, 0)
+        .setFillStyle(color, 0.82)
+        .setStrokeStyle(0, color, 0)
         .setVisible(true));
       const distance = 24 + index * 5;
       this.tweens.add({
@@ -1762,9 +1812,9 @@ class ArenaScene extends Phaser.Scene {
       });
     }
     for (let index = 0; index < 2; index += 1) {
-      this.playProjectileImageEffect("spark", x, y, view.color, (Math.PI * 2 * index) / 2);
+      this.playProjectileImageEffect("spark", x, y, color, (Math.PI * 2 * index) / 2);
     }
-    this.playProjectileImageEffect("smoke", x, y, view.color);
+    this.playProjectileImageEffect("smoke", x, y, color);
   }
 
   private syncShield(view: PlayerView, player: PlayerSnapshot, serverTime: number): void {

@@ -77,6 +77,7 @@ import {
 import { appendPresentationEvent } from "./presentation-events";
 
 const EXCLUSIVE_SKILL_EVENT_CAPACITY = 24;
+const PROJECTILE_IMPACT_EVENT_CAPACITY = 32;
 const BULWARK_ALLY_PROTECTION_RADIUS = 190;
 const BULWARK_SUPPRESSION_RADIUS = 240;
 const BULWARK_PRESENTATION_LENGTH = 120;
@@ -973,11 +974,29 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
     }
 
     if (wallHit && (!targetHit || wallHit.time <= targetHit.time)) {
+      recordProjectileImpact(
+        world,
+        projectile,
+        "wall",
+        { x: projectile.x + delta.x * wallHit.time, y: projectile.y + delta.y * wallHit.time },
+        null,
+      );
       world.projectiles.delete(projectile.id);
       continue;
     }
     if (targetHit) {
       const attacker = world.players.get(projectile.ownerId);
+      const impactKind: ProjectileImpactEvent["kind"] = targetHit.player.shieldUntil > world.now
+        || (targetHit.player.skillShieldUntil > world.now && targetHit.player.skillShieldHealth > 0)
+        ? "shield"
+        : "player";
+      recordProjectileImpact(
+        world,
+        projectile,
+        impactKind,
+        { x: projectile.x + delta.x * targetHit.time, y: projectile.y + delta.y * targetHit.time },
+        targetHit.player.id,
+      );
       damagePlayer(world, targetHit.player.id, projectile.ownerId, projectile.damage ?? attacker?.damage ?? 0);
       world.projectiles.delete(projectile.id);
       continue;
@@ -1352,6 +1371,24 @@ function recordExclusiveSkillEvent(
     eventSeq: world.nextExclusiveSkillEventSeq++,
     serverTime: world.now,
   }, EXCLUSIVE_SKILL_EVENT_CAPACITY);
+}
+
+function recordProjectileImpact(
+  world: GameWorld,
+  projectile: WorldProjectile,
+  kind: ProjectileImpactEvent["kind"],
+  position: Vec2,
+  targetId: string | null,
+): void {
+  appendPresentationEvent(world.projectileImpactEvents, {
+    eventSeq: world.nextProjectileImpactEventSeq++,
+    serverTime: world.now,
+    projectileId: projectile.id,
+    ownerId: projectile.ownerId,
+    targetId,
+    kind,
+    position: { ...position },
+  }, PROJECTILE_IMPACT_EVENT_CAPACITY);
 }
 
 function recordExclusiveSkillEnd(
