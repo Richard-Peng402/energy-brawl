@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { applyExclusiveSkill, advanceExclusiveSkillEffects, canUseExclusiveSkill, type ExclusiveSkillPlayer } from "../src/server/exclusive-skill-system";
+import {
+  applyExclusiveSkill,
+  advanceExclusiveSkillEffects,
+  canUseExclusiveSkill,
+  clearExclusiveSkillState,
+  type ExclusiveSkillPlayer,
+} from "../src/server/exclusive-skill-system";
 import { getExclusiveSkillBalance } from "../src/shared/exclusive-skill-balance";
 
 const player = (characterId: ExclusiveSkillPlayer["characterId"]): ExclusiveSkillPlayer => ({ id: characterId, characterId, x: 300, y: 300, angle: 0, health: 50, maxHealth: 100, alive: true, teamId: "red", moveSpeed: 250, fireCooldownMs: 450, damage: 25 });
@@ -37,10 +43,21 @@ describe("authoritative exclusive skills", () => {
   it("expires timed effects and rejects dead players", () => {
     const state = player("runner");
     applyExclusiveSkill(state, 0, { x: 1, y: 0 });
-    advanceExclusiveSkillEffects([state], 5_001);
+    const ended = advanceExclusiveSkillEffects([state], 5_001);
+    expect(ended).toEqual([
+      expect.objectContaining({ playerId: "runner", state: expect.objectContaining({ skillId: "afterimage-run" }) }),
+    ]);
     expect(state.exclusiveSkillState).toBeNull();
     state.alive = false;
     state.exclusiveSkillReadyAt = 0;
     expect(applyExclusiveSkill(state, 6_000, { x: 1, y: 0 })).toMatchObject({ ok: false });
+  });
+
+  it("returns the previous runtime state when clearing", () => {
+    const state = player("fortress");
+    applyExclusiveSkill(state, 0, { x: 1, y: 0 });
+
+    expect(clearExclusiveSkillState(state)).toMatchObject({ skillId: "mobile-bulwark" });
+    expect(clearExclusiveSkillState(state)).toBeNull();
   });
 });

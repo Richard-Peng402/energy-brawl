@@ -197,6 +197,83 @@ describe("presentation event snapshots", () => {
   });
 });
 
+describe("exclusive skill presentation lifecycle", () => {
+  it("publishes cast and active events for an accepted exclusive skill", () => {
+    const world = createWorld();
+
+    expect(applyWorldExclusiveSkill(world, "red", { x: 1, y: 0 })).toBe(true);
+
+    expect(world.exclusiveSkillEvents.map((event) => event.stage)).toEqual(["cast", "active"]);
+    expect(world.exclusiveSkillEvents.every((event) => event.skillId === "breach")).toBe(true);
+    expect(world.exclusiveSkillEvents.map((event) => event.eventSeq)).toEqual([1, 2]);
+  });
+
+  it("publishes one end event when a timed state expires", () => {
+    const world = createWorld();
+    expect(applyWorldExclusiveSkill(world, "red", { x: 1, y: 0 })).toBe(true);
+
+    stepWorld(world, 5_001);
+
+    expect(world.exclusiveSkillEvents.filter((event) => event.stage === "end")).toEqual([
+      expect.objectContaining({ playerId: "red", skillId: "breach", reason: "expired" }),
+    ]);
+  });
+
+  it("publishes death cleanup without replaying cast", () => {
+    const world = createWorld();
+    const red = world.players.get("red")!;
+    red.shieldUntil = 0;
+    expect(applyWorldExclusiveSkill(world, red.id, { x: 1, y: 0 })).toBe(true);
+
+    expect(damagePlayer(world, red.id, "blue", 10_000)).toBe(true);
+
+    expect(world.exclusiveSkillEvents.at(-1)).toMatchObject({
+      playerId: "red",
+      skillId: "breach",
+      stage: "end",
+      reason: "death",
+    });
+    expect(world.exclusiveSkillEvents.filter((event) => event.stage === "cast")).toHaveLength(1);
+  });
+
+  it("keeps rejected requests silent", () => {
+    const world = createWorld();
+    world.players.get("red")!.alive = false;
+
+    expect(applyWorldExclusiveSkill(world, "red", { x: 1, y: 0 })).toBe(false);
+    expect(world.exclusiveSkillEvents).toEqual([]);
+  });
+
+  it("publishes exactly one return end event after Blaze reaches its anchor", () => {
+    const world = createWorld();
+    expect(applyWorldExclusiveSkill(world, "red", { x: 1, y: 0 })).toBe(true);
+    stepWorld(world, 180);
+    expect(applyWorldExclusiveSkill(world, "red", { x: 0, y: 0 })).toBe(true);
+
+    stepWorld(world, 180);
+    stepWorld(world, 5_000);
+
+    expect(world.exclusiveSkillEvents.filter((event) => event.stage === "end")).toEqual([
+      expect.objectContaining({ playerId: "red", skillId: "breach", reason: "return" }),
+    ]);
+  });
+
+  it("publishes reset cleanup for active skills when the match finishes", () => {
+    const world = createWorld();
+    expect(applyWorldExclusiveSkill(world, "blue", { x: 1, y: 0 })).toBe(true);
+
+    finishWorldMatch(world, ["red"]);
+
+    expect(world.exclusiveSkillEvents.at(-1)).toMatchObject({
+      playerId: "blue",
+      skillId: "mobile-bulwark",
+      stage: "end",
+      reason: "reset",
+    });
+    expect(world.players.get("blue")!.exclusiveSkillState).toBeNull();
+  });
+});
+
 describe("neon overdrive", () => {
   it("combines movement, firing, projectile and suppression multipliers without replacing host stats", () => {
     const world = createGameWorld([

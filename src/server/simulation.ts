@@ -74,6 +74,9 @@ import {
   updateReactorEscapeParticipant,
   type MapMechanicState,
 } from "./map-mechanic-system";
+import { appendPresentationEvent } from "./presentation-events";
+
+const EXCLUSIVE_SKILL_EVENT_CAPACITY = 24;
 
 export interface PlayerSeed {
   id: string;
@@ -331,7 +334,9 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
       if (player.respawnAt !== null && world.now >= player.respawnAt) respawnPlayer(world, player);
       continue;
     }
-    if (!advanceExclusiveMovement(world, player)) movePlayer(world, player, simulationDelta);
+    const movement = advanceExclusiveMovement(world, player);
+    if (movement.endedState) recordExclusiveSkillEnd(world, player, movement.endedState, "return");
+    if (!movement.handled) movePlayer(world, player, simulationDelta);
   }
 
   resolvePlayerSeparation(world);
@@ -351,7 +356,10 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
     world.now,
     [...world.players.values()].filter((player) => player.alive),
   );
-  advanceExclusiveSkillEffects([...world.players.values()], world.now);
+  for (const ended of advanceExclusiveSkillEffects([...world.players.values()], world.now)) {
+    const player = world.players.get(ended.playerId);
+    if (player) recordExclusiveSkillEnd(world, player, ended.state, "expired");
+  }
   advanceWorldCapturePoint(world, simulationDelta);
   if (isFinished(world)) return;
 
@@ -419,7 +427,8 @@ function applyWorldDamage(
   victim.mapHealingAccumulatorMs = 0;
   victim.deaths = (victim.deaths ?? 0) + 1;
   clearSkillSlot(victim);
-  clearExclusiveSkillState(victim);
+  const endedExclusiveSkill = clearExclusiveSkillState(victim);
+  if (endedExclusiveSkill) recordExclusiveSkillEnd(world, victim, endedExclusiveSkill, "death");
   clearAllStatusEffects(victim.statusEffects);
 
   if (attacker && attacker.id !== victim.id) {
@@ -495,6 +504,20 @@ export function applyWorldExclusiveSkill(world: GameWorld, playerId: string, dir
   if (!player) return false;
   const result = applyExclusiveSkill(player, world.now, direction);
   if (!result.ok) return false;
+  recordExclusiveSkillEvent(world, {
+    playerId: player.id,
+    skillId: result.definition.id,
+    stage: "cast",
+    origin: result.origin,
+    target: result.target,
+  });
+  recordExclusiveSkillEvent(world, {
+    playerId: player.id,
+    skillId: result.definition.id,
+    stage: "active",
+    origin: result.origin,
+    target: result.target,
+  });
   player.skillContribution = (player.skillContribution ?? 0) + 1;
   if (result.definition.id === "phase-shift") {
     addStatusEffect(player.statusEffects, "phase-fire-lock", world.now, result.definition.balance.fireLockDurationMs ?? 250);
@@ -744,9 +767,16 @@ function refreshBulwarkSuppression(world: GameWorld): void {
   }
 }
 
-function advanceExclusiveMovement(world: GameWorld, player: WorldPlayer): boolean {
+interface ExclusiveMovementResult {
+  handled: boolean;
+  endedState: ExclusiveRuntimeState | null;
+}
+
+function advanceExclusiveMovement(world: GameWorld, player: WorldPlayer): ExclusiveMovementResult {
   const state = player.exclusiveSkillState;
-  if (state?.skillId !== "breach" || !state.movementFrom || !state.movementTarget || state.movementStartedAt === undefined || state.movementEndsAt === undefined) return false;
+  if (state?.skillId !== "breach" || !state.movementFrom || !state.movementTarget || state.movementStartedAt === undefined || state.movementEndsAt === undefined) {
+    return { handled: false, endedState: null };
+  }
   const duration = Math.max(1, state.movementEndsAt - state.movementStartedAt);
   const progress = clamp((world.now - state.movementStartedAt) / duration, 0, 1);
   const desired = { x: state.movementFrom.x + (state.movementTarget.x - state.movementFrom.x) * progress, y: state.movementFrom.y + (state.movementTarget.y - state.movementFrom.y) * progress };
@@ -761,8 +791,9 @@ function advanceExclusiveMovement(world: GameWorld, player: WorldPlayer): boolea
     player.vx = 0; player.vy = 0;
     if (state.returning) player.exclusiveSkillState = null;
     else { delete state.movementFrom; delete state.movementTarget; delete state.movementStartedAt; delete state.movementEndsAt; }
+    return { handled: true, endedState: state.returning ? state : null };
   }
-  return true;
+  return { handled: true, endedState: null };
 }
 
 function effectiveMoveMultiplier(world: GameWorld, player: WorldPlayer): number {
@@ -1242,10 +1273,41 @@ export function finishWorldMatch(world: GameWorld, winnerIds: string[]): void {
   world.projectiles.clear();
   world.mapMechanicState = null;
   for (const player of world.players.values()) {
+    const endedExclusiveSkill = clearExclusiveSkillState(player);
+    if (endedExclusiveSkill) recordExclusiveSkillEnd(world, player, endedExclusiveSkill, "reset");
     player.input = { ...EMPTY_INPUT, seq: player.lastProcessedInput };
     player.vx = 0;
     player.vy = 0;
   }
+}
+
+function recordExclusiveSkillEvent(
+  world: GameWorld,
+  input: Omit<ExclusiveSkillEvent, "eventSeq" | "serverTime">,
+): void {
+  appendPresentationEvent(world.exclusiveSkillEvents, {
+    ...input,
+    origin: { ...input.origin },
+    target: { ...input.target },
+    eventSeq: world.nextExclusiveSkillEventSeq++,
+    serverTime: world.now,
+  }, EXCLUSIVE_SKILL_EVENT_CAPACITY);
+}
+
+function recordExclusiveSkillEnd(
+  world: GameWorld,
+  player: WorldPlayer,
+  state: ExclusiveRuntimeState,
+  reason: NonNullable<ExclusiveSkillEvent["reason"]>,
+): void {
+  recordExclusiveSkillEvent(world, {
+    playerId: player.id,
+    skillId: state.skillId,
+    stage: "end",
+    origin: { x: player.x, y: player.y },
+    target: state.movementTarget ?? state.anchor ?? { x: player.x, y: player.y },
+    reason,
+  });
 }
 
 export function forceWorldWinner(world: GameWorld, playerId: string): boolean {

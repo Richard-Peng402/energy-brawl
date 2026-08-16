@@ -64,11 +64,25 @@ export function applyExclusiveSkill(player: ExclusiveSkillPlayer, now: number, d
   return { ok: true, definition, origin, target, state };
 }
 
-export function advanceExclusiveSkillEffects(players: readonly ExclusiveSkillPlayer[], now: number): void {
-  for (const player of players) if (player.exclusiveSkillState && player.exclusiveSkillState.expiresAt > 0 && now >= player.exclusiveSkillState.expiresAt) player.exclusiveSkillState = null;
+export function advanceExclusiveSkillEffects(
+  players: readonly ExclusiveSkillPlayer[],
+  now: number,
+): Array<{ playerId: string; state: ExclusiveRuntimeState }> {
+  const ended: Array<{ playerId: string; state: ExclusiveRuntimeState }> = [];
+  for (const player of players) {
+    const state = player.exclusiveSkillState;
+    if (!state || state.expiresAt <= 0 || now < state.expiresAt) continue;
+    ended.push({ playerId: player.id, state });
+    player.exclusiveSkillState = null;
+  }
+  return ended;
 }
 
-export function clearExclusiveSkillState(player: ExclusiveSkillPlayer): void { player.exclusiveSkillState = null; }
+export function clearExclusiveSkillState(player: ExclusiveSkillPlayer): ExclusiveRuntimeState | null {
+  const previous = player.exclusiveSkillState ?? null;
+  player.exclusiveSkillState = null;
+  return previous;
+}
 
 export function isExclusiveEffectActive(player: ExclusiveSkillPlayer, skillId: ExclusiveSkillId, now: number): boolean {
   return player.exclusiveSkillState?.skillId === skillId && now < player.exclusiveSkillState.expiresAt;
