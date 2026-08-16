@@ -1,4 +1,5 @@
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
+import type { ExclusiveSkillEvent } from "../shared/protocol";
 
 export type ExclusiveSkillVfxStage = "telegraph" | "cast" | "active" | "end";
 
@@ -15,8 +16,19 @@ export interface ExclusiveStageVfxProfile {
 export interface ExclusiveSkillVfxProfile {
   skillId: ExclusiveSkillId;
   poolCapacity: number;
+  features: ExclusiveSkillVfxFeature[];
   stages: Record<ExclusiveSkillVfxStage, ExclusiveStageVfxProfile>;
 }
+
+export type ExclusiveSkillVfxFeature =
+  | "anchor-create" | "travel" | "return" | "expiry"
+  | "origin-tear" | "corridor" | "destination-assembly" | "closure"
+  | "healing-flow" | "cleanse-sparkle"
+  | "self-facing" | "ally-shimmer" | "enemy-suppression" | "shield-contact" | "normal-end"
+  | "weapon-charge" | "active-current" | "enhanced-muzzle" | "safe-discharge"
+  | "acceleration-burst" | "pooled-afterimages" | "enhanced-projectile-exhaust" | "merge-end";
+
+export type ExclusiveSkillEndVariant = "return-collapse" | "anchor-dissolve" | "phase-closure" | "standard";
 
 const stageTextureKey = (skillId: ExclusiveSkillId, stage: ExclusiveSkillVfxStage): string =>
   `exclusive-skill:${skillId}:${stage}`;
@@ -25,6 +37,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   breach: {
     skillId: "breach",
     poolCapacity: 12,
+    features: ["anchor-create", "travel", "return", "expiry"],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("breach", "telegraph"), blendMode: "add", scale: 1, alpha: 0.82, color: 0xff5f45, shape: "path" },
       cast: { durationMs: 160, textureKey: stageTextureKey("breach", "cast"), blendMode: "add", scale: 1.08, alpha: 0.96, color: 0xff7a42, shape: "ring" },
@@ -35,6 +48,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "pulse-heal": {
     skillId: "pulse-heal",
     poolCapacity: 10,
+    features: [],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("pulse-heal", "telegraph"), blendMode: "normal", scale: 1, alpha: 0.5, color: 0x59f2c6, shape: "field" },
       cast: { durationMs: 180, textureKey: stageTextureKey("pulse-heal", "cast"), blendMode: "screen", scale: 1.04, alpha: 0.9, color: 0x72ffd5, shape: "ring" },
@@ -45,6 +59,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "mobile-bulwark": {
     skillId: "mobile-bulwark",
     poolCapacity: 14,
+    features: [],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("mobile-bulwark", "telegraph"), blendMode: "normal", scale: 1, alpha: 0.58, color: 0x68c8ff, shape: "arc" },
       cast: { durationMs: 210, textureKey: stageTextureKey("mobile-bulwark", "cast"), blendMode: "screen", scale: 1.12, alpha: 0.94, color: 0x83d7ff, shape: "arc" },
@@ -55,6 +70,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "capacitor-overload": {
     skillId: "capacitor-overload",
     poolCapacity: 16,
+    features: [],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("capacitor-overload", "telegraph"), blendMode: "add", scale: 0.9, alpha: 0.76, color: 0x47e4ff, shape: "ring" },
       cast: { durationMs: 140, textureKey: stageTextureKey("capacitor-overload", "cast"), blendMode: "add", scale: 1.06, alpha: 1, color: 0x66efff, shape: "corridor" },
@@ -65,6 +81,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "phase-shift": {
     skillId: "phase-shift",
     poolCapacity: 12,
+    features: ["origin-tear", "corridor", "destination-assembly", "closure"],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("phase-shift", "telegraph"), blendMode: "screen", scale: 1, alpha: 0.74, color: 0xb56cff, shape: "corridor" },
       cast: { durationMs: 120, textureKey: stageTextureKey("phase-shift", "cast"), blendMode: "add", scale: 1.04, alpha: 0.98, color: 0xca7dff, shape: "corridor" },
@@ -75,6 +92,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "afterimage-run": {
     skillId: "afterimage-run",
     poolCapacity: 18,
+    features: [],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("afterimage-run", "telegraph"), blendMode: "normal", scale: 1, alpha: 0.66, color: 0xffd166, shape: "path" },
       cast: { durationMs: 100, textureKey: stageTextureKey("afterimage-run", "cast"), blendMode: "add", scale: 1.02, alpha: 0.96, color: 0xffdf7d, shape: "ring" },
@@ -88,6 +106,7 @@ export function getExclusiveSkillVfxProfile(skillId: ExclusiveSkillId): Exclusiv
   const profile = PROFILES[skillId];
   return {
     ...profile,
+    features: [...profile.features],
     stages: {
       telegraph: { ...profile.stages.telegraph },
       cast: { ...profile.stages.cast },
@@ -95,4 +114,14 @@ export function getExclusiveSkillVfxProfile(skillId: ExclusiveSkillId): Exclusiv
       end: { ...profile.stages.end },
     },
   };
+}
+
+export function resolveExclusiveSkillEndVariant(
+  skillId: ExclusiveSkillId,
+  reason: ExclusiveSkillEvent["reason"],
+): ExclusiveSkillEndVariant {
+  if (skillId === "breach" && reason === "return") return "return-collapse";
+  if (skillId === "breach" && reason === "expired") return "anchor-dissolve";
+  if (skillId === "phase-shift") return "phase-closure";
+  return "standard";
 }

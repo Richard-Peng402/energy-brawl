@@ -62,7 +62,7 @@ import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
 import { mapMechanicRenderProfile, mapMechanicVisualRevision } from "./map-mechanic-visuals";
 import { resolveExclusiveSkillTargeting } from "../shared/exclusive-skill-targeting";
-import { getExclusiveSkillVfxProfile } from "./exclusive-skill-vfx";
+import { getExclusiveSkillVfxProfile, resolveExclusiveSkillEndVariant } from "./exclusive-skill-vfx";
 import {
   classifyExclusiveSkillFeedback,
   selectExclusiveSkillFeedback,
@@ -703,6 +703,7 @@ class ArenaScene extends Phaser.Scene {
 
   private playExclusiveSkillEvent(event: ExclusiveSkillEvent): void {
     const profile = getExclusiveSkillVfxProfile(event.skillId).stages[event.stage];
+    const endVariant = event.stage === "end" ? resolveExclusiveSkillEndVariant(event.skillId, event.reason) : "standard";
     const pool = this.exclusiveStagePools.get(`${event.skillId}:${event.stage}`);
     if (!pool) return;
     const dx = event.target.x - event.origin.x;
@@ -744,13 +745,20 @@ class ArenaScene extends Phaser.Scene {
           break;
         case "ring":
           item.graphics.lineStyle(8, profile.color, 0.86).strokeCircle(0, 0, 72);
+          if (endVariant === "return-collapse") item.graphics.lineStyle(5, 0xffffff, 0.72).strokeCircle(0, 0, 108);
+          if (endVariant === "phase-closure") item.graphics.lineStyle(4, 0xe7c8ff, 0.8).strokeEllipse(0, 0, 38, 124);
           break;
       }
     });
     if (!view) return;
     this.exclusiveStageLeases.set(view, pool);
-    this.tweens.add({ targets: view.container, alpha: 0, scale: profile.scale * 1.35, duration: profile.durationMs, ease: "Cubic.Out" });
-    this.tweens.add({ targets: view.image, angle: event.stage === "end" ? -18 : 18, duration: profile.durationMs, ease: "Sine.Out" });
+    const targetScale = endVariant === "return-collapse" || endVariant === "phase-closure"
+      ? profile.scale * 0.24
+      : endVariant === "anchor-dissolve"
+        ? profile.scale * 0.92
+        : profile.scale * 1.35;
+    this.tweens.add({ targets: view.container, alpha: 0, scale: targetScale, duration: profile.durationMs, ease: endVariant === "return-collapse" ? "Back.In" : "Cubic.Out" });
+    this.tweens.add({ targets: view.image, angle: endVariant === "return-collapse" ? -40 : event.stage === "end" ? -18 : 18, duration: profile.durationMs, ease: "Sine.Out" });
     const timer = this.time.delayedCall(profile.durationMs, () => {
       this.exclusiveStageTimers.delete(timer);
       if (this.exclusiveStageLeases.get(view) !== pool) return;

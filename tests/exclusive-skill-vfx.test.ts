@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getExclusiveSkillVfxProfile } from "../src/client/exclusive-skill-vfx";
+import { getExclusiveSkillVfxProfile, resolveExclusiveSkillEndVariant } from "../src/client/exclusive-skill-vfx";
 import { EXCLUSIVE_SKILL_IDS } from "../src/shared/exclusive-skill-catalog";
 
 describe("exclusive skill VFX profiles", () => {
@@ -37,5 +37,23 @@ describe("exclusive skill VFX profiles", () => {
   it("gives every skill an explicit visual identity", () => {
     const colors = EXCLUSIVE_SKILL_IDS.map((skillId) => getExclusiveSkillVfxProfile(skillId).stages.cast.color);
     expect(new Set(colors).size).toBe(EXCLUSIVE_SKILL_IDS.length);
+  });
+
+  it("defines complete displacement variants for Blaze and Phase", () => {
+    expect(getExclusiveSkillVfxProfile("breach").features).toEqual(expect.arrayContaining([
+      "anchor-create",
+      "travel",
+      "return",
+      "expiry",
+    ]));
+    expect(getExclusiveSkillVfxProfile("phase-shift").features).toEqual(expect.arrayContaining([
+      "origin-tear",
+      "corridor",
+      "destination-assembly",
+      "closure",
+    ]));
+    expect(resolveExclusiveSkillEndVariant("breach", "return")).toBe("return-collapse");
+    expect(resolveExclusiveSkillEndVariant("breach", "expired")).toBe("anchor-dissolve");
+    expect(resolveExclusiveSkillEndVariant("phase-shift", "expired")).toBe("phase-closure");
   });
 });

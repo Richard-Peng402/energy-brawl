@@ -3,6 +3,14 @@ import { defineConfig } from "vite";
 export default defineConfig({
   build: {
     chunkSizeWarningLimit: 1_350,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.replaceAll("\\", "/").includes("/node_modules/phaser/")) return "phaser";
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     host: "0.0.0.0",
