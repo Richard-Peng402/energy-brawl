@@ -60,6 +60,11 @@ import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
 import { mapMechanicRenderProfile, mapMechanicVisualRevision } from "./map-mechanic-visuals";
+import {
+  classifyExclusiveSkillFeedback,
+  selectExclusiveSkillFeedback,
+  type ClassifiedExclusiveSkillFeedback,
+} from "./exclusive-skill-feedback";
 
 interface PlayerView {
   container: Phaser.GameObjects.Container;
@@ -240,6 +245,7 @@ class ArenaScene extends Phaser.Scene {
   private readonly snapshotBuffer = new SnapshotBuffer<GameSnapshot>();
   private readonly inputReconciler: InputReconciler;
   private snapshot: GameSnapshot | null = null;
+  private lastExclusiveSkillEventSeq: number | null = null;
   private localInput: Vec2 = { x: 0, y: 0 };
   private localAim: Vec2 = { x: 0, y: 0 };
   private aimCorridor: Phaser.GameObjects.Rectangle | null = null;
@@ -381,8 +387,18 @@ class ArenaScene extends Phaser.Scene {
       snapshot.phase === this.snapshot.phase &&
       snapshot.holderId === this.snapshot.holderId &&
       snapshot.finishedAt === this.snapshot.finishedAt &&
-      snapshot.winnerIds.join(",") === this.snapshot.winnerIds.join(",")
+      snapshot.winnerIds.join(",") === this.snapshot.winnerIds.join(",") &&
+      (snapshot.exclusiveSkillEvents?.at(-1)?.eventSeq ?? 0)
+        === (this.snapshot.exclusiveSkillEvents?.at(-1)?.eventSeq ?? 0)
     ) return;
+    const selectedSkillFeedback = selectExclusiveSkillFeedback(
+      snapshot.exclusiveSkillEvents ?? [],
+      this.lastExclusiveSkillEventSeq,
+    );
+    this.lastExclusiveSkillEventSeq = selectedSkillFeedback.lastSequence;
+    const classifiedSkillFeedback = selectedSkillFeedback.events.map((event) =>
+      classifyExclusiveSkillFeedback(event, this.localPlayerId, snapshot.players),
+    );
     const feedbackEvents = selectCombatFeedbackEvents(this.snapshot, snapshot, this.localPlayerId);
     this.playCombatFeedback(feedbackEvents);
     this.onCombatFeedback(feedbackEvents);
@@ -390,7 +406,7 @@ class ArenaScene extends Phaser.Scene {
     this.snapshot = snapshot;
     this.snapshotBuffer.push(snapshot);
     if (advancesAnchor) this.latestSnapshotReceivedAt = performance.now();
-    if (this.ready) this.syncSnapshot(snapshot);
+    if (this.ready) this.syncSnapshot(snapshot, classifiedSkillFeedback);
   }
 
   setLocalPlayerId(playerId: string | null): void {
@@ -545,7 +561,11 @@ class ArenaScene extends Phaser.Scene {
       .setFillStyle(0x000000, 0);
   }
 
-  private syncSnapshot(snapshot: GameSnapshot): void {
+  private syncSnapshot(
+    snapshot: GameSnapshot,
+    skillFeedback: readonly ClassifiedExclusiveSkillFeedback[] = [],
+  ): void {
+    this.consumeExclusiveSkillFeedback(skillFeedback);
     const activePlayers = new Set(snapshot.players.map((player) => player.id));
     let localPlayerRespawned = false;
     for (const [id, view] of this.playerViews) {
@@ -617,6 +637,12 @@ class ArenaScene extends Phaser.Scene {
     this.syncSkillOrbs(snapshot);
     this.syncCapturePoint(snapshot.capturePoint ?? null);
     this.syncMapMechanic(snapshot.phase === "finished" ? null : snapshot.mapMechanic ?? null);
+  }
+
+  private consumeExclusiveSkillFeedback(feedback: readonly ClassifiedExclusiveSkillFeedback[]): void {
+    for (const item of feedback) {
+      if (item.event.stage === "end") this.destroyExclusiveEffectView(item.event.playerId);
+    }
   }
 
   private syncCombatStateVisual(view: PlayerView, player: PlayerSnapshot, serverTime: number, identity: string): void {
