@@ -35,6 +35,7 @@ import {
 import { PROJECTILE_MAX_DISTANCE } from "../src/shared/constants";
 import { DEFAULT_CAPTURE_POINT_CONFIG } from "../src/shared/capture-point";
 import { getMapDefinition } from "../src/shared/map-catalog";
+import { addStatusEffect } from "../src/server/status-effects";
 
 function createWorld() {
   return createGameWorld([
@@ -178,6 +179,7 @@ describe("presentation event snapshots", () => {
       stage: "cast",
       origin: { x: 10, y: 20 },
       target: { x: 40, y: 20 },
+      metadata: { affectedTargetIds: ["blue"] },
     });
     world.projectileImpactEvents.push({
       eventSeq: 1,
@@ -193,6 +195,7 @@ describe("presentation event snapshots", () => {
     expect(snapshot.exclusiveSkillEvents).toEqual(world.exclusiveSkillEvents);
     expect(snapshot.projectileImpactEvents).toEqual(world.projectileImpactEvents);
     expect(snapshot.exclusiveSkillEvents).not.toBe(world.exclusiveSkillEvents);
+    expect(snapshot.exclusiveSkillEvents?.[0]?.metadata?.affectedTargetIds).not.toBe(world.exclusiveSkillEvents[0]?.metadata?.affectedTargetIds);
     expect(snapshot.projectileImpactEvents).not.toBe(world.projectileImpactEvents);
   });
 });
@@ -271,6 +274,62 @@ describe("exclusive skill presentation lifecycle", () => {
       reason: "reset",
     });
     expect(world.players.get("blue")!.exclusiveSkillState).toBeNull();
+  });
+
+  it("publishes only targets actually healed or cleansed by Pulse Heal", () => {
+    const world = createGameWorld([
+      { id: "medic", nickname: "Medic", characterId: "medic", isBot: false, teamId: "red" },
+      { id: "ally", nickname: "Ally", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "healthy", nickname: "Healthy", characterId: "arc", isBot: false, teamId: "red" },
+      { id: "enemy", nickname: "Enemy", characterId: "runner", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    const medic = world.players.get("medic")!;
+    const ally = world.players.get("ally")!;
+    const healthy = world.players.get("healthy")!;
+    const enemy = world.players.get("enemy")!;
+    medic.health = medic.maxHealth;
+    ally.health = ally.maxHealth - 20;
+    healthy.health = healthy.maxHealth;
+    enemy.health = enemy.maxHealth - 20;
+    medic.x = ally.x = healthy.x = enemy.x = 900;
+    medic.y = 700;
+    ally.y = 760;
+    healthy.y = 820;
+    enemy.y = 880;
+    addStatusEffect(medic.statusEffects, "bulwark-suppression", world.now, 1_000);
+    addStatusEffect(ally.statusEffects, "bulwark-suppression", world.now, 1_000);
+
+    expect(applyWorldExclusiveSkill(world, medic.id, { x: 1, y: 0 })).toBe(true);
+
+    expect(world.exclusiveSkillEvents.find((event) => event.stage === "active")?.metadata).toEqual({
+      healedTargetIds: ["ally"],
+      cleansedTargetIds: ["medic", "ally"],
+    });
+    expect(enemy.health).toBe(enemy.maxHealth - 20);
+  });
+
+  it("publishes nearby ally and enemy targets affected by Mobile Bulwark", () => {
+    const world = createGameWorld([
+      { id: "fortress", nickname: "Fortress", characterId: "fortress", isBot: false, teamId: "red" },
+      { id: "ally", nickname: "Ally", characterId: "medic", isBot: false, teamId: "red" },
+      { id: "enemy", nickname: "Enemy", characterId: "blaze", isBot: false, teamId: "blue" },
+      { id: "far-enemy", nickname: "Far", characterId: "runner", isBot: false, teamId: "blue" },
+    ], 0, "team3v3");
+    const fortress = world.players.get("fortress")!;
+    fortress.x = 1_000;
+    fortress.y = 800;
+    fortress.angle = 0;
+    Object.assign(world.players.get("ally")!, { x: 900, y: 800 });
+    Object.assign(world.players.get("enemy")!, { x: 1_100, y: 800 });
+    Object.assign(world.players.get("far-enemy")!, { x: 1_500, y: 800 });
+
+    expect(applyWorldExclusiveSkill(world, fortress.id, { x: 1, y: 0 })).toBe(true);
+
+    const activeEvent = world.exclusiveSkillEvents.find((event) => event.stage === "active");
+    expect(activeEvent).toMatchObject({
+      target: { x: 1_120, y: 800 },
+      metadata: { affectedTargetIds: ["ally", "enemy"] },
+    });
   });
 });
 

@@ -62,7 +62,11 @@ import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
 import { mapMechanicRenderProfile, mapMechanicVisualRevision } from "./map-mechanic-visuals";
 import { resolveExclusiveSkillTargeting } from "../shared/exclusive-skill-targeting";
-import { getExclusiveSkillVfxProfile, resolveExclusiveSkillEndVariant } from "./exclusive-skill-vfx";
+import {
+  getExclusiveSkillVfxProfile,
+  resolveExclusiveSkillAreaFeedback,
+  resolveExclusiveSkillEndVariant,
+} from "./exclusive-skill-vfx";
 import {
   classifyExclusiveSkillFeedback,
   selectExclusiveSkillFeedback,
@@ -751,7 +755,6 @@ class ArenaScene extends Phaser.Scene {
       }
     });
     if (!view) return;
-    this.exclusiveStageLeases.set(view, pool);
     const targetScale = endVariant === "return-collapse" || endVariant === "phase-closure"
       ? profile.scale * 0.24
       : endVariant === "anchor-dissolve"
@@ -759,7 +762,78 @@ class ArenaScene extends Phaser.Scene {
         : profile.scale * 1.35;
     this.tweens.add({ targets: view.container, alpha: 0, scale: targetScale, duration: profile.durationMs, ease: endVariant === "return-collapse" ? "Back.In" : "Cubic.Out" });
     this.tweens.add({ targets: view.image, angle: endVariant === "return-collapse" ? -40 : event.stage === "end" ? -18 : 18, duration: profile.durationMs, ease: "Sine.Out" });
-    const timer = this.time.delayedCall(profile.durationMs, () => {
+    this.releaseExclusiveStageViewAfter(view, pool, profile.durationMs);
+    this.playExclusiveSkillAreaFeedback(event);
+  }
+
+  private playExclusiveSkillAreaFeedback(event: ExclusiveSkillEvent): void {
+    if (event.stage !== "active" || !this.snapshot) return;
+    const feedback = resolveExclusiveSkillAreaFeedback(event, this.snapshot.players);
+    const pool = this.exclusiveStagePools.get(`${event.skillId}:active`);
+    if (!pool || feedback.length === 0) return;
+    const profile = getExclusiveSkillVfxProfile(event.skillId).stages.active;
+    const caster = this.snapshot.players.find((player) => player.id === event.playerId);
+    const origin = caster ?? event.origin;
+    for (const item of feedback) {
+      const target = this.snapshot.players.find((player) => player.id === item.targetId);
+      if (!target) continue;
+      const dx = target.x - origin.x;
+      const dy = target.y - origin.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const angle = Math.atan2(dy, dx);
+      const color = item.kind === "cleanse-sparkle"
+        ? 0xeaffff
+        : item.kind === "ally-shimmer"
+          ? 0x83d7ff
+          : item.kind === "enemy-suppression"
+            ? 0xff647c
+            : profile.color;
+      const view = pool.acquire((areaView) => {
+        const isFlow = item.kind === "healing-flow";
+        areaView.container
+          .setPosition(isFlow ? origin.x + dx * 0.5 : target.x, isFlow ? origin.y + dy * 0.5 : target.y)
+          .setRotation(isFlow ? angle : 0)
+          .setVisible(true)
+          .setActive(true)
+          .setAlpha(0.94)
+          .setScale(1);
+        areaView.image.setDisplaySize(88, 88).setTint(color).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0.64);
+        areaView.ring.setRadius(48).setFillStyle(color, 0.06).setStrokeStyle(5, color, 0.82).setBlendMode(Phaser.BlendModes.ADD);
+        areaView.graphics.setBlendMode(Phaser.BlendModes.ADD).fillStyle(color, 0.22).lineStyle(7, color, 0.88);
+        if (item.kind === "healing-flow") {
+          areaView.graphics.lineBetween(-length / 2, 0, length / 2, 0);
+          areaView.graphics.fillCircle(length / 2, 0, 18);
+          areaView.graphics.lineStyle(3, 0xffffff, 0.72).strokeCircle(length / 2, 0, 30);
+        } else if (item.kind === "cleanse-sparkle") {
+          for (let index = 0; index < 6; index += 1) {
+            const ray = (Math.PI * 2 * index) / 6;
+            areaView.graphics.lineBetween(Math.cos(ray) * 24, Math.sin(ray) * 24, Math.cos(ray) * 62, Math.sin(ray) * 62);
+            areaView.graphics.fillCircle(Math.cos(ray) * 72, Math.sin(ray) * 72, 6);
+          }
+        } else if (item.kind === "ally-shimmer") {
+          areaView.graphics.lineStyle(8, color, 0.9).strokeCircle(0, 0, 58);
+          areaView.graphics.lineStyle(3, 0xffffff, 0.74).strokeCircle(0, 0, 76);
+        } else {
+          areaView.graphics.lineStyle(7, color, 0.9).strokeCircle(0, 0, 64);
+          areaView.graphics.lineBetween(-48, -48, 48, 48);
+          areaView.graphics.lineBetween(-48, 48, 48, -48);
+        }
+      });
+      if (!view) continue;
+      const duration = item.kind === "cleanse-sparkle" ? 520 : 680;
+      this.tweens.add({ targets: view.container, alpha: 0, scale: item.kind === "enemy-suppression" ? 0.72 : 1.35, duration, ease: "Cubic.Out" });
+      this.tweens.add({ targets: view.image, angle: item.kind === "cleanse-sparkle" ? 55 : 18, duration, ease: "Sine.Out" });
+      this.releaseExclusiveStageViewAfter(view, pool, duration);
+    }
+  }
+
+  private releaseExclusiveStageViewAfter(
+    view: ExclusiveStageView,
+    pool: ReusableObjectPool<ExclusiveStageView>,
+    durationMs: number,
+  ): void {
+    this.exclusiveStageLeases.set(view, pool);
+    const timer = this.time.delayedCall(durationMs, () => {
       this.exclusiveStageTimers.delete(timer);
       if (this.exclusiveStageLeases.get(view) !== pool) return;
       this.exclusiveStageLeases.delete(view);

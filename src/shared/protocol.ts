@@ -217,6 +217,11 @@ export interface ExclusiveSkillEvent {
   origin: Vec2;
   target: Vec2;
   reason?: "expired" | "death" | "reset" | "return";
+  metadata?: {
+    healedTargetIds?: readonly string[];
+    cleansedTargetIds?: readonly string[];
+    affectedTargetIds?: readonly string[];
+  };
 }
 
 export interface ProjectileImpactEvent {

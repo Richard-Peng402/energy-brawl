@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { getExclusiveSkillVfxProfile, resolveExclusiveSkillEndVariant } from "../src/client/exclusive-skill-vfx";
+import {
+  getExclusiveSkillVfxProfile,
+  resolveExclusiveSkillAreaFeedback,
+  resolveExclusiveSkillEndVariant,
+} from "../src/client/exclusive-skill-vfx";
+import type { PlayerSnapshot } from "../src/shared/protocol";
 import { EXCLUSIVE_SKILL_IDS } from "../src/shared/exclusive-skill-catalog";
 
 describe("exclusive skill VFX profiles", () => {
@@ -55,5 +60,52 @@ describe("exclusive skill VFX profiles", () => {
     expect(resolveExclusiveSkillEndVariant("breach", "return")).toBe("return-collapse");
     expect(resolveExclusiveSkillEndVariant("breach", "expired")).toBe("anchor-dissolve");
     expect(resolveExclusiveSkillEndVariant("phase-shift", "expired")).toBe("phase-closure");
+  });
+
+  it("defines distinct Medic and Fortress area feedback", () => {
+    expect(getExclusiveSkillVfxProfile("pulse-heal").features).toEqual(expect.arrayContaining([
+      "healing-flow",
+      "cleanse-sparkle",
+    ]));
+    expect(getExclusiveSkillVfxProfile("mobile-bulwark").features).toEqual(expect.arrayContaining([
+      "self-facing",
+      "ally-shimmer",
+      "enemy-suppression",
+      "shield-contact",
+      "normal-end",
+    ]));
+  });
+
+  it("selects Medic and Fortress target feedback from authoritative metadata", () => {
+    const players = [
+      { id: "caster", teamId: "red" },
+      { id: "ally", teamId: "red" },
+      { id: "enemy", teamId: "blue" },
+    ] as PlayerSnapshot[];
+    const baseEvent = {
+      eventSeq: 1,
+      serverTime: 0,
+      playerId: "caster",
+      stage: "active" as const,
+      origin: { x: 0, y: 0 },
+      target: { x: 0, y: 0 },
+    };
+    expect(resolveExclusiveSkillAreaFeedback({
+      ...baseEvent,
+      skillId: "pulse-heal",
+      metadata: { healedTargetIds: ["ally"], cleansedTargetIds: ["caster", "ally"] },
+    }, players)).toEqual([
+      { kind: "healing-flow", targetId: "ally" },
+      { kind: "cleanse-sparkle", targetId: "caster" },
+      { kind: "cleanse-sparkle", targetId: "ally" },
+    ]);
+    expect(resolveExclusiveSkillAreaFeedback({
+      ...baseEvent,
+      skillId: "mobile-bulwark",
+      metadata: { affectedTargetIds: ["ally", "enemy"] },
+    }, players)).toEqual([
+      { kind: "ally-shimmer", targetId: "ally" },
+      { kind: "enemy-suppression", targetId: "enemy" },
+    ]);
   });
 });

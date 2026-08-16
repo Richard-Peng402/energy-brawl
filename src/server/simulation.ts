@@ -77,6 +77,9 @@ import {
 import { appendPresentationEvent } from "./presentation-events";
 
 const EXCLUSIVE_SKILL_EVENT_CAPACITY = 24;
+const BULWARK_ALLY_PROTECTION_RADIUS = 190;
+const BULWARK_SUPPRESSION_RADIUS = 240;
+const BULWARK_PRESENTATION_LENGTH = 120;
 
 export interface PlayerSeed {
   id: string;
@@ -508,39 +511,78 @@ export function applyWorldExclusiveSkill(world: GameWorld, playerId: string, dir
     playerRadius: PLAYER_RADIUS,
   });
   if (!result.ok) return false;
+  let eventTarget = result.target;
+  if (result.definition.id === "mobile-bulwark") {
+    const facing = Math.hypot(direction.x, direction.y) > 0.08
+      ? normalize(direction)
+      : { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+    player.angle = Math.atan2(facing.y, facing.x);
+    eventTarget = {
+      x: result.origin.x + facing.x * BULWARK_PRESENTATION_LENGTH,
+      y: result.origin.y + facing.y * BULWARK_PRESENTATION_LENGTH,
+    };
+  }
   recordExclusiveSkillEvent(world, {
     playerId: player.id,
     skillId: result.definition.id,
     stage: "cast",
     origin: result.origin,
-    target: result.target,
-  });
-  recordExclusiveSkillEvent(world, {
-    playerId: player.id,
-    skillId: result.definition.id,
-    stage: "active",
-    origin: result.origin,
-    target: result.target,
+    target: eventTarget,
   });
   player.skillContribution = (player.skillContribution ?? 0) + 1;
+  let metadata: ExclusiveSkillEvent["metadata"];
   if (result.definition.id === "phase-shift") {
     addStatusEffect(player.statusEffects, "phase-fire-lock", world.now, result.definition.balance.fireLockDurationMs ?? 250);
     addStatusEffect(player.statusEffects, "phase-reveal", world.now, result.definition.balance.revealDurationMs ?? 1_200);
   }
   if (result.definition.id === "pulse-heal") {
+    const healedTargetIds: string[] = [];
+    const cleansedTargetIds: string[] = [];
     const selfHealed = Math.min(player.maxHealth - player.health, result.definition.balance.selfHeal ?? 28);
     player.health += selfHealed;
     player.healingDone = (player.healingDone ?? 0) + selfHealed;
-    clearPurifiableStatus(player.statusEffects);
+    if (selfHealed > 0) healedTargetIds.push(player.id);
+    if (clearPurifiableStatus(player.statusEffects).length > 0) cleansedTargetIds.push(player.id);
     for (const ally of world.players.values()) {
       if (world.matchMode !== "solo" && ally.id !== player.id && ally.alive && ally.teamId !== null && ally.teamId === player.teamId && distanceSquared(ally, player) <= (result.definition.balance.radius ?? 280) ** 2) {
         const healed = Math.min(ally.maxHealth - ally.health, result.definition.balance.allyHeal ?? 34);
         ally.health += healed;
         player.healingDone = (player.healingDone ?? 0) + healed;
-        clearPurifiableStatus(ally.statusEffects);
+        if (healed > 0) healedTargetIds.push(ally.id);
+        if (clearPurifiableStatus(ally.statusEffects).length > 0) cleansedTargetIds.push(ally.id);
       }
     }
+    metadata = {
+      ...(healedTargetIds.length > 0 ? { healedTargetIds } : {}),
+      ...(cleansedTargetIds.length > 0 ? { cleansedTargetIds } : {}),
+    };
   }
+  if (result.definition.id === "mobile-bulwark" && world.matchMode !== "solo" && player.teamId !== null) {
+    const facing = { x: Math.cos(player.angle), y: Math.sin(player.angle) };
+    const suppressionRadius = result.definition.balance.suppressionRadius ?? BULWARK_SUPPRESSION_RADIUS;
+    const affectedTargetIds: string[] = [];
+    for (const target of world.players.values()) {
+      if (target.id === player.id || !target.alive || target.teamId === null) continue;
+      const targetDistanceSquared = distanceSquared(target, player);
+      if (target.teamId !== player.teamId) {
+        if (targetDistanceSquared <= suppressionRadius ** 2) affectedTargetIds.push(target.id);
+        continue;
+      }
+      const relative = { x: target.x - player.x, y: target.y - player.y };
+      if (targetDistanceSquared <= BULWARK_ALLY_PROTECTION_RADIUS ** 2 && facing.x * relative.x + facing.y * relative.y <= 0) {
+        affectedTargetIds.push(target.id);
+      }
+    }
+    if (affectedTargetIds.length > 0) metadata = { affectedTargetIds };
+  }
+  recordExclusiveSkillEvent(world, {
+    playerId: player.id,
+    skillId: result.definition.id,
+    stage: "active",
+    origin: result.origin,
+    target: eventTarget,
+    metadata,
+  });
   return true;
 }
 
@@ -565,7 +607,16 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
     killFeed: [...world.killFeed],
-    exclusiveSkillEvents: [...world.exclusiveSkillEvents],
+    exclusiveSkillEvents: world.exclusiveSkillEvents.map((event) => ({
+      ...event,
+      origin: { ...event.origin },
+      target: { ...event.target },
+      metadata: event.metadata ? {
+        healedTargetIds: event.metadata.healedTargetIds ? [...event.metadata.healedTargetIds] : undefined,
+        cleansedTargetIds: event.metadata.cleansedTargetIds ? [...event.metadata.cleansedTargetIds] : undefined,
+        affectedTargetIds: event.metadata.affectedTargetIds ? [...event.metadata.affectedTargetIds] : undefined,
+      } : undefined,
+    })),
     projectileImpactEvents: [...world.projectileImpactEvents],
     matchMode: world.matchMode,
     teamScores: [...world.teamScores].map(([teamId, score]) => ({
@@ -753,7 +804,7 @@ function findProtectingBulwark(world: GameWorld, ally: WorldPlayer, attacker: Wo
   if (world.matchMode === "solo" || ally.teamId === null || attacker.teamId === ally.teamId) return null;
   for (const fortress of world.players.values()) {
     if (fortress.id === ally.id || !fortress.alive || fortress.teamId !== ally.teamId || !isExclusiveEffectActive(fortress, "mobile-bulwark", world.now)) continue;
-    if (distanceSquared(fortress, ally) > 190 * 190 || !isInFront(fortress, attacker)) continue;
+    if (distanceSquared(fortress, ally) > BULWARK_ALLY_PROTECTION_RADIUS ** 2 || !isInFront(fortress, attacker)) continue;
     const allyDirection = { x: ally.x - fortress.x, y: ally.y - fortress.y };
     if (Math.cos(fortress.angle) * allyDirection.x + Math.sin(fortress.angle) * allyDirection.y <= 0) return fortress;
   }
@@ -765,7 +816,7 @@ function refreshBulwarkSuppression(world: GameWorld): void {
   for (const player of world.players.values()) {
     player.statusEffects.delete("bulwark-suppression");
     if (!player.alive || player.teamId === null) continue;
-    if (activeFortresses.some((fortress) => fortress.teamId !== player.teamId && distanceSquared(fortress, player) <= 240 * 240)) {
+    if (activeFortresses.some((fortress) => fortress.teamId !== player.teamId && distanceSquared(fortress, player) <= BULWARK_SUPPRESSION_RADIUS ** 2)) {
       addStatusEffect(player.statusEffects, "bulwark-suppression", world.now, 100);
     }
   }
@@ -1293,6 +1344,11 @@ function recordExclusiveSkillEvent(
     ...input,
     origin: { ...input.origin },
     target: { ...input.target },
+    metadata: input.metadata ? {
+      healedTargetIds: input.metadata.healedTargetIds ? [...input.metadata.healedTargetIds] : undefined,
+      cleansedTargetIds: input.metadata.cleansedTargetIds ? [...input.metadata.cleansedTargetIds] : undefined,
+      affectedTargetIds: input.metadata.affectedTargetIds ? [...input.metadata.affectedTargetIds] : undefined,
+    } : undefined,
     eventSeq: world.nextExclusiveSkillEventSeq++,
     serverTime: world.now,
   }, EXCLUSIVE_SKILL_EVENT_CAPACITY);

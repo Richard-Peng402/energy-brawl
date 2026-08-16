@@ -1,5 +1,5 @@
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
-import type { ExclusiveSkillEvent } from "../shared/protocol";
+import type { ExclusiveSkillEvent, PlayerSnapshot } from "../shared/protocol";
 
 export type ExclusiveSkillVfxStage = "telegraph" | "cast" | "active" | "end";
 
@@ -30,6 +30,11 @@ export type ExclusiveSkillVfxFeature =
 
 export type ExclusiveSkillEndVariant = "return-collapse" | "anchor-dissolve" | "phase-closure" | "standard";
 
+export interface ExclusiveSkillAreaFeedback {
+  kind: "healing-flow" | "cleanse-sparkle" | "ally-shimmer" | "enemy-suppression";
+  targetId: string;
+}
+
 const stageTextureKey = (skillId: ExclusiveSkillId, stage: ExclusiveSkillVfxStage): string =>
   `exclusive-skill:${skillId}:${stage}`;
 
@@ -48,7 +53,7 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "pulse-heal": {
     skillId: "pulse-heal",
     poolCapacity: 10,
-    features: [],
+    features: ["healing-flow", "cleanse-sparkle"],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("pulse-heal", "telegraph"), blendMode: "normal", scale: 1, alpha: 0.5, color: 0x59f2c6, shape: "field" },
       cast: { durationMs: 180, textureKey: stageTextureKey("pulse-heal", "cast"), blendMode: "screen", scale: 1.04, alpha: 0.9, color: 0x72ffd5, shape: "ring" },
@@ -59,11 +64,11 @@ const PROFILES: Readonly<Record<ExclusiveSkillId, ExclusiveSkillVfxProfile>> = {
   "mobile-bulwark": {
     skillId: "mobile-bulwark",
     poolCapacity: 14,
-    features: [],
+    features: ["self-facing", "ally-shimmer", "enemy-suppression", "shield-contact", "normal-end"],
     stages: {
       telegraph: { durationMs: 0, textureKey: stageTextureKey("mobile-bulwark", "telegraph"), blendMode: "normal", scale: 1, alpha: 0.58, color: 0x68c8ff, shape: "arc" },
       cast: { durationMs: 210, textureKey: stageTextureKey("mobile-bulwark", "cast"), blendMode: "screen", scale: 1.12, alpha: 0.94, color: 0x83d7ff, shape: "arc" },
-      active: { durationMs: 780, textureKey: stageTextureKey("mobile-bulwark", "active"), blendMode: "normal", scale: 1.2, alpha: 0.72, color: 0x3fa9e8, shape: "field" },
+      active: { durationMs: 780, textureKey: stageTextureKey("mobile-bulwark", "active"), blendMode: "normal", scale: 1.2, alpha: 0.72, color: 0x3fa9e8, shape: "arc" },
       end: { durationMs: 520, textureKey: stageTextureKey("mobile-bulwark", "end"), blendMode: "add", scale: 0.9, alpha: 0.78, color: 0x9ce2ff, shape: "arc" },
     },
   },
@@ -124,4 +129,27 @@ export function resolveExclusiveSkillEndVariant(
   if (skillId === "breach" && reason === "expired") return "anchor-dissolve";
   if (skillId === "phase-shift") return "phase-closure";
   return "standard";
+}
+
+export function resolveExclusiveSkillAreaFeedback(
+  event: ExclusiveSkillEvent,
+  players: readonly PlayerSnapshot[],
+): ExclusiveSkillAreaFeedback[] {
+  if (event.skillId === "pulse-heal") {
+    return [
+      ...(event.metadata?.healedTargetIds ?? []).map((targetId) => ({ kind: "healing-flow" as const, targetId })),
+      ...(event.metadata?.cleansedTargetIds ?? []).map((targetId) => ({ kind: "cleanse-sparkle" as const, targetId })),
+    ];
+  }
+  if (event.skillId !== "mobile-bulwark") return [];
+  const caster = players.find((player) => player.id === event.playerId);
+  if (!caster || caster.teamId === null) return [];
+  return (event.metadata?.affectedTargetIds ?? []).flatMap((targetId) => {
+    const target = players.find((player) => player.id === targetId);
+    if (!target || target.teamId === null) return [];
+    return [{
+      kind: target.teamId === caster.teamId ? "ally-shimmer" as const : "enemy-suppression" as const,
+      targetId,
+    }];
+  });
 }
