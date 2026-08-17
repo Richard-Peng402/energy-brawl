@@ -83,6 +83,17 @@ import {
   mapEventSnapshot,
   type MapEventState,
 } from "./map-event-system";
+import {
+  advanceHighlightTracker,
+  createMatchHighlightTracker,
+  finalizeMatchHighlights,
+  recordCaptureScore,
+  recordFiveKillStreak,
+  recordHazardEscape,
+  recordHealingCandidate,
+  type MatchHighlightTracker,
+} from "./match-highlight-tracker";
+import type { MatchHighlight } from "../shared/match-highlights";
 
 const EXCLUSIVE_SKILL_EVENT_CAPACITY = 24;
 const PROJECTILE_IMPACT_EVENT_CAPACITY = 32;
@@ -141,6 +152,8 @@ export interface GameWorld {
   finishedAt: number | null;
   matchMvpId: string | null;
   matchMvpScore: number | null;
+  matchHighlightTracker: MatchHighlightTracker;
+  matchHighlights: MatchHighlight[];
   players: Map<string, WorldPlayer>;
   projectiles: Map<string, WorldProjectile>;
   energy: Map<string, EnergySnapshot>;
@@ -294,6 +307,8 @@ export function createGameWorld(
     finishedAt: null,
     matchMvpId: null,
     matchMvpScore: null,
+    matchHighlightTracker: createMatchHighlightTracker(),
+    matchHighlights: [],
     players,
     projectiles: new Map(),
     energy: new Map(),
@@ -390,6 +405,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
     if (movement.endedState) recordExclusiveSkillEnd(world, player, movement.endedState, "return");
     if (!movement.handled) movePlayer(world, player, simulationDelta);
   }
+  advanceHighlightTracker(world.matchHighlightTracker, world.now, alivePlayerIds(world));
 
   resolvePlayerSeparation(world);
   advanceWorldMapMechanic(world, previousNow, world.now);
@@ -491,6 +507,7 @@ function applyWorldDamage(
       attacker.mapMechanicContribution!.mechanicEliminations += 1;
     }
     attacker.killStreak += 1;
+    recordFiveKillStreak(world.matchHighlightTracker, attacker.id, eventAt, attacker.killStreak);
     world.killFeed.push({
       id: `kill-${world.nextKillFeedId++}`,
       at: eventAt,
@@ -587,16 +604,27 @@ export function applyWorldExclusiveSkill(world: GameWorld, playerId: string, dir
   if (result.definition.id === "pulse-heal") {
     const healedTargetIds: string[] = [];
     const cleansedTargetIds: string[] = [];
+    const selfHealthRatio = player.maxHealth > 0 ? player.health / player.maxHealth : 1;
     const selfHealed = Math.min(
       player.maxHealth - player.health,
       (result.definition.balance.selfHeal ?? 28) * player.selfHealingMultiplier * player.exclusivePotencyMultiplier,
     );
     player.health += selfHealed;
     player.healingDone = (player.healingDone ?? 0) + selfHealed;
-    if (selfHealed > 0) healedTargetIds.push(player.id);
+    if (selfHealed > 0) {
+      healedTargetIds.push(player.id);
+      recordHealingCandidate(world.matchHighlightTracker, {
+        healerId: player.id,
+        targetId: player.id,
+        beforeHealthRatio: selfHealthRatio,
+        amount: selfHealed,
+        at: world.now,
+      });
+    }
     if (clearPurifiableStatus(player.statusEffects).length > 0) cleansedTargetIds.push(player.id);
     for (const ally of world.players.values()) {
       if (world.matchMode !== "solo" && ally.id !== player.id && ally.alive && ally.teamId !== null && ally.teamId === player.teamId && distanceSquared(ally, player) <= (result.definition.balance.radius ?? 280) ** 2) {
+        const beforeHealthRatio = ally.maxHealth > 0 ? ally.health / ally.maxHealth : 1;
         const healed = Math.min(
           ally.maxHealth - ally.health,
           (result.definition.balance.allyHeal ?? 34)
@@ -606,7 +634,16 @@ export function applyWorldExclusiveSkill(world: GameWorld, playerId: string, dir
         );
         ally.health += healed;
         player.healingDone = (player.healingDone ?? 0) + healed;
-        if (healed > 0) healedTargetIds.push(ally.id);
+        if (healed > 0) {
+          healedTargetIds.push(ally.id);
+          recordHealingCandidate(world.matchHighlightTracker, {
+            healerId: player.id,
+            targetId: ally.id,
+            beforeHealthRatio,
+            amount: healed,
+            at: world.now,
+          });
+        }
         if (clearPurifiableStatus(ally.statusEffects).length > 0) cleansedTargetIds.push(ally.id);
       }
     }
@@ -660,6 +697,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     finishedAt: world.finishedAt,
     matchMvpId: world.matchMvpId,
     matchMvpScore: world.matchMvpScore,
+    ...(world.phase === "finished" ? { matchHighlights: [...world.matchHighlights] } : {}),
     players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, mapHealingAccumulatorMs: _mapHealingAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, statusEffects, projectileMaxDistance: _projectileMaxDistance, projectileRadius: _projectileRadius, shieldStrengthMultiplier: _shieldStrengthMultiplier, shieldMoveMultiplier: _shieldMoveMultiplier, selfHealingMultiplier: _selfHealingMultiplier, activeHealingMultiplier: _activeHealingMultiplier, receivedHealingMultiplier: _receivedHealingMultiplier, regenDelayAddMs: _regenDelayAddMs, exclusivePotencyMultiplier: _exclusivePotencyMultiplier, lastMapEventActivityAt: _lastMapEventActivityAt, mapEventMoveMultiplier: _mapEventMoveMultiplier, ...player }) => ({ ...player, combatStates: [...statusEffects.values()].map(({ id, startedAt, expiresAt }) => ({ id, startedAt, expiresAt })) })),
     projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, maxDistance: _maxDistance, radius: _radius, ...projectile }) => projectile),
     energy: [...world.energy.values()],
@@ -832,7 +870,10 @@ function trackReactorEscapes(world: GameWorld, state: MapMechanicState, now: num
       player.alive && zoneContainsPoint(zone, player),
       now,
     );
-    if (escaped) player.mapMechanicContribution!.reactorEscapes += 1;
+    if (escaped) {
+      player.mapMechanicContribution!.reactorEscapes += 1;
+      recordHazardEscape(world.matchHighlightTracker, player.id, now, state.definition.kind);
+    }
   }
 }
 
@@ -888,6 +929,19 @@ function advanceWorldCapturePoint(world: GameWorld, deltaMs: number): void {
     (world.captureScores.get(teamId) ?? 0) + deltaMs / 1_000,
   );
   world.captureScores.set(teamId, score);
+  const contributorIds = [...world.players.values()]
+    .filter((player) => player.alive
+      && player.teamId === teamId
+      && distanceSquared(player, world.capturePointConfig.center) <= world.capturePointConfig.radius ** 2)
+    .map((player) => player.id);
+  recordCaptureScore(world.matchHighlightTracker, {
+    at: world.now,
+    targetScore: world.capturePointConfig.targetProgress,
+    scores: Object.fromEntries(world.captureScores),
+    scoringTeamId: teamId,
+    scoreDelta: deltaMs / 1_000,
+    contributorIds,
+  });
   if (isCapturePointComplete(score, world.capturePointConfig)) finishWorldMatch(world, playerIdsForTeam(world, teamId));
 }
 
@@ -1499,12 +1553,21 @@ function isFinished(world: GameWorld): boolean {
 }
 
 export function finishWorldMatch(world: GameWorld, winnerIds: string[]): void {
+  advanceHighlightTracker(world.matchHighlightTracker, world.now, alivePlayerIds(world));
   world.phase = "finished";
   world.winnerIds = winnerIds;
   world.finishedAt = world.now;
   const mvp = selectMatchMvp([...world.players.values()]);
   world.matchMvpId = mvp.playerId;
   world.matchMvpScore = mvp.score;
+  world.matchHighlights = finalizeMatchHighlights(world.matchHighlightTracker, {
+    winnerIds,
+    players: [...world.players.values()].map((player) => ({
+      id: player.id,
+      nickname: player.nickname,
+      teamId: player.teamId,
+    })),
+  });
   world.projectiles.clear();
   world.mapMechanicState = null;
   world.mapEventState = null;
@@ -1515,6 +1578,10 @@ export function finishWorldMatch(world: GameWorld, winnerIds: string[]): void {
     player.vx = 0;
     player.vy = 0;
   }
+}
+
+function alivePlayerIds(world: GameWorld): string[] {
+  return [...world.players.values()].filter((player) => player.alive).map((player) => player.id);
 }
 
 function recordExclusiveSkillEvent(

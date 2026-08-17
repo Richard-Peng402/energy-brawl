@@ -8,6 +8,7 @@ import type { MapId, MapSelection } from "./map-catalog";
 import type { MapMechanicKind, MapMechanicPhase, MapMechanicZone } from "./map-mechanics";
 import type { TacticalModuleId } from "./tactical-module-catalog";
 import type { MapEventSnapshot } from "./map-events";
+import type { MatchHighlight } from "./match-highlights";
 import type {
   ClientDiagnosticSample,
   DeviceDiagnosticProfile,
@@ -180,6 +181,7 @@ export interface GameSnapshot {
   finishedAt: number | null;
   matchMvpId: string | null;
   matchMvpScore: number | null;
+  matchHighlights?: MatchHighlight[];
   players: PlayerSnapshot[];
   projectiles: ProjectileSnapshot[];
   energy: EnergySnapshot[];
