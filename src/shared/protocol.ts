@@ -7,6 +7,7 @@ import type { NetworkSnapshot } from "./network";
 import type { MapId, MapSelection } from "./map-catalog";
 import type { MapMechanicKind, MapMechanicPhase, MapMechanicZone } from "./map-mechanics";
 import type { TacticalModuleId } from "./tactical-module-catalog";
+import type { MapEventSnapshot } from "./map-events";
 import type {
   ClientDiagnosticSample,
   DeviceDiagnosticProfile,
@@ -189,6 +190,7 @@ export interface GameSnapshot {
   captureScores?: TeamScoreSnapshot[];
   capturePoint?: CapturePointSnapshot | null;
   mapMechanic?: MapMechanicSnapshot | null;
+  mapEvent?: MapEventSnapshot | null;
   exclusiveSkillEvents?: readonly ExclusiveSkillEvent[];
   projectileImpactEvents?: readonly ProjectileImpactEvent[];
 }

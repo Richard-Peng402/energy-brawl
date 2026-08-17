@@ -1,5 +1,6 @@
 import { ARENA_HEIGHT, ARENA_WIDTH, ENERGY_SPAWN_POINTS, SKILL_ORB_SPAWN_POINTS, SPAWN_POINTS, WALLS } from "./constants";
 import type { MatchMode } from "./mode-catalog";
+import type { MapEventZone } from "./map-events";
 import type { Rect, Vec2 } from "./protocol";
 
 export type MapId = "reactor-core" | "neon-docks" | "crystal-ruins";
@@ -15,6 +16,9 @@ export interface MapDefinition {
   energySpawnPoints: readonly Vec2[];
   skillOrbSpawnPoints: readonly Vec2[];
   capturePointCenter: Vec2;
+  eventSupplyPoints: readonly Vec2[];
+  eventLockdownZones: readonly MapEventZone[];
+  eventStormSafeZones: readonly MapEventZone[];
 }
 
 const neonWalls: readonly Rect[] = [
@@ -53,6 +57,9 @@ export const MAP_CATALOG: readonly MapDefinition[] = [
     id: "reactor-core", name: "反应堆核心", theme: "reactor", walls: WALLS, spawnPoints: SPAWN_POINTS,
     energySpawnPoints: ENERGY_SPAWN_POINTS, skillOrbSpawnPoints: SKILL_ORB_SPAWN_POINTS,
     capturePointCenter: { x: 1_440, y: 810 },
+    eventSupplyPoints: [ENERGY_SPAWN_POINTS[0]!, ENERGY_SPAWN_POINTS[1]!, ENERGY_SPAWN_POINTS[2]!],
+    eventLockdownZones: [{ kind: "rect", x: 1_160, y: 280, width: 560, height: 130 }, { kind: "rect", x: 1_160, y: 1_210, width: 560, height: 130 }],
+    eventStormSafeZones: [{ kind: "circle", x: 720, y: 810, radius: 230 }, { kind: "circle", x: 2_160, y: 810, radius: 230 }],
   },
   {
     id: "neon-docks", name: "霓虹港区", theme: "neon", walls: neonWalls, spawnPoints: neonSpawns,
@@ -60,6 +67,9 @@ export const MAP_CATALOG: readonly MapDefinition[] = [
     energySpawnPoints: [{ x: ARENA_WIDTH / 2, y: 520 }, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT - 520 }, { x: 760, y: ARENA_HEIGHT / 2 }, { x: ARENA_WIDTH - 760, y: ARENA_HEIGHT / 2 }, { x: 760, y: 420 }, { x: ARENA_WIDTH - 760, y: ARENA_HEIGHT - 420 }],
     skillOrbSpawnPoints: [{ x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 }, { x: 620, y: 470 }, { x: ARENA_WIDTH - 620, y: 470 }, { x: 620, y: ARENA_HEIGHT - 470 }, { x: ARENA_WIDTH - 620, y: ARENA_HEIGHT - 470 }],
     capturePointCenter: { x: 1_440, y: 620 },
+    eventSupplyPoints: [{ x: 1_440, y: 520 }, { x: 760, y: 810 }, { x: 2_120, y: 810 }],
+    eventLockdownZones: [{ kind: "rect", x: 1_020, y: 500, width: 840, height: 100 }, { kind: "rect", x: 1_020, y: 1_020, width: 840, height: 100 }],
+    eventStormSafeZones: [{ kind: "circle", x: 640, y: 810, radius: 220 }, { kind: "circle", x: 2_240, y: 810, radius: 220 }],
   },
   {
     id: "crystal-ruins", name: "晶脉遗迹", theme: "crystal", walls: crystalWalls, spawnPoints: crystalSpawns,
@@ -67,6 +77,9 @@ export const MAP_CATALOG: readonly MapDefinition[] = [
     energySpawnPoints: [{ x: ARENA_WIDTH / 2, y: 420 }, { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT - 420 }, { x: 880, y: ARENA_HEIGHT / 2 }, { x: ARENA_WIDTH - 880, y: ARENA_HEIGHT / 2 }, { x: 620, y: 760 }, { x: ARENA_WIDTH - 620, y: 760 }],
     skillOrbSpawnPoints: [{ x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 }, { x: 920, y: 420 }, { x: ARENA_WIDTH - 920, y: 420 }, { x: 920, y: ARENA_HEIGHT - 420 }, { x: ARENA_WIDTH - 920, y: ARENA_HEIGHT - 420 }],
     capturePointCenter: { x: 1_440, y: 590 },
+    eventSupplyPoints: [{ x: 1_440, y: 450 }, { x: 880, y: 810 }, { x: 2_000, y: 810 }],
+    eventLockdownZones: [{ kind: "rect", x: 1_150, y: 420, width: 580, height: 110 }, { kind: "rect", x: 1_150, y: 1_090, width: 580, height: 110 }],
+    eventStormSafeZones: [{ kind: "circle", x: 900, y: 810, radius: 210 }, { kind: "circle", x: 1_980, y: 810, radius: 210 }],
   },
 ];
 
