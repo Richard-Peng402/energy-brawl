@@ -1,6 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 
 import { CHARACTER_CATALOG, type CharacterId } from "../shared/character-catalog";
+import type { TacticalModuleId } from "../shared/tactical-module-catalog";
 import type {
   ClientDiagnosticSample,
   DeviceDiagnosticProfile,
@@ -153,6 +154,10 @@ export class GameNetworkClient {
 
   async changeCharacter(characterId: CharacterId): Promise<Ack> {
     return new Promise((resolve) => this.socket.emit("changeCharacter", characterId, resolve));
+  }
+
+  async changeTacticalModule(tacticalModuleId: TacticalModuleId): Promise<Ack> {
+    return new Promise((resolve) => this.socket.emit("changeTacticalModule", tacticalModuleId, resolve));
   }
 
   async returnToLobby(): Promise<Ack> {

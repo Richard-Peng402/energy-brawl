@@ -31,6 +31,7 @@ import type {
 import { isCharacterId } from "../shared/character-catalog";
 import { isMatchMode, TEAM_IDS } from "../shared/mode-catalog";
 import { MAP_CATALOG } from "../shared/map-catalog";
+import { isTacticalModuleId } from "../shared/tactical-module-catalog";
 import { GameRoom } from "./room";
 import { FixedStepAccumulator } from "./fixed-loop";
 import { RollingMetric } from "./performance";
@@ -189,6 +190,17 @@ export function attachGameNetwork(
       const result = isCharacterId(characterId)
         ? room.changeCharacter(socket.id, characterId)
         : invalid("请选择有效角色");
+      sendAcknowledgement(acknowledge, result);
+      if (result.ok) {
+        revokeHostDiagnostics(socket);
+        broadcastRoom();
+      }
+    });
+
+    socket.on("changeTacticalModule", (tacticalModuleId, acknowledge) => {
+      const result = isTacticalModuleId(tacticalModuleId)
+        ? room.changeTacticalModule(socket.id, tacticalModuleId)
+        : invalid("战术模组无效");
       sendAcknowledgement(acknowledge, result);
       if (result.ok) {
         revokeHostDiagnostics(socket);
@@ -437,7 +449,9 @@ function isHostCommand(command: unknown): command is HostCommand {
 function isJoinPayload(payload: unknown): payload is JoinPayload {
   if (!payload || typeof payload !== "object") return false;
   const candidate = payload as Partial<JoinPayload>;
-  return typeof candidate.nickname === "string" && isCharacterId(candidate.characterId);
+  return typeof candidate.nickname === "string"
+    && isCharacterId(candidate.characterId)
+    && (candidate.tacticalModuleId === undefined || isTacticalModuleId(candidate.tacticalModuleId));
 }
 
 function isPlayerInput(input: unknown): input is PlayerInput {

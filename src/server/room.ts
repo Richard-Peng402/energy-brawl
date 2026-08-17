@@ -10,6 +10,11 @@ import {
 import { CHARACTER_CATALOG, getCharacter, isCharacterId, type CharacterId } from "../shared/character-catalog";
 import { resolveMapSelection, type MapId, type MapSelection } from "../shared/map-catalog";
 import { getModeDefinition, isCaptureMode, isMatchMode, type MatchMode, type TeamId } from "../shared/mode-catalog";
+import {
+  defaultTacticalModuleForCharacter,
+  isTacticalModuleId,
+  type TacticalModuleId,
+} from "../shared/tactical-module-catalog";
 import type {
   Ack,
   AdminStat,
@@ -41,6 +46,7 @@ import { clearSkillSlot } from "./skill-system";
 import { assignBalancedTeams, hasDuplicateCharacterOnTeam, swapTeams } from "./team-system";
 
 interface RoomSeat extends PlayerSeed {
+  tacticalModuleId: TacticalModuleId;
   teamId: TeamId | null;
   socketId: string | null;
   reconnectToken: string | null;
@@ -172,6 +178,9 @@ export class GameRoom {
     if (!isCharacterId(payload.characterId)) {
       return { ok: false, error: "请选择有效角色" };
     }
+    if (payload.tacticalModuleId !== undefined && !isTacticalModuleId(payload.tacticalModuleId)) {
+      return { ok: false, error: "战术模组无效" };
+    }
     if (this.matchMode === "solo" && [...this.seats.values()].some((seat) => seat.characterId === payload.characterId)) {
       return { ok: false, error: "这个角色已被使用" };
     }
@@ -182,6 +191,7 @@ export class GameRoom {
       id,
       nickname,
       characterId: payload.characterId,
+      tacticalModuleId: payload.tacticalModuleId ?? defaultTacticalModuleForCharacter(payload.characterId),
       isBot: false,
       socketId,
       reconnectToken,
@@ -251,6 +261,16 @@ export class GameRoom {
 
     seat.characterId = characterId;
     seat.stats = undefined;
+    return { ok: true };
+  }
+
+  changeTacticalModule(socketId: string, tacticalModuleId: TacticalModuleId): Ack {
+    if (this.world) return { ok: false, error: "对局开始后无法更换战术模组" };
+    const seat = this.seatForSocket(socketId);
+    if (!seat?.connected || seat.isBot) return { ok: false, error: "尚未加入房间" };
+    if (seat.ready) return { ok: false, error: "请先取消准备再更换战术模组" };
+    if (!isTacticalModuleId(tacticalModuleId)) return { ok: false, error: "战术模组无效" };
+    seat.tacticalModuleId = tacticalModuleId;
     return { ok: true };
   }
 
@@ -442,6 +462,7 @@ export class GameRoom {
             id: seat.id,
             nickname: seat.nickname,
             characterId: seat.characterId,
+            tacticalModuleId: seat.tacticalModuleId,
             color: character.color,
             isBot: seat.isBot,
             connected: seat.connected,
@@ -477,10 +498,11 @@ export class GameRoom {
             score: 0,
             targetScore: getModeDefinition(this.matchMode).targetScore,
           })),
-      players: players.map(({ id, nickname, characterId, color, isBot, connected, ready, teamId, health, maxHealth, damage, score, moveSpeed, fireCooldownMs, projectileSpeed, kills, energyCollected, exclusiveSkillCooldownMs }) => ({
+      players: players.map(({ id, nickname, characterId, tacticalModuleId, color, isBot, connected, ready, teamId, health, maxHealth, damage, score, moveSpeed, fireCooldownMs, projectileSpeed, kills, energyCollected, exclusiveSkillCooldownMs }) => ({
         id,
         nickname,
         characterId,
+        tacticalModuleId,
         color,
         isBot,
         connected,
@@ -629,6 +651,7 @@ export class GameRoom {
         id,
         nickname: BOT_NAMES[index % BOT_NAMES.length] ?? `机器人 ${index + 1}`,
         characterId: character.id,
+        tacticalModuleId: defaultTacticalModuleForCharacter(character.id),
         isBot: true,
         socketId: null,
         reconnectToken: null,
