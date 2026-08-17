@@ -65,6 +65,7 @@ import {
   mapEventStatusText,
   selectMapEventFeedback,
 } from "./map-event-visuals";
+import { renderMatchHighlights } from "./match-highlight-ui";
 
 const NAME_KEY = "energy-brawl.nickname";
 const HAPTICS_MODE_KEY = "energy-brawl.haptics-mode";
@@ -1003,7 +1004,8 @@ export class MobileApp {
     if (!finished) return;
     const ranking = [...snapshot.players].sort((a, b) => b.score - a.score || b.kills - a.kills);
     const winner = ranking[0];
-    const resultsRevision = `${gameLeaderboardRevision(snapshot, this.network.playerId)}|${snapshot.finishedAt ?? snapshot.serverTime}|${snapshot.winnerIds.join(",")}`;
+    const highlightRevision = (snapshot.matchHighlights ?? []).map((highlight) => `${highlight.kind}:${highlight.playerId}:${highlight.value}:${highlight.occurredAt}`).join(";");
+    const resultsRevision = `${gameLeaderboardRevision(snapshot, this.network.playerId)}|${snapshot.finishedAt ?? snapshot.serverTime}|${snapshot.winnerIds.join(",")}|${highlightRevision}`;
     if (resultsRevision !== this.lastResultsRevision) {
       this.lastResultsRevision = resultsRevision;
       const ownWon = snapshot.winnerIds.includes(this.network.playerId ?? "");
@@ -1013,6 +1015,7 @@ export class MobileApp {
       this.find("#result-mvp").innerHTML = mvp
         ? `<span>MVP</span><i style="--player-color:${mvp.color}"></i><b>${escapeHtml(mvp.nickname)}</b><strong>${snapshot.matchMvpScore ?? 0}</strong><small>综合贡献</small>`
         : `<span>MVP</span><b>无</b>`;
+      this.find("#result-highlights").innerHTML = renderMatchHighlights(snapshot.matchHighlights ?? [], snapshot.players);
       this.find("#result-list").innerHTML = `<div class="result-table-head"><span>#</span><span>玩家</span><span>K/D/A</span><span>伤害</span><span>治疗</span><span>承伤</span><span>技能</span><span>地图机制</span><span>积分</span></div>` + ranking
         .map(
           (player, index) => `<div class="result-row${player.id === this.network.playerId ? " is-you" : ""}${player.id === snapshot.matchMvpId ? " is-mvp" : ""}">
@@ -1348,7 +1351,7 @@ function mobileTemplate(): string {
           <div id="layout-editor" class="layout-editor is-hidden"><strong>拖动两个技能按钮调整位置</strong><span>移动与攻击摇杆仍可在左右半屏任意位置呼出</span><button id="layout-reset" type="button">恢复默认</button><button id="layout-save" type="button">保存布局</button></div>
         </div>
         <div id="results-overlay" class="results-overlay is-hidden">
-           <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-mvp" class="result-mvp"></div><div id="result-list" class="result-list"></div><p id="return-countdown"></p><button id="return-lobby" class="primary-button" type="button">回到大厅并重新选角</button></div>
+           <div class="results-panel"><span class="eyebrow">MATCH COMPLETE</span><h2 id="result-title">本局结束</h2><div id="result-mvp" class="result-mvp"></div><div id="result-highlights"></div><div id="result-list" class="result-list"></div><p id="return-countdown"></p><button id="return-lobby" class="primary-button" type="button">回到大厅并重新选角</button></div>
         </div>
       </section>
       <dialog id="controls-dialog" class="controls-dialog">

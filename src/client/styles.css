@@ -1488,6 +1488,62 @@ button:disabled {
 .result-mvp > strong { color: #fff0a8; font-size: 20px; }
 .result-mvp > small { color: #8d9ba1; font-size: 9px; }
 
+.match-highlights {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.match-highlight-card {
+  min-width: 0;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-left: 3px solid #65d5ff;
+  border-radius: 4px;
+  padding: 6px 8px 6px 6px;
+  background: rgb(18 30 37 / 88%);
+}
+
+.match-highlight-card[data-highlight-kind="five-kill-streak"] { border-left-color: #ff665f; }
+.match-highlight-card[data-highlight-kind="capture-comeback"] { border-left-color: #f2c14e; }
+.match-highlight-card[data-highlight-kind="critical-healing"] { border-left-color: #6ce2a3; }
+.match-highlight-card[data-highlight-kind="hazard-escape"] { border-left-color: #65d5ff; }
+
+.match-highlight-portrait {
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border: 1px solid rgb(151 220 236 / 30%);
+  border-radius: 3px;
+  background: #101a20;
+}
+
+.match-highlight-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+.match-highlight-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: #d7f7ff;
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.match-highlight-card > div:last-child { min-width: 0; display: grid; gap: 2px; }
+.match-highlight-card span { color: #7eabb7; font-size: 8px; font-weight: 950; }
+.match-highlight-card b { overflow: hidden; color: #edfaff; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.match-highlight-card small { color: #aab9be; font-size: 9px; line-height: 1.25; }
+
 .result-table-head,
 .result-row {
   min-width: 940px;
@@ -2352,6 +2408,19 @@ button:disabled {
   .results-panel h2 { margin-bottom: 7px; font-size: 18px; }
   .result-mvp { min-height: 38px; margin-bottom: 7px; padding: 5px 8px; }
   .result-mvp > strong { font-size: 16px; }
+  .match-highlights {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(176px, 42vw);
+    gap: 6px;
+    margin-bottom: 7px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+  .match-highlight-card { min-height: 48px; grid-template-columns: 36px minmax(0, 1fr); padding: 4px 6px 4px 4px; }
+  .match-highlight-portrait { width: 36px; height: 36px; }
+  .match-highlight-card small { font-size: 8px; }
   .result-table-head,
   .result-row { min-width: 850px; grid-template-columns: 24px minmax(105px, 1.3fr) 64px repeat(4, 58px) minmax(150px, 1.35fr) 42px; gap: 5px; }
   .result-row { min-height: 30px; font-size: 9px; }
