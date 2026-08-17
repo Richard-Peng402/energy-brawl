@@ -9,12 +9,13 @@ import type { MatchMode } from "../src/shared/mode-catalog";
 import { GameRoom } from "../src/server/room";
 
 export type V4LoadMode = MatchMode;
-export interface V4LoadOptions { mapMechanicsEnabled?: boolean; }
+export interface V4LoadOptions { mapMechanicsEnabled?: boolean; mapEventsEnabled?: boolean; }
 export interface V4LoadReport {
   clients: number;
   mode: V4LoadMode;
   mapId: MapId;
   mapMechanicsEnabled: boolean;
+  mapEventsEnabled: boolean;
   simulatedSeconds: number;
   ticks: number;
   exclusiveSkillRequests: number;
@@ -28,6 +29,9 @@ export interface V4LoadReport {
   expiredMapStates: number;
   postFinishApplications: number;
   snapshotBytesP95: number;
+  eventCount: number;
+  expiredStateResidue: number;
+  peakProjectiles: number;
   finished: boolean;
 }
 
@@ -39,9 +43,11 @@ export function runV4LoadSimulation(
 ): V4LoadReport {
   const room = new GameRoom();
   const mapMechanicsEnabled = options.mapMechanicsEnabled ?? true;
+  const mapEventsEnabled = options.mapEventsEnabled ?? true;
   room.setMatchMode(mode);
   room.setMapSelection(mapId);
   room.setMapMechanicsEnabled(mapMechanicsEnabled);
+  room.setMapEventsEnabled(mapEventsEnabled);
   const map = getMapDefinition(mapId);
   const walls = map.walls;
   const sockets = CHARACTER_CATALOG.map((character, index) => `load-${index + 1}`);
@@ -61,6 +67,9 @@ export function runV4LoadSimulation(
   let postFinishApplications = 0;
   let finished = false;
   let lastMechanicRevision = "";
+  let lastEventRevision = "";
+  let eventCount = 0;
+  let peakProjectiles = 0;
   const snapshotBytes: number[] = [];
   const illegalZoneOverlaps = countIllegalZoneOverlaps(mapId);
   const ticks = Math.ceil(simulatedSeconds * 1_000 / SERVER_TICK_MS);
@@ -78,6 +87,7 @@ export function runV4LoadSimulation(
     const snapshot = room.gameSnapshot();
     if (!snapshot) continue;
     snapshotBytes.push(Buffer.byteLength(JSON.stringify(snapshot), "utf8"));
+    peakProjectiles = Math.max(peakProjectiles, snapshot.projectiles.length);
     capturePointObserved ||= snapshot.capturePoint !== null && snapshot.capturePoint !== undefined;
     finished ||= snapshot.phase === "finished";
     const mechanic = snapshot.mapMechanic;
@@ -86,6 +96,12 @@ export function runV4LoadSimulation(
       if (mechanic?.phase === "warning") mechanicWarnings += 1;
       if (mechanic?.phase === "active") mechanicActivations += 1;
       lastMechanicRevision = mechanicRevision;
+    }
+    const mapEvent = snapshot.mapEvent;
+    const eventRevision = mapEvent ? `${mapEvent.eventSeq}:${mapEvent.phase}:${mapEvent.kind}` : "";
+    if (eventRevision && eventRevision !== lastEventRevision) {
+      if (mapEvent?.phase === "warning") eventCount += 1;
+      lastEventRevision = eventRevision;
     }
     for (const player of snapshot.players) {
       if (player.alive && walls.some((wall) => circleHitsRect(player, PLAYER_RADIUS, wall))) wallViolations += 1;
@@ -111,6 +127,7 @@ export function runV4LoadSimulation(
     mode,
     mapId,
     mapMechanicsEnabled,
+    mapEventsEnabled,
     simulatedSeconds,
     ticks,
     exclusiveSkillRequests,
@@ -124,6 +141,9 @@ export function runV4LoadSimulation(
     expiredMapStates,
     postFinishApplications,
     snapshotBytesP95: percentile95(snapshotBytes),
+    eventCount,
+    expiredStateResidue: staleCombatStates + expiredMapStates + postFinishApplications,
+    peakProjectiles,
     finished,
   };
 }
@@ -143,6 +163,9 @@ export function validateV4LoadReport(report: V4LoadReport): string[] {
   if (report.mapMechanicsEnabled && report.simulatedSeconds >= 60 && report.mechanicWarnings < 2) errors.push("fewer than two mechanic warnings observed");
   if (report.mapMechanicsEnabled && report.simulatedSeconds >= 60 && report.mechanicActivations < 2) errors.push("fewer than two mechanic activations observed");
   if (!report.mapMechanicsEnabled && (report.mechanicWarnings !== 0 || report.mechanicActivations !== 0)) errors.push("disabled mechanics produced events");
+  if (report.mapEventsEnabled && report.simulatedSeconds >= 50 && report.eventCount < 1) errors.push("no temporary map event observed");
+  if (!report.mapEventsEnabled && report.eventCount !== 0) errors.push("disabled temporary events produced rounds");
+  if (report.expiredStateResidue !== 0) errors.push(`expired state residue: ${report.expiredStateResidue}`);
   if (report.snapshotBytesP95 <= 0 || report.snapshotBytesP95 > 256 * 1_024) errors.push(`snapshot p95 out of bounds: ${report.snapshotBytesP95}`);
   if (report.stepP95Ms > SERVER_TICK_MS) errors.push(`server step p95 too high: ${report.stepP95Ms.toFixed(2)}ms`);
   return errors;
@@ -177,10 +200,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const seconds = Number(process.env.V4_LOAD_SECONDS ?? 60);
   const reports = (["reactor-core", "neon-docks", "crystal-ruins"] as const).flatMap((mapId) =>
     (["solo", "team3v3", "team2v2v2", "domination3v3", "domination2v2v2"] as const).flatMap((mode) =>
-      [true, false].map((mapMechanicsEnabled) => runV4LoadSimulation(seconds, mode, mapId, { mapMechanicsEnabled })),
+      [true, false].map((mapEventsEnabled) => runV4LoadSimulation(seconds, mode, mapId, { mapMechanicsEnabled: true, mapEventsEnabled })),
     ),
   );
-  const errors = reports.flatMap((report) => validateV4LoadReport(report).map((error) => `${report.mapId}/${report.mode}/${report.mapMechanicsEnabled}: ${error}`));
+  const errors = reports.flatMap((report) => validateV4LoadReport(report).map((error) => `${report.mapId}/${report.mode}/events=${report.mapEventsEnabled}: ${error}`));
   console.log(JSON.stringify(reports, null, 2));
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
 }
