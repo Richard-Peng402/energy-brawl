@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest";
+
+import { CHARACTER_CATALOG } from "../src/shared/character-catalog";
+import {
+  TACTICAL_MODULES,
+  defaultTacticalModuleForCharacter,
+  getTacticalModule,
+  isTacticalModuleId,
+} from "../src/shared/tactical-module-catalog";
+
+describe("tactical module catalog", () => {
+  it("defines four modules with a benefit, tradeoff, and counterplay", () => {
+    expect(TACTICAL_MODULES).toHaveLength(4);
+    expect(new Set(TACTICAL_MODULES.map((module) => module.id)).size).toBe(4);
+
+    for (const module of TACTICAL_MODULES) {
+      expect(module.name.length).toBeGreaterThan(1);
+      expect(module.summary.length).toBeGreaterThan(4);
+      expect(module.benefit.length).toBeGreaterThan(4);
+      expect(module.tradeoff.length).toBeGreaterThan(4);
+      expect(module.counterplay.length).toBeGreaterThan(4);
+      expect(isTacticalModuleId(module.id)).toBe(true);
+      expect(getTacticalModule(module.id)).toBe(module);
+    }
+  });
+
+  it("assigns a valid deterministic default to every character", () => {
+    for (const character of CHARACTER_CATALOG) {
+      const first = defaultTacticalModuleForCharacter(character.id);
+      expect(isTacticalModuleId(first)).toBe(true);
+      expect(defaultTacticalModuleForCharacter(character.id)).toBe(first);
+    }
+  });
+
+  it("rejects unknown module identifiers", () => {
+    expect(isTacticalModuleId("damage-boost")).toBe(false);
+    expect(isTacticalModuleId(null)).toBe(false);
+  });
+});

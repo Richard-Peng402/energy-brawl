@@ -6,6 +6,7 @@ import type { CapturePointStateName } from "./capture-point";
 import type { NetworkSnapshot } from "./network";
 import type { MapId, MapSelection } from "./map-catalog";
 import type { MapMechanicKind, MapMechanicPhase, MapMechanicZone } from "./map-mechanics";
+import type { TacticalModuleId } from "./tactical-module-catalog";
 import type {
   ClientDiagnosticSample,
   DeviceDiagnosticProfile,
@@ -71,6 +72,7 @@ export interface PlayerSnapshot extends Vec2 {
   id: string;
   nickname: string;
   characterId: CharacterId;
+  tacticalModuleId?: TacticalModuleId;
   color: string;
   isBot: boolean;
   connected: boolean;
@@ -161,7 +163,7 @@ export interface RoomSnapshot {
   mapMechanicsEnabled?: boolean;
   teamScores?: TeamScoreSnapshot[];
   players: Array<
-    Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "color" | "isBot" | "connected" | "ready"> & AdminStats & { teamId?: TeamId | null }
+    Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "tacticalModuleId" | "color" | "isBot" | "connected" | "ready"> & AdminStats & { teamId?: TeamId | null }
   >;
 }
 
@@ -245,6 +247,7 @@ export interface KillFeedEvent {
 export interface JoinPayload {
   nickname: string;
   characterId: CharacterId;
+  tacticalModuleId?: TacticalModuleId;
 }
 
 export interface ReconnectPayload {
@@ -277,6 +280,7 @@ export type HostAdminCommand =
 export interface ClientToServerEvents {
   join: (payload: JoinPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
   changeCharacter: (characterId: CharacterId, acknowledge: (result: Ack) => void) => void;
+  changeTacticalModule: (tacticalModuleId: TacticalModuleId, acknowledge: (result: Ack) => void) => void;
   reconnectPlayer: (payload: ReconnectPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
   setReady: (ready: boolean, acknowledge: (result: Ack) => void) => void;
   returnToLobby: (acknowledge: (result: Ack) => void) => void;
