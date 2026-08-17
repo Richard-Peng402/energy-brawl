@@ -474,6 +474,7 @@ function isHostAdminCommand(command: unknown): command is HostAdminCommand {
   if (candidate.type === "setMode") return isMatchMode(candidate.mode);
   if (candidate.type === "setMap") return candidate.mapSelection === "random" || MAP_CATALOG.some((map) => map.id === candidate.mapSelection);
   if (candidate.type === "setMapMechanics") return typeof candidate.enabled === "boolean";
+  if (candidate.type === "setMapEvents") return typeof candidate.enabled === "boolean";
   if (candidate.type === "swapTeams") return typeof candidate.firstPlayerId === "string" && typeof candidate.secondPlayerId === "string";
   if (candidate.type === "forceTeamWinner") return TEAM_IDS.includes(candidate.teamId as never);
   if (typeof candidate.playerId !== "string") return false;

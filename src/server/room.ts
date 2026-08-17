@@ -76,6 +76,7 @@ export class GameRoom {
   private mapSelection: MapSelection = "reactor-core";
   private activeMapId: MapId | null = null;
   private mapMechanicsEnabled = true;
+  private mapEventsEnabled = true;
 
   setMapSelection(selection: MapSelection): Ack {
     if (this.world) return { ok: false, error: "对局开始后无法切换地图" };
@@ -89,6 +90,13 @@ export class GameRoom {
     if (this.world) return { ok: false, error: "只能在大厅修改动态地图机制" };
     if (typeof enabled !== "boolean") return { ok: false, error: "动态地图机制开关无效" };
     this.mapMechanicsEnabled = enabled;
+    return { ok: true };
+  }
+
+  setMapEventsEnabled(enabled: boolean): Ack {
+    if (this.world) return { ok: false, error: "只能在大厅修改临时地图事件" };
+    if (typeof enabled !== "boolean") return { ok: false, error: "临时地图事件开关无效" };
+    this.mapEventsEnabled = enabled;
     return { ok: true };
   }
 
@@ -131,6 +139,7 @@ export class GameRoom {
     if (command.type === "setMode") return this.setMatchMode(command.mode);
     if (command.type === "setMap") return this.setMapSelection(command.mapSelection);
     if (command.type === "setMapMechanics") return this.setMapMechanicsEnabled(command.enabled);
+    if (command.type === "setMapEvents") return this.setMapEventsEnabled(command.enabled);
     if (command.type === "swapTeams") return this.swapPlayerTeams(command.firstPlayerId, command.secondPlayerId);
     if (command.type === "forceTeamWinner") {
       if (this.matchMode === "solo") return { ok: false, error: "个人战没有团队胜者" };
@@ -295,6 +304,7 @@ export class GameRoom {
     this.activeMapId = map.id;
     this.world = createGameWorld([...this.seats.values()], this.clockMs, this.matchMode, map.id, {
       mapMechanicsEnabled: this.mapMechanicsEnabled,
+      mapEventsEnabled: this.mapEventsEnabled,
     });
     this.autoResetAt = null;
     this.pendingInputs.clear();
@@ -490,6 +500,7 @@ export class GameRoom {
       mapSelection: this.mapSelection,
       activeMapId: this.activeMapId,
       mapMechanicsEnabled: this.mapMechanicsEnabled,
+      mapEventsEnabled: this.mapEventsEnabled,
       teamScores: this.world
         ? isCaptureMode(this.matchMode)
           ? worldToSnapshot(this.world).captureScores

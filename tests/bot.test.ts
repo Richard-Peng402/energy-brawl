@@ -229,4 +229,69 @@ describe("bot decisions", () => {
 
     expect(chooseBotDecision(contested, contestedBot.id, () => 0.5).input.moveX).toBeGreaterThan(0.7);
   });
+
+  it("leaves an active lockdown zone before pursuing combat", () => {
+    const world = createGameWorld([
+      { id: "bot", nickname: "bot", characterId: "medic", isBot: true },
+    ], 0, "solo", "reactor-core", { mapEventsEnabled: true });
+    const state = world.mapEventState!;
+    state.kind = "area-lockdown";
+    state.phase = "active";
+    state.zone = { kind: "rect", x: 1_000, y: 600, width: 600, height: 200 };
+    state.point = null;
+    const bot = world.players.get("bot")!;
+    bot.x = 1_020;
+    bot.y = 700;
+    const decision = chooseBotDecision(world, bot.id, () => 0.5);
+    expect(decision.input.moveX).toBeLessThan(0);
+  });
+
+  it("routes toward an active storm safe zone when outside it", () => {
+    const world = createGameWorld([
+      { id: "bot", nickname: "bot", characterId: "medic", isBot: true },
+    ], 0, "solo", "reactor-core", { mapEventsEnabled: true });
+    const state = world.mapEventState!;
+    state.kind = "energy-storm";
+    state.phase = "active";
+    state.zone = { kind: "circle", x: 700, y: 810, radius: 220 };
+    state.point = null;
+    const bot = world.players.get("bot")!;
+    bot.x = 1_400;
+    bot.y = 810;
+    const decision = chooseBotDecision(world, bot.id, () => 0.5);
+    expect(decision.input.moveX).toBeLessThan(-0.5);
+  });
+
+  it("contests a safe supply drop when no better combat objective exists", () => {
+    const world = createGameWorld([
+      { id: "bot", nickname: "bot", characterId: "medic", isBot: true },
+    ], 0, "solo", "reactor-core", { mapEventsEnabled: true });
+    const state = world.mapEventState!;
+    state.kind = "supply-drop";
+    state.phase = "active";
+    state.zone = null;
+    state.point = { x: 1_500, y: 810 };
+    const bot = world.players.get("bot")!;
+    bot.x = 1_200;
+    bot.y = 810;
+    const decision = chooseBotDecision(world, bot.id, () => 0.5);
+    expect(decision.input.moveX).toBeGreaterThan(0.5);
+  });
+
+  it("pauses briefly during a scan after making recent activity", () => {
+    const world = createGameWorld([
+      { id: "bot", nickname: "bot", characterId: "medic", isBot: true },
+    ], 0, "solo", "reactor-core", { mapEventsEnabled: true });
+    const state = world.mapEventState!;
+    state.kind = "global-scan";
+    state.phase = "active";
+    state.zone = null;
+    state.point = null;
+    const bot = world.players.get("bot")!;
+    bot.lastMapEventActivityAt = world.now - 100;
+    const decision = chooseBotDecision(world, bot.id, () => 0.5);
+    expect(decision.input.moveX).toBe(0);
+    expect(decision.input.moveY).toBe(0);
+    expect(decision.input.firing).toBe(false);
+  });
 });

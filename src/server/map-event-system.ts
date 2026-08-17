@@ -35,6 +35,7 @@ export interface MapEventState {
   claimedPlayerIds: Set<string>;
   revealedPlayerIds: Set<string>;
   graceUntilByPlayer: Map<string, number>;
+  damageAtByPlayer: Map<string, number>;
 }
 
 export function createMapEventState(mapId: MapId, now: number, enabled: boolean, seed: number): MapEventState | null {
@@ -57,6 +58,7 @@ export function createMapEventState(mapId: MapId, now: number, enabled: boolean,
     claimedPlayerIds: new Set(),
     revealedPlayerIds: new Set(),
     graceUntilByPlayer: new Map(),
+    damageAtByPlayer: new Map(),
   };
 }
 
@@ -153,6 +155,7 @@ function clearRoundState(state: MapEventState): void {
   state.claimedPlayerIds.clear();
   state.revealedPlayerIds.clear();
   state.graceUntilByPlayer.clear();
+  state.damageAtByPlayer.clear();
 }
 
 function selectGeometry(mapId: MapId, kind: MapEventKind, round: number): { zone: MapEventZone | null; point: Vec2 | null } {

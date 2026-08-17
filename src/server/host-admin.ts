@@ -77,6 +77,10 @@ export class HostAdminService {
       if (phase !== "lobby") return "只能在大厅修改动态地图机制";
       return typeof request.command.enabled === "boolean" ? null : "动态地图机制开关无效";
     }
+    if (request.command.type === "setMapEvents") {
+      if (phase !== "lobby") return "只能在大厅修改临时地图事件";
+      return typeof request.command.enabled === "boolean" ? null : "临时地图事件开关无效";
+    }
     if (request.command.type === "swapTeams") {
       if (phase !== "lobby") return "只能在大厅调整队伍";
       if (typeof request.command.firstPlayerId !== "string" || typeof request.command.secondPlayerId !== "string" || request.command.firstPlayerId === request.command.secondPlayerId) return "队伍交换目标无效";

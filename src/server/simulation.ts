@@ -77,6 +77,12 @@ import {
 } from "./map-mechanic-system";
 import { appendPresentationEvent } from "./presentation-events";
 import { neutralTacticalRuntimeModifiers, tacticalRuntimeModifiers } from "./tactical-modules";
+import {
+  advanceMapEventState,
+  createMapEventState,
+  mapEventSnapshot,
+  type MapEventState,
+} from "./map-event-system";
 
 const EXCLUSIVE_SKILL_EVENT_CAPACITY = 24;
 const PROJECTILE_IMPACT_EVENT_CAPACITY = 32;
@@ -113,6 +119,8 @@ export interface WorldPlayer extends PlayerSnapshot {
   receivedHealingMultiplier: number;
   regenDelayAddMs: number;
   exclusivePotencyMultiplier: number;
+  lastMapEventActivityAt: number;
+  mapEventMoveMultiplier: number;
 }
 
 export interface WorldProjectile extends ProjectileSnapshot {
@@ -158,10 +166,14 @@ export interface GameWorld {
   mapEnergySpawnPoints: readonly Vec2[];
   mapMechanicsEnabled: boolean;
   mapMechanicState: MapMechanicState | null;
+  mapEventsEnabled: boolean;
+  mapEventState: MapEventState | null;
 }
 
 export interface CreateGameWorldOptions {
   mapMechanicsEnabled?: boolean;
+  mapEventsEnabled?: boolean;
+  mapEventSeed?: number;
 }
 
 const EMPTY_INPUT: PlayerInput = {
@@ -266,6 +278,8 @@ export function createGameWorld(
       receivedHealingMultiplier: tactical.receivedHealingMultiplier,
       regenDelayAddMs: tactical.regenDelayAddMs,
       exclusivePotencyMultiplier: tactical.exclusivePotencyMultiplier,
+      lastMapEventActivityAt: Number.NEGATIVE_INFINITY,
+      mapEventMoveMultiplier: 1,
     });
   });
 
@@ -309,6 +323,8 @@ export function createGameWorld(
     mapEnergySpawnPoints: map.energySpawnPoints,
     mapMechanicsEnabled,
     mapMechanicState: createMapMechanicState(mapId, now, mapMechanicsEnabled),
+    mapEventsEnabled: options.mapEventsEnabled ?? false,
+    mapEventState: createMapEventState(mapId, now, options.mapEventsEnabled ?? false, options.mapEventSeed ?? 0),
   };
 
   while (world.energy.size < MAX_ENERGY && spawnEnergy(world)) {
@@ -333,6 +349,9 @@ export function applyPlayerInput(world: GameWorld, playerId: string, input: Play
     firing: input.firing === true,
   };
   player.lastProcessedInput = player.input.seq;
+  if (Math.hypot(player.input.moveX, player.input.moveY) > 0.08 || player.input.firing) {
+    player.lastMapEventActivityAt = world.now;
+  }
   return true;
 }
 
@@ -358,6 +377,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
   advanceHold(world, simulationDelta);
   if (isFinished(world)) return;
   advanceCrystalHealing(world, previousNow, world.now);
+  advanceWorldMapEvent(world, previousNow, world.now);
 
   for (const player of world.players.values()) {
     expireStatusEffects(player.statusEffects, world.now);
@@ -640,7 +660,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     finishedAt: world.finishedAt,
     matchMvpId: world.matchMvpId,
     matchMvpScore: world.matchMvpScore,
-    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, mapHealingAccumulatorMs: _mapHealingAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, statusEffects, projectileMaxDistance: _projectileMaxDistance, projectileRadius: _projectileRadius, shieldStrengthMultiplier: _shieldStrengthMultiplier, shieldMoveMultiplier: _shieldMoveMultiplier, selfHealingMultiplier: _selfHealingMultiplier, activeHealingMultiplier: _activeHealingMultiplier, receivedHealingMultiplier: _receivedHealingMultiplier, regenDelayAddMs: _regenDelayAddMs, exclusivePotencyMultiplier: _exclusivePotencyMultiplier, ...player }) => ({ ...player, combatStates: [...statusEffects.values()].map(({ id, startedAt, expiresAt }) => ({ id, startedAt, expiresAt })) })),
+    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, mapHealingAccumulatorMs: _mapHealingAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, statusEffects, projectileMaxDistance: _projectileMaxDistance, projectileRadius: _projectileRadius, shieldStrengthMultiplier: _shieldStrengthMultiplier, shieldMoveMultiplier: _shieldMoveMultiplier, selfHealingMultiplier: _selfHealingMultiplier, activeHealingMultiplier: _activeHealingMultiplier, receivedHealingMultiplier: _receivedHealingMultiplier, regenDelayAddMs: _regenDelayAddMs, exclusivePotencyMultiplier: _exclusivePotencyMultiplier, lastMapEventActivityAt: _lastMapEventActivityAt, mapEventMoveMultiplier: _mapEventMoveMultiplier, ...player }) => ({ ...player, combatStates: [...statusEffects.values()].map(({ id, startedAt, expiresAt }) => ({ id, startedAt, expiresAt })) })),
     projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, maxDistance: _maxDistance, radius: _radius, ...projectile }) => projectile),
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
@@ -679,6 +699,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     } : null,
     mapId: world.mapId,
     mapMechanic: world.mapMechanicState ? mapMechanicSnapshot(world.mapMechanicState) : null,
+    mapEvent: world.mapEventState ? mapEventSnapshot(world.mapEventState) : null,
   };
 }
 
@@ -702,6 +723,103 @@ function advanceWorldMapMechanic(world: GameWorld, startedAt: number, endedAt: n
     if (segmentEnd === cursor && state.phaseEndsAt <= cursor) break;
     cursor = segmentEnd;
   }
+}
+
+function advanceWorldMapEvent(world: GameWorld, startedAt: number, endedAt: number): void {
+  for (const player of world.players.values()) player.mapEventMoveMultiplier = 1;
+  const state = world.mapEventState;
+  if (!state) return;
+  const mechanicBusy = world.mapMechanicState?.phase === "warning" || world.mapMechanicState?.phase === "active";
+  advanceMapEventState(state, endedAt, {
+    mapMechanicBusy: mechanicBusy,
+    allowNewEvent: world.phase === "playing",
+  });
+  if (state.phase !== "active") return;
+
+  if (state.kind === "supply-drop") {
+    updateSupplyDrop(world, state, startedAt, endedAt);
+  } else if (state.kind === "area-lockdown") {
+    updateAreaLockdown(world, state, endedAt);
+  } else if (state.kind === "global-scan") {
+    state.revealedPlayerIds.clear();
+    for (const player of world.players.values()) {
+      if (player.alive && endedAt - player.lastMapEventActivityAt <= 700) state.revealedPlayerIds.add(player.id);
+    }
+  } else {
+    updateEnergyStorm(world, state, endedAt);
+  }
+}
+
+function updateSupplyDrop(world: GameWorld, state: MapEventState, startedAt: number, endedAt: number): void {
+  const point = state.point;
+  if (!point) return;
+  const candidates = [...world.players.values()]
+    .filter((player) => player.alive && distanceSquared(player, point) <= 60 ** 2)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const insideIds = new Set(candidates.map((player) => player.id));
+  for (const playerId of [...state.participantStartedAt.keys()]) {
+    const player = world.players.get(playerId);
+    const capturedAt = state.participantStartedAt.get(playerId)!;
+    if (!insideIds.has(playerId) || !player?.alive || player.lastCombatAt > capturedAt) state.participantStartedAt.delete(playerId);
+  }
+  for (const player of candidates) {
+    if (!state.participantStartedAt.has(player.id)) state.participantStartedAt.set(player.id, startedAt);
+  }
+  const claimant = candidates.find((player) => endedAt - (state.participantStartedAt.get(player.id) ?? endedAt) >= 1_000);
+  if (!claimant) return;
+  claimant.health = Math.min(claimant.maxHealth, claimant.health + 25);
+  if (claimant.skillSlot.charges === 0) {
+    const skills = ["dash", "shield", "spread", "heal"] as const;
+    claimant.skillSlot = { type: skills[state.round % skills.length]!, charges: 1 };
+  }
+  state.claimedPlayerIds.add(claimant.id);
+  state.phaseEndsAt = endedAt;
+  advanceMapEventState(state, endedAt, { mapMechanicBusy: false, allowNewEvent: world.phase === "playing" });
+}
+
+function updateAreaLockdown(world: GameWorld, state: MapEventState, endedAt: number): void {
+  const zone = state.zone;
+  if (!zone) return;
+  for (const player of world.players.values()) {
+    if (!player.alive || !zoneContainsPoint(zone, player)) continue;
+    const graceUntil = state.graceUntilByPlayer.get(player.id) ?? state.phaseStartedAt + 2_000;
+    state.graceUntilByPlayer.set(player.id, graceUntil);
+    if (endedAt < graceUntil) continue;
+    player.mapEventMoveMultiplier = Math.min(player.mapEventMoveMultiplier, 0.9);
+    applyMapEventDamageTicks(world, state, player, graceUntil, endedAt, 5);
+  }
+}
+
+function updateEnergyStorm(world: GameWorld, state: MapEventState, endedAt: number): void {
+  const safeZone = state.zone;
+  if (!safeZone) return;
+  for (const player of world.players.values()) {
+    if (!player.alive || zoneContainsPoint(safeZone, player)) continue;
+    player.mapEventMoveMultiplier = Math.min(player.mapEventMoveMultiplier, 0.9);
+    applyMapEventDamageTicks(world, state, player, state.phaseStartedAt, endedAt, 4);
+  }
+}
+
+function applyMapEventDamageTicks(
+  world: GameWorld,
+  state: MapEventState,
+  player: WorldPlayer,
+  firstTickBase: number,
+  endedAt: number,
+  damage: number,
+): void {
+  let tickAt = state.damageAtByPlayer.get(player.id) ?? firstTickBase;
+  while (tickAt + 1_000 <= endedAt) {
+    tickAt += 1_000;
+    const previous = player.health;
+    player.health = Math.max(1, player.health - damage);
+    if (player.health < previous) {
+      player.lastCombatAt = tickAt;
+      player.regenAccumulatorMs = 0;
+      player.damageTaken = (player.damageTaken ?? 0) + previous - player.health;
+    }
+  }
+  state.damageAtByPlayer.set(player.id, tickAt);
 }
 
 function trackReactorEscapes(world: GameWorld, state: MapMechanicState, now: number): void {
@@ -899,6 +1017,7 @@ function effectiveMoveMultiplier(world: GameWorld, player: WorldPlayer): number 
     multiplier *= MAP_MECHANICS["neon-docks"].effect.moveMultiplier;
   }
   if (player.skillShieldUntil > world.now && player.skillShieldHealth > 0) multiplier *= player.shieldMoveMultiplier;
+  multiplier *= player.mapEventMoveMultiplier;
   return multiplier;
 }
 
@@ -1388,6 +1507,7 @@ export function finishWorldMatch(world: GameWorld, winnerIds: string[]): void {
   world.matchMvpScore = mvp.score;
   world.projectiles.clear();
   world.mapMechanicState = null;
+  world.mapEventState = null;
   for (const player of world.players.values()) {
     const endedExclusiveSkill = clearExclusiveSkillState(player);
     if (endedExclusiveSkill) recordExclusiveSkillEnd(world, player, endedExclusiveSkill, "reset");

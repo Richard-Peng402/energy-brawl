@@ -162,6 +162,7 @@ export interface RoomSnapshot {
   mapSelection?: MapSelection;
   activeMapId?: MapId | null;
   mapMechanicsEnabled?: boolean;
+  mapEventsEnabled?: boolean;
   teamScores?: TeamScoreSnapshot[];
   players: Array<
     Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "tacticalModuleId" | "color" | "isBot" | "connected" | "ready"> & AdminStats & { teamId?: TeamId | null }
@@ -276,6 +277,7 @@ export type HostAdminCommand =
   | { type: "setMode"; mode: MatchMode }
   | { type: "setMap"; mapSelection: MapSelection }
   | { type: "setMapMechanics"; enabled: boolean }
+  | { type: "setMapEvents"; enabled: boolean }
   | { type: "swapTeams"; firstPlayerId: string; secondPlayerId: string }
   | { type: "forceTeamWinner"; teamId: TeamId };
 

@@ -13,6 +13,7 @@ const SKILL_USE_CHANCE = 0.45;
 const MAP_ZONE_HYSTERESIS = 48;
 const CRYSTAL_SEEK_HEALTH_RATIO = 0.65;
 const NEON_ROUTE_DETOUR_RATIO = 1.12;
+const MAP_EVENT_SCAN_PAUSE_MS = 700;
 
 export interface BotDecision {
   input: PlayerInput;
@@ -34,12 +35,18 @@ export function chooseBotDecision(
   const captureTarget = capturePoint ? world.capturePointConfig.center : null;
   const enemyDistance = enemy ? distanceSquared(player, enemy) : Number.POSITIVE_INFINITY;
   const energyDistance = energy ? distanceSquared(player, energy) : Number.POSITIVE_INFINITY;
+  const eventResponse = activeMapEventResponse(world, player);
+  const scanPause = shouldPauseForScan(world, player);
   const reactorEscape = activeDangerEscapeVector(world, player);
   const mapOpportunity = bestMapOpportunity(world, player, captureTarget ?? skillOrb ?? energy ?? enemy ?? null);
 
   let movement: Vec2 = { x: 0, y: 0 };
-  if (reactorEscape) {
+  if (eventResponse) {
+    movement = eventResponse;
+  } else if (reactorEscape) {
     movement = reactorEscape;
+  } else if (scanPause) {
+    movement = { x: 0, y: 0 };
   } else if (enemy && player.health <= RETREAT_HEALTH && enemyDistance <= RETREAT_DISTANCE_SQUARED) {
     movement = normalize({ x: player.x - enemy.x, y: player.y - enemy.y });
   } else if (mapOpportunity) {
@@ -79,9 +86,39 @@ export function chooseBotDecision(
       moveY: movement.y * MOVE_INPUT_SCALE,
       aimX: aim.x,
       aimY: aim.y,
-      firing: Boolean(enemy && enemyDistance <= FIRE_DISTANCE_SQUARED),
+      firing: Boolean(!scanPause && enemy && enemyDistance <= FIRE_DISTANCE_SQUARED),
     },
   };
+}
+
+function activeMapEventResponse(world: GameWorld, player: WorldPlayer): Vec2 | null {
+  const state = world.mapEventState;
+  if (!state || (state.phase !== "warning" && state.phase !== "active")) return null;
+
+  if (state.kind === "area-lockdown" && state.zone && zoneContainsPoint(state.zone, player, MAP_ZONE_HYSTERESIS)) {
+    return outwardVector(state.zone, player);
+  }
+
+  if (state.kind === "energy-storm" && state.zone && !zoneContainsPoint(state.zone, player)) {
+    const center = zoneCenter(state.zone);
+    return normalize({ x: center.x - player.x, y: center.y - player.y });
+  }
+
+  if (state.kind === "supply-drop" && state.point) {
+    const storm = state.zone && !zoneContainsPoint(state.zone, player);
+    if (!storm) return normalize({ x: state.point.x - player.x, y: state.point.y - player.y });
+  }
+
+  return null;
+}
+
+function shouldPauseForScan(world: GameWorld, player: WorldPlayer): boolean {
+  const state = world.mapEventState;
+  return Boolean(
+    state?.kind === "global-scan" &&
+    state.phase === "active" &&
+    world.now - player.lastMapEventActivityAt < MAP_EVENT_SCAN_PAUSE_MS,
+  );
 }
 
 export function selectCombatTarget(world: GameWorld, player: WorldPlayer): WorldPlayer | undefined {
