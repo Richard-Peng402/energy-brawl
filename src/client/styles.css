@@ -510,6 +510,26 @@ input:focus-visible {
   font-size: 9px;
 }
 
+.tactical-module-section { min-width: 0; }
+.tactical-module-heading { display: flex; align-items: baseline; justify-content: space-between; margin: 5px 0; }
+.tactical-module-heading b { color: #eef8f7; font-size: 10px; }
+.tactical-module-heading span { color: #789097; font-size: 8px; }
+.tactical-module-list { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(168px, 1fr); gap: 6px; overflow-x: auto; padding: 1px 1px 5px; scrollbar-width: thin; scroll-snap-type: x proximity; }
+.tactical-module-option { min-height: 104px; padding: 7px 8px; border: 1px solid #32464d; border-radius: 4px; background: #10191d; color: #c8d6d9; text-align: left; scroll-snap-align: start; }
+.tactical-module-option strong { display: block; color: #f3fbfa; font-size: 10px; }
+.tactical-module-option > span { display: block; margin: 2px 0 4px; color: #8fa5aa; font-size: 8px; }
+.tactical-module-option small { display: block; font-size: 8px; line-height: 1.35; white-space: normal; }
+.tactical-module-option small b { display: inline-block; min-width: 24px; margin-right: 3px; color: #79dcca; }
+.tactical-module-option small:nth-of-type(2) b { color: #efb36d; }
+.tactical-module-option small:nth-of-type(3) b { color: #8ebeff; }
+.tactical-module-option.is-selected { border-color: #59d7c6; box-shadow: inset 0 0 0 1px #59d7c666; background: #132426; }
+.tactical-module-option:disabled { opacity: .66; }
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .tactical-module-list { grid-auto-columns: minmax(156px, 72%); }
+  .tactical-module-option { min-height: 96px; }
+}
+
 .primary-button,
 .ready-button,
 .icon-command {

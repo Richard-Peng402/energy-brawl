@@ -3,6 +3,11 @@ import { LOBBY_RETURN_DELAY_MS, TARGET_SCORE } from "../shared/constants";
 import { SKILL_CATALOG, type SkillType } from "../shared/skill-catalog";
 import { getExclusiveSkill, getExclusiveSkillCounterSummary } from "../shared/exclusive-skill-catalog";
 import { getMapDefinition, type MapId } from "../shared/map-catalog";
+import {
+  defaultTacticalModuleForCharacter,
+  isTacticalModuleId,
+  type TacticalModuleId,
+} from "../shared/tactical-module-catalog";
 import type { GamePhase, GameSnapshot, MapMechanicSnapshot, PlayerSnapshot } from "../shared/protocol";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
@@ -44,6 +49,7 @@ import { CHARACTER_PREVIEW_CLASSES, getCharacterPreviewMotion } from "./characte
 import { resolveHeldSkillAim, resolveMouseAim, type PointerAim } from "./mouse-aim";
 import { buildRadarFrame, buildTacticalCues } from "./tactical-radar";
 import { teamLabel } from "./team-label";
+import { renderTacticalModuleCards } from "./tactical-module-ui";
 import {
   mapMechanicLobbyView,
   mapMechanicContributionSummary,
@@ -88,6 +94,7 @@ export class MobileApp {
   private renderer: GameRenderer | null = null;
   private rendererMapId: MapId | null = null;
   private selectedCharacterId: CharacterId = CHARACTER_CATALOG[0]!.id;
+  private selectedTacticalModuleId: TacticalModuleId = defaultTacticalModuleForCharacter(CHARACTER_CATALOG[0]!.id);
   private hasSelectedCharacter = false;
   private lastLobbyPreviewCharacterId: CharacterId | null = null;
   private inputSequence = 0;
@@ -183,7 +190,7 @@ export class MobileApp {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const value = nickname.value.trim();
-      const result = await this.network.join({ nickname: value, characterId: this.selectedCharacterId });
+      const result = await this.network.join({ nickname: value, characterId: this.selectedCharacterId, tacticalModuleId: this.selectedTacticalModuleId });
       if (result.ok) {
         localStorage.setItem(NAME_KEY, value);
       } else {
@@ -198,6 +205,7 @@ export class MobileApp {
       const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
       if (!ownSeat) {
         this.selectedCharacterId = characterId;
+        this.selectedTacticalModuleId = defaultTacticalModuleForCharacter(characterId);
         this.hasSelectedCharacter = true;
         this.renderColors();
         return;
@@ -209,6 +217,26 @@ export class MobileApp {
           this.renderRoster();
         }
         if (!result.ok) this.showToast(result.error ?? "无法更换角色");
+      });
+    });
+
+    this.find("#character-detail").addEventListener("click", (event) => {
+      const target = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-tactical-module-id]");
+      if (!target || target.disabled || !isTacticalModuleId(target.dataset.tacticalModuleId)) return;
+      const tacticalModuleId = target.dataset.tacticalModuleId;
+      const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
+      if (!ownSeat) {
+        this.selectedTacticalModuleId = tacticalModuleId;
+        this.renderColors();
+        return;
+      }
+      void this.network.changeTacticalModule(tacticalModuleId).then((result) => {
+        if (result.ok) {
+          this.selectedTacticalModuleId = tacticalModuleId;
+          this.renderColors();
+        } else {
+          this.showToast(result.error ?? "无法更换战术模组");
+        }
       });
     });
 
@@ -647,7 +675,10 @@ export class MobileApp {
 
   private renderColors(): void {
     const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
-    if (ownSeat) this.selectedCharacterId = ownSeat.characterId;
+    if (ownSeat) {
+      this.selectedCharacterId = ownSeat.characterId;
+      this.selectedTacticalModuleId = ownSeat.tacticalModuleId ?? defaultTacticalModuleForCharacter(ownSeat.characterId);
+    }
     const cards = buildCharacterSelection(this.network.room, this.network.playerId, this.selectedCharacterId);
     this.find("#color-list").innerHTML = cards.map((character) => {
       const unavailable = isCharacterSelectionDisabled(character.unavailable, ownSeat, character.id);
@@ -668,7 +699,8 @@ export class MobileApp {
     const exclusiveSkill = getExclusiveSkill(selected.id);
     this.find("#character-detail").innerHTML = `<div class="character-detail-heading"><div><strong>${selected.name}</strong><span>${selected.role}</span></div><p><b>${selected.passiveName}</b> · ${selected.passiveDescription}</p><p><b>${exclusiveSkill.name}</b> · ${exclusiveSkill.description}（冷却 ${exclusiveSkill.cooldownMs / 1_000} 秒）</p><p><b>技能参数</b> · ${getExclusiveSkillCounterSummary(selected.id)}</p></div>
       <div class="character-traits"><span class="trait-good">优势 ${selected.advantage}</span><span class="trait-cost">代价 ${selected.tradeoff}</span></div>
-      <div class="character-stats" aria-label="${selected.name}精确数值"><span>生命 <b>${selected.maxHealth}</b></span><span>伤害 <b>${selected.damage}</b></span><span>移速 <b>${selected.moveSpeed}</b></span><span>射速 <b>${selected.fireCooldownMs}ms</b></span><span>弹速 <b>${selected.projectileSpeed}</b></span></div>`;
+      <div class="character-stats" aria-label="${selected.name}精确数值"><span>生命 <b>${selected.maxHealth}</b></span><span>伤害 <b>${selected.damage}</b></span><span>移速 <b>${selected.moveSpeed}</b></span><span>射速 <b>${selected.fireCooldownMs}ms</b></span><span>弹速 <b>${selected.projectileSpeed}</b></span></div>
+      ${renderTacticalModuleCards(this.selectedTacticalModuleId, ownSeat?.ready === true)}`;
     this.renderLobbyCharacterPreview(selected);
   }
 

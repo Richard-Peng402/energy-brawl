@@ -3,7 +3,7 @@ import type { GameSnapshot, RoomSnapshot } from "../shared/protocol";
 export function roomUiRevision(room: RoomSnapshot | null): string {
   if (!room) return "empty";
   const players = room.players
-    .map((player) => [player.id, player.nickname, player.characterId, player.isBot, player.connected, player.ready, player.teamId ?? ""].join(":"))
+    .map((player) => [player.id, player.nickname, player.characterId, player.tacticalModuleId ?? "", player.isBot, player.connected, player.ready, player.teamId ?? ""].join(":"))
     .join(";");
   return [
     room.phase,
