@@ -98,7 +98,11 @@ export function runV4LoadSimulation(
       }
     }
     if (snapshot.finishedAt !== null && snapshot.mapMechanic !== null && snapshot.mapMechanic !== undefined) postFinishApplications += 1;
-    for (const projectile of snapshot.projectiles) if (walls.some((wall) => circleHitsRect(projectile, PROJECTILE_RADIUS, wall))) wallViolations += 1;
+    const world = room.gameWorld();
+    for (const projectile of snapshot.projectiles) {
+      const authoritativeRadius = world?.projectiles.get(projectile.id)?.radius ?? PROJECTILE_RADIUS;
+      if (walls.some((wall) => circleHitsRect(projectile, authoritativeRadius, wall))) wallViolations += 1;
+    }
   }
   durations.sort((a, b) => a - b);
   snapshotBytes.sort((a, b) => a - b);
