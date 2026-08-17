@@ -1,5 +1,6 @@
 import type { MatchMode } from "../shared/mode-catalog";
 import type { MapSelection } from "../shared/map-catalog";
+import type { BotDifficulty } from "../shared/bot-difficulty";
 import type { AdminStat, GamePhase, GameSnapshot, RoomSnapshot, ServerInfo, TeamScoreSnapshot } from "../shared/protocol";
 import { GameNetworkClient } from "./network";
 import { DiagnosticsReportStore } from "./diagnostics-report-store";
@@ -13,12 +14,14 @@ import { ServerInfoRefreshController, type ServerInfoRefreshState } from "./serv
 import { teamLabel } from "./team-label";
 import { mapMechanicLobbyView, randomMapMechanicSummaries } from "./map-mechanic-visuals";
 import { mapEventLobbyView } from "./map-event-visuals";
+import { RoomPresetStore } from "./room-preset-store";
 
 export class HostApp {
   private readonly network = new GameNetworkClient(false);
   private readonly infoRefresh = new ServerInfoRefreshController();
   private readonly token = new URLSearchParams(window.location.search).get("token") ?? "";
   private readonly diagnosticReports = new DiagnosticsReportStore(window.localStorage);
+  private readonly roomPresets = new RoomPresetStore(window.localStorage);
   private info: ServerInfo | null = null;
   private infoState: ServerInfoRefreshState = this.infoRefresh.state;
   private renderedNetworkRevision: string | null = null;
@@ -28,6 +31,7 @@ export class HostApp {
   private diagnosticsConnectionVersion = -1;
   private renderedDiagnosticsRevision = "";
   private savedDiagnosticReportId: string | null = null;
+  private selectedPresetId: string | null = null;
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = hostTemplate();
@@ -63,6 +67,17 @@ export class HostApp {
       const checkbox = event.target as HTMLInputElement;
       void this.admin({ type: "setMapEvents", enabled: checkbox.checked });
     });
+    this.find<HTMLSelectElement>("#host-bot-difficulty").addEventListener("change", (event) => {
+      void this.admin({ type: "setBotDifficulty", difficulty: (event.target as HTMLSelectElement).value as BotDifficulty });
+    });
+    this.find<HTMLSelectElement>("#host-preset").addEventListener("change", (event) => {
+      this.selectedPresetId = (event.target as HTMLSelectElement).value || null;
+      this.renderPresetControls(canEditLobbyRules(this.network.room?.phase ?? "lobby", this.token));
+    });
+    this.find("#host-preset-save").addEventListener("click", () => this.saveRoomPreset());
+    this.find("#host-preset-apply").addEventListener("click", () => void this.applySelectedPreset());
+    this.find("#host-preset-rename").addEventListener("click", () => this.renameSelectedPreset());
+    this.find("#host-preset-delete").addEventListener("click", () => this.deleteSelectedPreset());
     this.find("#host-team-controls").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-team-action]");
       if (!button) return;
@@ -177,6 +192,56 @@ export class HostApp {
     this.render();
   }
 
+  private saveRoomPreset(): void {
+    const room = this.network.room ?? this.info?.room;
+    if (!room || room.phase !== "lobby") return;
+    const name = window.prompt("预设名称", `房间预设 ${this.roomPresets.list().length + 1}`)?.trim();
+    if (!name) return;
+    const preset = RoomPresetStore.fromRoom(room, name);
+    if (!this.roomPresets.save(preset)) return;
+    this.selectedPresetId = preset.id;
+    this.message = "房间预设已保存到本机";
+    this.render();
+  }
+
+  private async applySelectedPreset(): Promise<void> {
+    const preset = this.roomPresets.list().find((candidate) => candidate.id === this.selectedPresetId);
+    if (!preset) return;
+    await this.admin({ type: "applyRoomPreset", preset });
+  }
+
+  private renameSelectedPreset(): void {
+    const preset = this.roomPresets.list().find((candidate) => candidate.id === this.selectedPresetId);
+    if (!preset) return;
+    const name = window.prompt("新的预设名称", preset.name)?.trim();
+    if (!name || !this.roomPresets.rename(preset.id, name)) return;
+    this.message = "房间预设已重命名";
+    this.render();
+  }
+
+  private deleteSelectedPreset(): void {
+    if (!this.selectedPresetId || !window.confirm("确认删除这个本机房间预设？")) return;
+    this.roomPresets.remove(this.selectedPresetId);
+    this.selectedPresetId = null;
+    this.message = "房间预设已删除";
+    this.render();
+  }
+
+  private renderPresetControls(enabled: boolean): void {
+    const presets = this.roomPresets.list();
+    if (!presets.some((preset) => preset.id === this.selectedPresetId)) this.selectedPresetId = presets[0]?.id ?? null;
+    const select = this.find<HTMLSelectElement>("#host-preset");
+    select.innerHTML = presets.length
+      ? presets.map((preset) => `<option value="${escapeHtml(preset.id)}">${escapeHtml(preset.name)}</option>`).join("")
+      : `<option value="">暂无本机预设</option>`;
+    select.value = this.selectedPresetId ?? "";
+    select.disabled = !enabled || presets.length === 0;
+    this.find<HTMLButtonElement>("#host-preset-save").disabled = !enabled;
+    for (const id of ["#host-preset-apply", "#host-preset-rename", "#host-preset-delete"]) {
+      this.find<HTMLButtonElement>(id).disabled = !enabled || !this.selectedPresetId;
+    }
+  }
+
   private render(): void {
     const room = this.network.room ?? this.info?.room;
     const presentation = resolveHostPresentation(room ?? null, this.network.game);
@@ -212,6 +277,10 @@ export class HostApp {
     const eventCheckbox = this.find<HTMLInputElement>("#host-map-events");
     eventCheckbox.checked = room?.mapEventsEnabled ?? true;
     eventCheckbox.disabled = !lobbyRulesEnabled;
+    const botDifficulty = this.find<HTMLSelectElement>("#host-bot-difficulty");
+    botDifficulty.value = room?.botDifficulty ?? "normal";
+    botDifficulty.disabled = !lobbyRulesEnabled;
+    this.renderPresetControls(lobbyRulesEnabled);
     const mapSelection = room?.mapSelection ?? "reactor-core";
     const mechanismsEnabled = room?.mapMechanicsEnabled ?? true;
     const mechanicDescription = this.find("#host-map-mechanic-description");
@@ -372,6 +441,11 @@ function hostTemplate(): string {
         <button id="host-end" class="icon-command danger" type="button" disabled title="结束当前对局">■ <span>结束</span></button>
         <button id="host-reset" class="icon-command" type="button" disabled title="返回大厅">↻ <span>重置</span></button>
       </div>
+    </section>
+    <section class="host-preset-bar" aria-label="房间预设">
+      <label>房间预设<select id="host-preset"><option value="">暂无本机预设</option></select></label>
+      <button id="host-preset-save" type="button">保存</button><button id="host-preset-apply" type="button">应用</button><button id="host-preset-rename" type="button">重命名</button><button id="host-preset-delete" type="button">删除</button>
+      <label>机器人<select id="host-bot-difficulty"><option value="easy">简单</option><option value="normal">标准</option><option value="hard">困难</option></select></label>
     </section>
     <section class="host-main">
       <div class="join-station">
