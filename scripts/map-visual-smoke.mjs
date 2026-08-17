@@ -95,6 +95,10 @@ const edge = spawn(edgePath, [
 
 let cdp;
 const hostSocket = await connectSocket();
+let latestRoom = null;
+let latestGame = null;
+hostSocket.on("roomState", (snapshot) => { latestRoom = snapshot; });
+hostSocket.on("gameState", (snapshot) => { latestGame = snapshot; });
 try {
   const targets = await waitFor(async () => {
     try {
@@ -115,6 +119,160 @@ try {
     const result = await cdp.send("Runtime.evaluate", { expression, returnByValue: true });
     return result.result.value;
   };
+  const setDevice = async (device) => {
+    await cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: device.width,
+      height: device.height,
+      deviceScaleFactor: device.dpr,
+      mobile: device.mobile,
+      screenOrientation: { type: "landscapePrimary", angle: 90 },
+    });
+    await wait(350);
+  };
+  const captureViewportState = async ({ stateId, mapId = null, requiredSelector, expectCanvas = false, eventPhase = null, targetDevices = devices }) => {
+    const entries = [];
+    for (const device of targetDevices) {
+      await setDevice(device);
+      await evaluate(`(() => {
+        const target = document.querySelector(${JSON.stringify(requiredSelector)});
+        target?.scrollIntoView({ block: "center", inline: "nearest" });
+        return Boolean(target);
+      })()`);
+      await wait(120);
+      const diagnostics = await evaluate(`(() => {
+        const visible = (element) => {
+          if (!element) return false;
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0 && rect.width > 1 && rect.height > 1;
+        };
+        const rectFor = (selector) => {
+          const element = document.querySelector(selector);
+          if (!visible(element)) return null;
+          const rect = element.getBoundingClientRect();
+          return { selector, left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+        };
+        const canvas = document.querySelector('#game-root canvas');
+        const canvasRect = visible(canvas) ? canvas.getBoundingClientRect() : null;
+        return {
+          title: document.title,
+          viewport: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+          overflow: {
+            document: document.documentElement.scrollWidth - innerWidth,
+            body: document.body.scrollWidth - innerWidth,
+          },
+          required: rectFor(${JSON.stringify(requiredSelector)}),
+          canvas: canvas && canvasRect ? {
+            width: canvas.width,
+            height: canvas.height,
+            clientWidth: canvas.clientWidth,
+            clientHeight: canvas.clientHeight,
+            dpr: devicePixelRatio,
+            rect: { left: canvasRect.left, top: canvasRect.top, width: canvasRect.width, height: canvasRect.height },
+          } : null,
+          controls: [
+            rectFor('#exclusive-skill-button'),
+            rectFor('#skill-button'),
+            rectFor('#move-stick'),
+            rectFor('#aim-stick'),
+          ].filter(Boolean),
+        };
+      })()`);
+      if (!diagnostics.required) throw new Error(`Required visual state is not visible for ${stateId} ${device.id}: ${requiredSelector}`);
+      if (diagnostics.required.left < -1 || diagnostics.required.top < -1 || diagnostics.required.right > diagnostics.viewport.width + 1 || diagnostics.required.bottom > diagnostics.viewport.height + 1) {
+        throw new Error(`Required visual state is clipped for ${stateId} ${device.id}: ${JSON.stringify(diagnostics.required)}`);
+      }
+      if (diagnostics.overflow.document > 1 || diagnostics.overflow.body > 1) {
+        throw new Error(`Horizontal overflow for ${stateId} ${device.id}: ${JSON.stringify(diagnostics.overflow)}`);
+      }
+
+      const eventAtCapture = latestGame?.mapEvent ? structuredClone(latestGame.mapEvent) : null;
+      const eventGeometry = eventAtCapture?.point ?? eventAtCapture?.zone;
+      if (expectCanvas && eventPhase && eventAtCapture?.kind !== "global-scan" && !eventGeometry) {
+        throw new Error(`Event boundary assertion failed for ${stateId} ${device.id}`);
+      }
+      const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
+      let canvasPngBytes = null;
+      if (expectCanvas) {
+        const metrics = diagnostics.canvas;
+        if (!metrics) throw new Error(`Missing canvas for ${stateId} ${device.id}`);
+        if (Math.abs(metrics.width - metrics.clientWidth * metrics.dpr) > 2 || Math.abs(metrics.height - metrics.clientHeight * metrics.dpr) > 2) {
+          throw new Error(`HiDPI mismatch for ${stateId} ${device.id}: ${JSON.stringify(metrics)}`);
+        }
+        const clipped = await cdp.send("Page.captureScreenshot", {
+          format: "png",
+          fromSurface: true,
+          captureBeyondViewport: false,
+          clip: {
+            x: Math.max(0, metrics.rect.left),
+            y: Math.max(0, metrics.rect.top),
+            width: Math.max(1, Math.min(metrics.rect.width, diagnostics.viewport.width - Math.max(0, metrics.rect.left))),
+            height: Math.max(1, Math.min(metrics.rect.height, diagnostics.viewport.height - Math.max(0, metrics.rect.top))),
+            scale: 1,
+          },
+        });
+        canvasPngBytes = Buffer.from(clipped.data, "base64").byteLength;
+        if (canvasPngBytes < 4_096) throw new Error(`Nonblank canvas assertion failed for ${stateId} ${device.id}: ${canvasPngBytes} PNG bytes`);
+
+        for (const control of diagnostics.controls) {
+          if (control.left < -1 || control.top < -1 || control.right > diagnostics.viewport.width + 1 || control.bottom > diagnostics.viewport.height + 1) {
+            throw new Error(`Control boundary is clipped for ${stateId} ${device.id}: ${JSON.stringify(control)}`);
+          }
+        }
+        for (let leftIndex = 0; leftIndex < diagnostics.controls.length; leftIndex += 1) {
+          for (let rightIndex = leftIndex + 1; rightIndex < diagnostics.controls.length; rightIndex += 1) {
+            const left = diagnostics.controls[leftIndex];
+            const right = diagnostics.controls[rightIndex];
+            const overlapWidth = Math.min(left.right, right.right) - Math.max(left.left, right.left);
+            const overlapHeight = Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top);
+            if (overlapWidth > 8 && overlapHeight > 8) {
+              throw new Error(`Control overlap for ${stateId} ${device.id}: ${left.selector} and ${right.selector}`);
+            }
+          }
+        }
+      }
+
+      const file = path.join(outputRoot, `${stateId}-${device.id}.png`);
+      await writeFile(file, Buffer.from(screenshot.data, "base64"));
+      entries.push({
+        stateId,
+        mapId,
+        eventPhase,
+        observedEventPhase: eventAtCapture?.phase ?? null,
+        eventKind: eventAtCapture?.kind ?? null,
+        eventGeometry: eventGeometry ?? null,
+        device: device.id,
+        file,
+        viewport: diagnostics.viewport,
+        canvas: diagnostics.canvas,
+        canvasPngBytes,
+      });
+    }
+    return entries;
+  };
+  const waitForGameState = async (predicate, timeoutMs) => waitFor(() => {
+    if (latestGame?.phase === "finished" && !predicate(latestGame)) throw new Error("Match finished before the requested smoke state appeared");
+    return latestGame && predicate(latestGame) ? latestGame : null;
+  }, timeoutMs);
+  const stabilizeMatch = async () => {
+    const game = await waitForGameState((snapshot) => snapshot.phase === "playing" || snapshot.phase === "overtime", 15_000);
+    const commands = game.players.flatMap((player) => [
+      { type: "setStat", playerId: player.id, stat: "maxHealth", value: 500 },
+      { type: "setStat", playerId: player.id, stat: "health", value: 500 },
+      { type: "setStat", playerId: player.id, stat: "damage", value: 0 },
+      { type: "setStat", playerId: player.id, stat: "fireCooldownMs", value: 2_000 },
+    ]);
+    const results = await Promise.all(commands.map((command) => acknowledge(hostSocket, "hostAdminCommand", { token: hostToken, command })));
+    const failure = results.find((result) => !result?.ok);
+    if (failure) throw new Error(failure.error ?? "Could not stabilize visual smoke match");
+  };
+  const ensureHighlightFixture = async () => evaluate(`(() => {
+    const root = document.querySelector('#result-highlights');
+    if (!root) return false;
+    if (root.querySelector('.match-highlight-card')) return false;
+    root.innerHTML = '<section class="match-highlights" aria-label="&#26412;&#23616;&#39640;&#20809;"><article class="match-highlight-card" data-highlight-kind="five-kill-streak"><div class="match-highlight-portrait"><span class="match-highlight-fallback" aria-hidden="true">Q</span></div><div><span>&#28779;&#21147;&#32479;&#27835;</span><b>Visual QA</b><small>5 &#36830;&#26432;</small></div></article></section>';
+    return true;
+  })()`);
   const ensureReady = async () => {
     const alreadyReady = await evaluate(`(() => {
       const button = document.querySelector('#ready-button');
@@ -191,53 +349,110 @@ try {
     return result.result.value;
   });
 
-  const report = [];
+  await waitFor(() => evaluate("Boolean(document.querySelector('#character-detail [data-tactical-module-id]'))"));
+  const report = await captureViewportState({
+    stateId: "lobby-tactical-modules",
+    requiredSelector: "#character-detail [data-tactical-module-id]",
+  });
+
+  let capturedResults = false;
   for (const mapId of maps) {
-    await ensureReady();
-    await wait(250);
-
-    const mapResult = await acknowledge(hostSocket, "hostAdminCommand", { token: hostToken, command: { type: "setMap", mapSelection: mapId } });
-    if (!mapResult?.ok) throw new Error(mapResult?.error ?? `Could not select ${mapId}`);
-    const startResult = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "start" });
-    if (!startResult?.ok) throw new Error(startResult?.error ?? `Could not start ${mapId}`);
-
-    await waitFor(async () => {
-      const result = await cdp.send("Runtime.evaluate", {
-        expression: "Boolean(document.querySelector('#arena-screen:not(.is-hidden) canvas'))",
-        returnByValue: true,
-      });
-      return result.result.value;
-    }, 15_000);
-    await wait(1_000);
-
     for (const device of devices) {
-      await cdp.send("Emulation.setDeviceMetricsOverride", {
-        width: device.width,
-        height: device.height,
-        deviceScaleFactor: device.dpr,
-        mobile: device.mobile,
-        screenOrientation: { type: "landscapePrimary", angle: 90 },
-      });
-      await wait(800);
-      const metricsResult = await cdp.send("Runtime.evaluate", {
-        expression: `(() => { const canvas = document.querySelector('#game-root canvas'); return canvas ? { width: canvas.width, height: canvas.height, clientWidth: canvas.clientWidth, clientHeight: canvas.clientHeight, dpr: devicePixelRatio } : null; })()`,
-        returnByValue: true,
-      });
-      const metrics = metricsResult.result.value;
-      if (!metrics) throw new Error(`Missing canvas for ${mapId} ${device.id}`);
-      if (Math.abs(metrics.width - metrics.clientWidth * metrics.dpr) > 2 || Math.abs(metrics.height - metrics.clientHeight * metrics.dpr) > 2) {
-        throw new Error(`HiDPI mismatch for ${mapId} ${device.id}: ${JSON.stringify(metrics)}`);
-      }
-      const screenshot = await cdp.send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
-      const file = path.join(outputRoot, `${mapId}-${device.id}.png`);
-      await writeFile(file, Buffer.from(screenshot.data, "base64"));
-      report.push({ mapId, device: device.id, file, metrics });
-    }
+      await setDevice(device);
+      await ensureReady();
+      await wait(250);
 
-    const resetResult = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "reset" });
-    if (!resetResult?.ok) throw new Error(resetResult?.error ?? `Could not reset ${mapId}`);
-    await wait(500);
+      const mapResult = await acknowledge(hostSocket, "hostAdminCommand", { token: hostToken, command: { type: "setMap", mapSelection: mapId } });
+      if (!mapResult?.ok) throw new Error(mapResult?.error ?? `Could not select ${mapId}`);
+      const startResult = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "start" });
+      if (!startResult?.ok) throw new Error(startResult?.error ?? `Could not start ${mapId}`);
+
+      await stabilizeMatch();
+      await waitFor(async () => {
+        const result = await cdp.send("Runtime.evaluate", {
+          expression: "Boolean(document.querySelector('#arena-screen:not(.is-hidden) canvas'))",
+          returnByValue: true,
+        });
+        return result.result.value;
+      }, 15_000);
+      await wait(600);
+
+      await waitForGameState(
+        (snapshot) => snapshot.mapId === mapId && snapshot.mapEvent?.phase === "warning",
+        70_000,
+      );
+      const warningEntries = await captureViewportState({
+        stateId: `${mapId}-event-warning`,
+        mapId,
+        requiredSelector: "#map-event-status.is-visible",
+        expectCanvas: true,
+        eventPhase: "warning",
+        targetDevices: [device],
+      });
+      if (warningEntries.some((entry) => entry.observedEventPhase !== "warning")) {
+        throw new Error(`Event warning changed phase during capture for ${mapId} ${device.id}`);
+      }
+      report.push(...warningEntries);
+
+      await waitForGameState(
+        (snapshot) => snapshot.mapId === mapId && snapshot.mapEvent?.phase === "active",
+        10_000,
+      );
+      const activeEntries = await captureViewportState({
+        stateId: `${mapId}-event-active`,
+        mapId,
+        requiredSelector: "#map-event-status.is-visible",
+        expectCanvas: true,
+        eventPhase: "active",
+        targetDevices: [device],
+      });
+      if (activeEntries.some((entry) => entry.observedEventPhase !== "active")) {
+        throw new Error(`Event active state changed phase during capture for ${mapId} ${device.id}`);
+      }
+      report.push(...activeEntries);
+
+      const endResult = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "end" });
+      if (!endResult?.ok) throw new Error(endResult?.error ?? `Could not finish ${mapId}`);
+      await waitForGameState((snapshot) => snapshot.phase === "finished", 10_000);
+      await waitFor(() => evaluate("Boolean(document.querySelector('#results-overlay:not(.is-hidden)'))"));
+
+      if (!capturedResults) {
+        const fixtureInjected = await ensureHighlightFixture();
+        const resultEntries = await captureViewportState({
+          stateId: "results-highlights",
+          mapId,
+          requiredSelector: "#result-highlights .match-highlight-card",
+        });
+        for (const entry of resultEntries) entry.fixtureInjected = fixtureInjected;
+        report.push(...resultEntries);
+        capturedResults = true;
+      }
+
+      const resetResult = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "reset" });
+      if (!resetResult?.ok) throw new Error(resetResult?.error ?? `Could not reset ${mapId}`);
+      await waitFor(() => latestRoom?.phase === "lobby");
+      await wait(350);
+    }
   }
+
+  await evaluate(`localStorage.setItem("energy-brawl:room-presets:v1", ${JSON.stringify(JSON.stringify([{
+    schemaVersion: 1,
+    id: "visual-smoke-preset",
+    name: "Visual QA",
+    updatedAt: Date.now(),
+    matchMode: "solo",
+    mapSelection: "reactor-core",
+    mapMechanicsEnabled: true,
+    mapEventsEnabled: true,
+    botDifficulty: "normal",
+    characterOverrides: {},
+  }]))})`);
+  await cdp.send("Page.navigate", { url: `${baseUrl}/host?token=${encodeURIComponent(hostToken)}` });
+  await waitFor(() => evaluate("Boolean(document.querySelector('.host-preset-bar'))"), 15_000);
+  report.push(...await captureViewportState({
+    stateId: "host-preset-bar",
+    requiredSelector: ".host-preset-bar",
+  }));
 
   await writeFile(path.join(outputRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   console.log(`Map visual smoke passed: ${report.length} screenshots in ${outputRoot}`);
