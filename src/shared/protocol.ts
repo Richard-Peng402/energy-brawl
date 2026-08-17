@@ -9,6 +9,8 @@ import type { MapMechanicKind, MapMechanicPhase, MapMechanicZone } from "./map-m
 import type { TacticalModuleId } from "./tactical-module-catalog";
 import type { MapEventSnapshot } from "./map-events";
 import type { MatchHighlight } from "./match-highlights";
+import type { BotDifficulty } from "./bot-difficulty";
+import type { RoomPresetV1 } from "./room-presets";
 import type {
   ClientDiagnosticSample,
   DeviceDiagnosticProfile,
@@ -164,6 +166,7 @@ export interface RoomSnapshot {
   activeMapId?: MapId | null;
   mapMechanicsEnabled?: boolean;
   mapEventsEnabled?: boolean;
+  botDifficulty?: BotDifficulty;
   teamScores?: TeamScoreSnapshot[];
   players: Array<
     Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "tacticalModuleId" | "color" | "isBot" | "connected" | "ready"> & AdminStats & { teamId?: TeamId | null }
@@ -280,6 +283,8 @@ export type HostAdminCommand =
   | { type: "setMap"; mapSelection: MapSelection }
   | { type: "setMapMechanics"; enabled: boolean }
   | { type: "setMapEvents"; enabled: boolean }
+  | { type: "setBotDifficulty"; difficulty: BotDifficulty }
+  | { type: "applyRoomPreset"; preset: RoomPresetV1 }
   | { type: "swapTeams"; firstPlayerId: string; secondPlayerId: string }
   | { type: "forceTeamWinner"; teamId: TeamId };
 

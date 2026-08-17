@@ -31,6 +31,8 @@ import type {
 import { isCharacterId } from "../shared/character-catalog";
 import { isMatchMode, TEAM_IDS } from "../shared/mode-catalog";
 import { MAP_CATALOG } from "../shared/map-catalog";
+import { isBotDifficulty } from "../shared/bot-difficulty";
+import { normalizeRoomPreset } from "../shared/room-presets";
 import { isTacticalModuleId } from "../shared/tactical-module-catalog";
 import { GameRoom } from "./room";
 import { FixedStepAccumulator } from "./fixed-loop";
@@ -475,6 +477,8 @@ function isHostAdminCommand(command: unknown): command is HostAdminCommand {
   if (candidate.type === "setMap") return candidate.mapSelection === "random" || MAP_CATALOG.some((map) => map.id === candidate.mapSelection);
   if (candidate.type === "setMapMechanics") return typeof candidate.enabled === "boolean";
   if (candidate.type === "setMapEvents") return typeof candidate.enabled === "boolean";
+  if (candidate.type === "setBotDifficulty") return isBotDifficulty(candidate.difficulty);
+  if (candidate.type === "applyRoomPreset") return normalizeRoomPreset(candidate.preset).ok;
   if (candidate.type === "swapTeams") return typeof candidate.firstPlayerId === "string" && typeof candidate.secondPlayerId === "string";
   if (candidate.type === "forceTeamWinner") return TEAM_IDS.includes(candidate.teamId as never);
   if (typeof candidate.playerId !== "string") return false;

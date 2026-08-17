@@ -1,8 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 
-import { MAX_EXCLUSIVE_SKILL_COOLDOWN_MS, MIN_EXCLUSIVE_SKILL_COOLDOWN_MS } from "../shared/constants";
 import { isMatchMode, TEAM_IDS } from "../shared/mode-catalog";
 import { MAP_CATALOG, resolveMapSelection } from "../shared/map-catalog";
+import { isBotDifficulty } from "../shared/bot-difficulty";
+import { ADMIN_STAT_RANGES, normalizeRoomPreset } from "../shared/room-presets";
 import type { Ack, AdminStat, GamePhase, HostAdminCommand } from "../shared/protocol";
 
 export interface HostAdminRequest {
@@ -19,19 +20,6 @@ export interface HostAdminLog {
 }
 
 const MAX_LOGS = 200;
-const STAT_RANGES: Readonly<Record<AdminStat, readonly [number, number]>> = {
-  health: [1, 500],
-  maxHealth: [1, 500],
-  damage: [0, 200],
-  score: [0, 99],
-  moveSpeed: [50, 600],
-  fireCooldownMs: [100, 2_000],
-  projectileSpeed: [100, 2_000],
-  kills: [0, 99],
-  energyCollected: [0, 999],
-  exclusiveSkillCooldownMs: [MIN_EXCLUSIVE_SKILL_COOLDOWN_MS, MAX_EXCLUSIVE_SKILL_COOLDOWN_MS],
-};
-
 export class HostAdminService {
   private readonly logs: HostAdminLog[] = [];
 
@@ -81,6 +69,15 @@ export class HostAdminService {
       if (phase !== "lobby") return "只能在大厅修改临时地图事件";
       return typeof request.command.enabled === "boolean" ? null : "临时地图事件开关无效";
     }
+    if (request.command.type === "setBotDifficulty") {
+      if (phase !== "lobby") return "只能在大厅修改机器人难度";
+      return isBotDifficulty(request.command.difficulty) ? null : "机器人难度无效";
+    }
+    if (request.command.type === "applyRoomPreset") {
+      if (phase !== "lobby") return "只能在大厅应用房间预设";
+      const normalized = normalizeRoomPreset(request.command.preset);
+      return normalized.ok ? null : normalized.error;
+    }
     if (request.command.type === "swapTeams") {
       if (phase !== "lobby") return "只能在大厅调整队伍";
       if (typeof request.command.firstPlayerId !== "string" || typeof request.command.secondPlayerId !== "string" || request.command.firstPlayerId === request.command.secondPlayerId) return "队伍交换目标无效";
@@ -92,8 +89,8 @@ export class HostAdminService {
     if (!("playerId" in request.command)) return "命令尚未接入";
     if (typeof request.command.playerId !== "string" || !playerExists) return "目标玩家不存在";
     if (request.command.type === "setStat") {
-      if (!(request.command.stat in STAT_RANGES) || !Number.isFinite(request.command.value)) return "数值命令无效";
-      const [minimum, maximum] = STAT_RANGES[request.command.stat];
+      if (!(request.command.stat in ADMIN_STAT_RANGES) || !Number.isFinite(request.command.value)) return "数值命令无效";
+      const [minimum, maximum] = ADMIN_STAT_RANGES[request.command.stat];
       if (request.command.value < minimum || request.command.value > maximum) return "数值超出安全范围";
     } else if (request.command.type !== "kick" && request.command.type !== "forceWinner") {
       return "命令类型无效";

@@ -1,6 +1,7 @@
 import { distanceSquared, normalize } from "../shared/math";
 import { zoneContainsPoint, type MapMechanicZone } from "../shared/map-mechanics";
 import type { PlayerInput, Vec2 } from "../shared/protocol";
+import { botDifficultyProfile, type BotDifficulty } from "../shared/bot-difficulty";
 import type { GameWorld, WorldPlayer } from "./simulation";
 
 const RETREAT_HEALTH = 35;
@@ -9,7 +10,6 @@ const FIRE_DISTANCE_SQUARED = 420 * 420;
 const DASH_MIN_DISTANCE_SQUARED = 420 * 420;
 const DASH_MAX_DISTANCE_SQUARED = 900 * 900;
 const MOVE_INPUT_SCALE = 0.75;
-const SKILL_USE_CHANCE = 0.45;
 const MAP_ZONE_HYSTERESIS = 48;
 const CRYSTAL_SEEK_HEALTH_RATIO = 0.65;
 const NEON_ROUTE_DETOUR_RATIO = 1.12;
@@ -18,15 +18,18 @@ const MAP_EVENT_SCAN_PAUSE_MS = 700;
 export interface BotDecision {
   input: PlayerInput;
   useSkill: boolean;
+  aimErrorRadians: number;
 }
 
 export function chooseBotDecision(
   world: GameWorld,
   playerId: string,
   random: () => number = Math.random,
+  difficulty: BotDifficulty = "normal",
 ): BotDecision {
   const player = world.players.get(playerId);
-  if (!player?.alive || world.phase === "finished") return { input: idleInput(player), useSkill: false };
+  if (!player?.alive || world.phase === "finished") return { input: idleInput(player), useSkill: false, aimErrorRadians: 0 };
+  const profile = botDifficultyProfile(difficulty);
 
   const enemy = selectCombatTarget(world, player);
   const energy = nearestPoint(player, [...world.energy.values()]);
@@ -61,7 +64,8 @@ export function chooseBotDecision(
     movement = normalize({ x: enemy.x - player.x, y: enemy.y - player.y });
   }
 
-  const aim = enemy ? imperfectAim(player, enemy, random) : movement;
+  const aimErrorRadians = enemy ? (random() - 0.5) * profile.maxAimErrorRadians * 2 : 0;
+  const aim = enemy ? aimWithError(player, enemy, aimErrorRadians) : movement;
   const heldSkill = player.skillSlot.charges === 1 ? player.skillSlot.type : null;
   const tacticalSkillWindow = heldSkill === "heal"
     ? player.health <= 45
@@ -72,7 +76,7 @@ export function chooseBotDecision(
         : heldSkill === "dash"
           ? Boolean(enemy && player.health > RETREAT_HEALTH && enemyDistance >= DASH_MIN_DISTANCE_SQUARED && enemyDistance <= DASH_MAX_DISTANCE_SQUARED)
           : false;
-  const useSkill = tacticalSkillWindow && random() < SKILL_USE_CHANCE;
+  const useSkill = tacticalSkillWindow && random() < profile.skillUseChance;
 
   if (useSkill && heldSkill === "dash" && enemy) {
     movement = normalize({ x: enemy.x - player.x, y: enemy.y - player.y });
@@ -80,13 +84,14 @@ export function chooseBotDecision(
 
   return {
     useSkill,
+    aimErrorRadians: Math.abs(aimErrorRadians),
     input: {
       seq: player.lastProcessedInput + 1,
       moveX: movement.x * MOVE_INPUT_SCALE,
       moveY: movement.y * MOVE_INPUT_SCALE,
       aimX: aim.x,
       aimY: aim.y,
-      firing: Boolean(!scanPause && enemy && enemyDistance <= FIRE_DISTANCE_SQUARED),
+      firing: Boolean(!scanPause && enemy && enemyDistance <= FIRE_DISTANCE_SQUARED * profile.fireRangeMultiplier ** 2),
     },
   };
 }
@@ -227,9 +232,8 @@ function nearestPoint<T extends Vec2>(origin: Vec2, points: T[]): T | undefined 
   }, undefined);
 }
 
-function imperfectAim(origin: Vec2, target: Vec2, random: () => number): Vec2 {
+function aimWithError(origin: Vec2, target: Vec2, error: number): Vec2 {
   const perfectAngle = Math.atan2(target.y - origin.y, target.x - origin.x);
-  const error = (random() - 0.5) * 0.9;
   return { x: Math.cos(perfectAngle + error), y: Math.sin(perfectAngle + error) };
 }
 

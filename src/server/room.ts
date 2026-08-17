@@ -9,6 +9,8 @@ import {
 } from "../shared/constants";
 import { CHARACTER_CATALOG, getCharacter, isCharacterId, type CharacterId } from "../shared/character-catalog";
 import { resolveMapSelection, type MapId, type MapSelection } from "../shared/map-catalog";
+import { botDifficultyProfile, isBotDifficulty, type BotDifficulty } from "../shared/bot-difficulty";
+import { normalizeRoomPreset, type RoomPresetV1 } from "../shared/room-presets";
 import { getModeDefinition, isCaptureMode, isMatchMode, type MatchMode, type TeamId } from "../shared/mode-catalog";
 import {
   defaultTacticalModuleForCharacter,
@@ -77,6 +79,7 @@ export class GameRoom {
   private activeMapId: MapId | null = null;
   private mapMechanicsEnabled = true;
   private mapEventsEnabled = true;
+  private botDifficulty: BotDifficulty = "normal";
 
   setMapSelection(selection: MapSelection): Ack {
     if (this.world) return { ok: false, error: "对局开始后无法切换地图" };
@@ -97,6 +100,36 @@ export class GameRoom {
     if (this.world) return { ok: false, error: "只能在大厅修改临时地图事件" };
     if (typeof enabled !== "boolean") return { ok: false, error: "临时地图事件开关无效" };
     this.mapEventsEnabled = enabled;
+    return { ok: true };
+  }
+
+  setBotDifficulty(difficulty: BotDifficulty): Ack {
+    if (this.world) return { ok: false, error: "只能在大厅修改机器人难度" };
+    if (!isBotDifficulty(difficulty)) return { ok: false, error: "机器人难度无效" };
+    this.botDifficulty = difficulty;
+    return { ok: true };
+  }
+
+  applyRoomPreset(preset: RoomPresetV1): Ack {
+    if (this.world) return { ok: false, error: "只能在大厅应用房间预设" };
+    const normalized = normalizeRoomPreset(preset);
+    if (!normalized.ok) return { ok: false, error: normalized.error };
+    const next = normalized.preset;
+    const resolvedMap = resolveMapSelection(next.mapSelection, this.activeMapId);
+
+    this.matchMode = next.matchMode;
+    this.mapSelection = next.mapSelection;
+    this.activeMapId = next.mapSelection === "random" ? null : resolvedMap.id;
+    this.mapMechanicsEnabled = next.mapMechanicsEnabled;
+    this.mapEventsEnabled = next.mapEventsEnabled;
+    this.botDifficulty = next.botDifficulty;
+    this.pendingWinnerId = null;
+    this.pendingWinnerTeamId = null;
+    for (const seat of this.seats.values()) {
+      const overrides = next.characterOverrides[seat.characterId];
+      seat.stats = overrides ? { ...overrides } : undefined;
+    }
+    assignBalancedTeams([...this.seats.values()], this.matchMode);
     return { ok: true };
   }
 
@@ -140,6 +173,8 @@ export class GameRoom {
     if (command.type === "setMap") return this.setMapSelection(command.mapSelection);
     if (command.type === "setMapMechanics") return this.setMapMechanicsEnabled(command.enabled);
     if (command.type === "setMapEvents") return this.setMapEventsEnabled(command.enabled);
+    if (command.type === "setBotDifficulty") return this.setBotDifficulty(command.difficulty);
+    if (command.type === "applyRoomPreset") return this.applyRoomPreset(command.preset);
     if (command.type === "swapTeams") return this.swapPlayerTeams(command.firstPlayerId, command.secondPlayerId);
     if (command.type === "forceTeamWinner") {
       if (this.matchMode === "solo") return { ok: false, error: "个人战没有团队胜者" };
@@ -451,10 +486,11 @@ export class GameRoom {
 
     for (const player of this.world.players.values()) {
       if (!player.isBot || this.clockMs < (this.nextBotThinkAt.get(player.id) ?? 0)) continue;
-      const decision = chooseBotDecision(this.world, player.id);
+      const decision = chooseBotDecision(this.world, player.id, Math.random, this.botDifficulty);
       applyPlayerInput(this.world, player.id, decision.input);
       if (decision.useSkill) applyWorldSkillAction(this.world, player.id, player.lastProcessedSkillAction + 1);
-      this.nextBotThinkAt.set(player.id, this.clockMs + 500 + Math.random() * 250);
+      const profile = botDifficultyProfile(this.botDifficulty);
+      this.nextBotThinkAt.set(player.id, this.clockMs + profile.reactionMinMs + Math.random() * profile.reactionJitterMs);
     }
     stepWorld(this.world, deltaMs);
     if (this.worldIsFinished() && this.autoResetAt === null) {
@@ -501,6 +537,7 @@ export class GameRoom {
       activeMapId: this.activeMapId,
       mapMechanicsEnabled: this.mapMechanicsEnabled,
       mapEventsEnabled: this.mapEventsEnabled,
+      botDifficulty: this.botDifficulty,
       teamScores: this.world
         ? isCaptureMode(this.matchMode)
           ? worldToSnapshot(this.world).captureScores

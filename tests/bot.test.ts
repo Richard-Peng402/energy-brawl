@@ -5,6 +5,27 @@ import { advanceMapMechanicState } from "../src/server/map-mechanic-system";
 import { createGameWorld } from "../src/server/simulation";
 
 describe("bot decisions", () => {
+  it("changes behavior difficulty without changing character stats", () => {
+    const world = createGameWorld([
+      { id: "bot-1", nickname: "bot", characterId: "medic", isBot: true },
+      { id: "enemy", nickname: "enemy", characterId: "blaze", isBot: false },
+    ]);
+    const bot = world.players.get("bot-1")!;
+    const enemy = world.players.get("enemy")!;
+    enemy.x = bot.x + 200;
+    enemy.y = bot.y;
+    const before = { health: bot.maxHealth, damage: bot.damage, moveSpeed: bot.moveSpeed };
+
+    const easy = chooseBotDecision(world, bot.id, () => 1, "easy");
+    const hard = chooseBotDecision(world, bot.id, () => 1, "hard");
+
+    expect(easy.aimErrorRadians).toBeGreaterThan(hard.aimErrorRadians);
+    expect(Math.abs(Math.atan2(easy.input.aimY, easy.input.aimX))).toBeGreaterThan(
+      Math.abs(Math.atan2(hard.input.aimY, hard.input.aimX)),
+    );
+    expect({ health: bot.maxHealth, damage: bot.damage, moveSpeed: bot.moveSpeed }).toEqual(before);
+  });
+
   it("never selects a teammate as its combat target in team modes", () => {
     const world = createGameWorld([
       { id: "bot-1", nickname: "bot", characterId: "medic", isBot: true, teamId: "red" },
