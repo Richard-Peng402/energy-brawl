@@ -9,6 +9,7 @@ import {
   type TacticalModuleId,
 } from "../shared/tactical-module-catalog";
 import type { GamePhase, GameSnapshot, MapMechanicSnapshot, PlayerSnapshot } from "../shared/protocol";
+import type { MapEventSnapshot } from "../shared/map-events";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
 import { didPickUpLocalSkill, selectLatestKillFeedback, type CombatFeedbackEvent } from "./combat-feedback";
@@ -59,6 +60,11 @@ import {
   randomMapMechanicSummaries,
   selectMapMechanicFeedback,
 } from "./map-mechanic-visuals";
+import {
+  mapEventLobbyView,
+  mapEventStatusText,
+  selectMapEventFeedback,
+} from "./map-event-visuals";
 
 const NAME_KEY = "energy-brawl.nickname";
 const HAPTICS_MODE_KEY = "energy-brawl.haptics-mode";
@@ -122,6 +128,7 @@ export class MobileApp {
   private lastCapturePointRevision = "";
   private activeMechanicMatchKey: string | null = null;
   private previousMapMechanicSnapshot: MapMechanicSnapshot | null = null;
+  private previousMapEventSnapshot: MapEventSnapshot | null = null;
   private mechanicBannerTimer = 0;
   private lastObservedRoomPhase: GamePhase | null = null;
 
@@ -610,6 +617,7 @@ export class MobileApp {
       this.renderColors();
       this.renderRoster();
       this.renderMapMechanicLobby();
+      this.renderMapEventLobby();
     }
 
     if (!this.network.playerSessionReady) {
@@ -632,9 +640,10 @@ export class MobileApp {
 
     if (inGame && this.network.game) {
       const mechanicPhase = this.network.game.mapMechanic?.phase;
+      const eventPhase = this.network.game.mapEvent?.phase;
       this.audio.updateEnvironment({
         mapId: this.network.game.mapId ?? "reactor-core",
-        warning: mechanicPhase === "warning" || mechanicPhase === "active",
+        warning: mechanicPhase === "warning" || mechanicPhase === "active" || eventPhase === "warning" || eventPhase === "active",
       });
       this.ensureRenderer(this.network.game.mapId ?? "reactor-core");
       this.renderer?.setLocalPlayerId(this.network.playerId);
@@ -661,6 +670,7 @@ export class MobileApp {
       this.lastResultsRevision = "";
       this.lastCapturePointRevision = "";
       this.previousMapMechanicSnapshot = null;
+      this.previousMapEventSnapshot = null;
       this.clearOpeningMechanicBanner(true);
     }
 
@@ -800,6 +810,14 @@ export class MobileApp {
     card.innerHTML = `<span class="map-mechanic-card-kicker">${view.timing}</span><strong>${profile.icon} ${view.title}</strong><p class="map-mechanic-card-body">${view.summary} ${view.counterplay}</p>`;
   }
 
+  private renderMapEventLobby(): void {
+    const enabled = this.network.room?.mapEventsEnabled ?? true;
+    const view = mapEventLobbyView(enabled);
+    const card = this.find<HTMLElement>("[data-map-event-card]");
+    card.dataset.tone = enabled ? "event" : "disabled";
+    card.innerHTML = `<span class="map-mechanic-card-kicker">${enabled ? "45 秒后首次触发" : "房间规则"}</span><strong>${view.title}</strong><p class="map-mechanic-card-body">${view.summary}${view.counterplay ? ` ${view.counterplay}` : ""}</p>`;
+  }
+
   private renderOpeningMechanicBanner(snapshot: GameSnapshot): void {
     if (!snapshot.mapMechanic || !snapshot.mapId) {
       this.clearOpeningMechanicBanner(false);
@@ -831,6 +849,7 @@ export class MobileApp {
 
   private renderHud(snapshot: GameSnapshot): void {
     this.syncMapMechanicFeedback(snapshot);
+    this.syncMapEventFeedback(snapshot);
     const own = snapshot.players.find((player) => player.id === this.network.playerId);
     const leaders = [...snapshot.players].sort((a, b) => b.score - a.score || b.kills - a.kills);
     const ownTeamScore = own?.teamId ? snapshot.teamScores?.find((team) => team.teamId === own.teamId) : undefined;
@@ -855,6 +874,10 @@ export class MobileApp {
     const mechanicCopy = mapMechanicStatusText(snapshot.mapMechanic, this.network.playerId, snapshot.serverTime);
     mechanicStatus.textContent = mechanicCopy;
     mechanicStatus.classList.toggle("is-visible", mechanicCopy.length > 0);
+    const eventStatus = this.find<HTMLElement>("#map-event-status");
+    const eventCopy = mapEventStatusText(snapshot.mapEvent, this.network.playerId, snapshot.serverTime);
+    eventStatus.textContent = eventCopy;
+    eventStatus.classList.toggle("is-visible", eventCopy.length > 0);
     const captureRevision = capturePointRevision(snapshot);
     if (captureRevision !== this.lastCapturePointRevision) {
       const previous = this.lastCapturePointRevision;
@@ -917,6 +940,20 @@ export class MobileApp {
     if (!event) return;
     this.audio.playMapMechanic(event.kind, event.stage);
     this.haptics.handleMapMechanicEvent(event);
+  }
+
+  private syncMapEventFeedback(snapshot: GameSnapshot): void {
+    const next = snapshot.mapEvent ?? null;
+    const event = selectMapEventFeedback(this.previousMapEventSnapshot, next, snapshot.serverTime);
+    this.previousMapEventSnapshot = next;
+    if (!event) return;
+    const feedbackKind = event.kind === "area-lockdown"
+      ? "reactor-vent"
+      : event.kind === "global-scan"
+        ? "neon-overdrive"
+        : "crystal-resonance";
+    this.audio.playMapMechanic(feedbackKind, event.stage);
+    this.haptics.handleMapMechanicEvent({ ...event, kind: feedbackKind });
   }
 
   private renderExclusiveSkillButton(player: PlayerSnapshot | undefined, serverTime: number): void {
@@ -1259,6 +1296,7 @@ function mobileTemplate(): string {
           <h1>能量乱斗</h1>
           <p id="lobby-status">正在连接房间</p></div>
           <section class="map-mechanic-card" data-map-mechanic-card aria-live="polite"></section>
+          <section class="map-mechanic-card map-event-card" data-map-event-card aria-live="polite"></section>
         </div>
         <div class="lobby-workspace">
           <section class="character-panel">
@@ -1293,6 +1331,7 @@ function mobileTemplate(): string {
           <div id="capture-status" class="capture-status" aria-live="polite"></div>
           <div id="map-mechanic-opening" class="map-mechanic-opening" aria-live="polite"></div>
           <div id="map-mechanic-status" class="map-mechanic-status" aria-live="polite"></div>
+          <div id="map-event-status" class="map-mechanic-status map-event-status" aria-live="polite"></div>
           <div id="kill-feed" class="kill-feed" aria-live="polite"></div>
           <div id="leaderboard" class="leaderboard"></div>
            <button class="control-settings-button arena-controls" data-controls-open type="button">键位</button><button class="sound-button arena-sound" data-sound-toggle type="button" aria-label="关闭声音">声音开</button><button class="fullscreen-button arena-fullscreen" data-fullscreen type="button">全屏</button>

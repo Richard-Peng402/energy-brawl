@@ -267,6 +267,7 @@ input:focus-visible {
 
 .map-mechanic-card[data-tone="disabled"] { --mechanic-primary: #718087; opacity: 0.82; }
 .map-mechanic-card[data-tone="random"] { --mechanic-primary: #f2c14e; --mechanic-secondary: #37cfff; }
+.map-event-card[data-tone="event"] { --mechanic-primary: #48d9ff; --mechanic-secondary: #5df5b5; }
 
 .map-mechanic-card-kicker {
   display: block;
@@ -984,6 +985,7 @@ button:disabled {
 }
 
 .map-mechanic-status.is-visible { opacity: 1; }
+.map-event-status { top: max(158px, calc(env(safe-area-inset-top) + 152px)); border-color: rgb(93 245 181 / 38%); }
 
 .kill-feed {
   position: absolute;
@@ -1816,6 +1818,17 @@ button:disabled {
   -webkit-line-clamp: 2;
 }
 
+#host-map-event-description {
+  display: -webkit-box;
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: #6f8d99;
+  font-size: 7px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .host-status-band span {
   color: #8f9ca2;
   font-size: 10px;
@@ -2220,6 +2233,7 @@ button:disabled {
   .map-mechanic-card .map-mechanic-card-body { margin-top: 2px; font-size: 7px; }
   .map-mechanic-opening { top: max(104px, calc(env(safe-area-inset-top) + 98px)); width: min(330px, 50vw); padding: 5px 8px; }
   .map-mechanic-status { top: max(116px, calc(env(safe-area-inset-top) + 110px)); max-width: 46vw; padding: 4px 9px; font-size: 8px; }
+  .map-event-status { top: max(142px, calc(env(safe-area-inset-top) + 136px)); }
 
   .lobby-workspace {
     gap: 6px;

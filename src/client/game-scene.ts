@@ -5,6 +5,7 @@ import { getMapDefinition, type MapId } from "../shared/map-catalog";
 import { ARENA_HEIGHT, ARENA_WIDTH, PLAYER_RADIUS, PROJECTILE_MAX_DISTANCE, VIEW_HEIGHT, VIEW_WIDTH } from "../shared/constants";
 import { SKILL_TYPES, type SkillType } from "../shared/skill-catalog";
 import type { CapturePointSnapshot, ExclusiveSkillEvent, GameSnapshot, MapMechanicSnapshot, PlayerInput, PlayerSnapshot, ProjectileImpactEvent, Vec2 } from "../shared/protocol";
+import type { MapEventSnapshot } from "../shared/map-events";
 import { AIM_GUIDE_LINE_WIDTH, calculateAimGuide } from "./aim-guide";
 import {
   ARENA_ASSETS,
@@ -59,6 +60,7 @@ import { EXCLUSIVE_SKILL_IDS, getExclusiveSkill, type ExclusiveSkillId } from ".
 import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
 import { mapMechanicRenderProfile, mapMechanicVisualRevision } from "./map-mechanic-visuals";
+import { mapEventVisualModel, mapEventVisualRevision } from "./map-event-visuals";
 import { resolveExclusiveSkillTargeting } from "../shared/exclusive-skill-targeting";
 import {
   getExclusiveSkillVfxProfile,
@@ -145,6 +147,18 @@ const SKILL_COLORS: Readonly<Record<SkillType, number>> = {
 };
 const arenaTextureKey = (mapId: MapId, kind: "floor" | "wall" | "decal" | "light"): string => `arena:${mapId}:${kind}`;
 const arenaPropTextureKey = (mapId: MapId, index: number): string => `arena:${mapId}:prop:${index}`;
+
+function rectanglePerimeterPoint(rect: { x: number; y: number; width: number; height: number }, progress: number): { x: number; y: number; rotation: number } {
+  const perimeter = Math.max(1, (rect.width + rect.height) * 2);
+  let distance = ((progress % 1) + 1) % 1 * perimeter;
+  if (distance < rect.width) return { x: rect.x + distance, y: rect.y, rotation: 0 };
+  distance -= rect.width;
+  if (distance < rect.height) return { x: rect.x + rect.width, y: rect.y + distance, rotation: Math.PI / 2 };
+  distance -= rect.height;
+  if (distance < rect.width) return { x: rect.x + rect.width - distance, y: rect.y + rect.height, rotation: Math.PI };
+  distance -= rect.width;
+  return { x: rect.x, y: rect.y + rect.height - Math.min(rect.height, distance), rotation: -Math.PI / 2 };
+}
 
 export interface GameDiagnosticHooks {
   onFrame(deltaMs: number): void;
@@ -294,8 +308,12 @@ class ArenaScene extends Phaser.Scene {
   private mapMechanicGraphics: Phaser.GameObjects.Graphics | null = null;
   private mapMechanicPulse: Phaser.GameObjects.Arc | null = null;
   private mapMechanicParticlePool: FixedObjectPool<Phaser.GameObjects.Image> | null = null;
+  private mapEventGraphics: Phaser.GameObjects.Graphics | null = null;
+  private mapEventPulse: Phaser.GameObjects.Arc | null = null;
+  private mapEventParticlePool: FixedObjectPool<Phaser.GameObjects.Image> | null = null;
   private runnerAfterimagePool: FixedObjectPool<RunnerAfterimageView> | null = null;
   private mapMechanicRevision = "hidden";
+  private mapEventRevision = "hidden";
   private latestSnapshotReceivedAt = 0;
   private renderDelayMs = 100;
   private correctionRemaining: Vec2 = { x: 0, y: 0 };
@@ -401,6 +419,20 @@ class ArenaScene extends Phaser.Scene {
         .setBlendMode(Phaser.BlendModes.ADD),
       (image) => image.setVisible(false).setActive(false).setAlpha(1).setScale(1).setRotation(0).clearTint(),
     );
+    this.mapEventGraphics = this.add.graphics().setDepth(-3.2).setBlendMode(Phaser.BlendModes.ADD);
+    this.mapEventPulse = this.add.circle(0, 0, 1, 0xffffff, 0.02)
+      .setDepth(-3.15)
+      .setVisible(false)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.mapEventParticlePool = new FixedObjectPool(
+      32,
+      () => this.add.image(0, 0, "fx-impact-spark")
+        .setDepth(-3.1)
+        .setVisible(false)
+        .setActive(false)
+        .setBlendMode(Phaser.BlendModes.ADD),
+      (image) => image.setVisible(false).setActive(false).setAlpha(1).setScale(1).setRotation(0).clearTint(),
+    );
     this.aimEnd = this.add.circle(0, 0, 5, 0xfff1bf, 0.9).setStrokeStyle(2, 0xff8c58, 0.95).setDepth(9).setVisible(false);
     this.ready = true;
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.clearExclusiveStageFeedback());
@@ -443,6 +475,7 @@ class ArenaScene extends Phaser.Scene {
     this.updateAimGuide();
     this.updateExclusiveSkillIndicator();
     this.updateMapMechanicVisual(now);
+    this.updateMapEventVisual(now);
   }
 
   applySnapshot(snapshot: GameSnapshot): void {
@@ -719,6 +752,7 @@ class ArenaScene extends Phaser.Scene {
     this.syncSkillOrbs(snapshot);
     this.syncCapturePoint(snapshot.capturePoint ?? null);
     this.syncMapMechanic(snapshot.phase === "finished" ? null : snapshot.mapMechanic ?? null);
+    this.syncMapEvent(snapshot.phase === "finished" ? null : snapshot.mapEvent ?? null);
   }
 
   private consumeExclusiveSkillFeedback(feedback: readonly ClassifiedExclusiveSkillFeedback[]): void {
@@ -1166,6 +1200,105 @@ class ArenaScene extends Phaser.Scene {
         .setRotation(angle + Math.PI / 2)
         .setDisplaySize(18 + progress * 16, 18 + progress * 16)
         .setAlpha(0.2 + 0.68 * Math.sin(progress * Math.PI));
+    });
+  }
+
+  private syncMapEvent(event: MapEventSnapshot | null): void {
+    const revision = mapEventVisualRevision(event);
+    if (revision === this.mapEventRevision) return;
+    this.mapEventRevision = revision;
+    const graphics = this.mapEventGraphics;
+    const pulse = this.mapEventPulse;
+    if (!graphics || !pulse || revision === "hidden" || !event) {
+      graphics?.clear().setVisible(false);
+      pulse?.setVisible(false);
+      this.mapEventParticlePool?.forEach((image) => image.setVisible(false).setActive(false));
+      return;
+    }
+
+    const profile = mapEventVisualModel(event);
+    graphics.clear().setVisible(true);
+    graphics.fillStyle(profile.primary, profile.fillAlpha);
+    graphics.lineStyle(profile.strokeWidth + 8, 0x02070b, 0.72);
+
+    if (event.kind === "supply-drop" && event.point) {
+      graphics.fillCircle(event.point.x, event.point.y, 72);
+      graphics.strokeCircle(event.point.x, event.point.y, 72);
+      graphics.lineStyle(profile.strokeWidth, profile.primary, 0.96).strokeCircle(event.point.x, event.point.y, 72);
+      graphics.lineStyle(4, profile.secondary, 0.86).strokeCircle(event.point.x, event.point.y, 42);
+      pulse.setPosition(event.point.x, event.point.y).setRadius(64);
+    } else if (event.kind === "area-lockdown" && event.zone?.kind === "rect") {
+      graphics.fillRect(event.zone.x, event.zone.y, event.zone.width, event.zone.height);
+      graphics.strokeRect(event.zone.x, event.zone.y, event.zone.width, event.zone.height);
+      graphics.lineStyle(profile.strokeWidth, profile.primary, 0.96).strokeRect(event.zone.x, event.zone.y, event.zone.width, event.zone.height);
+      graphics.lineStyle(4, profile.secondary, 0.78).strokeRect(event.zone.x + 14, event.zone.y + 14, event.zone.width - 28, event.zone.height - 28);
+      pulse
+        .setPosition(event.zone.x + event.zone.width / 2, event.zone.y + event.zone.height / 2)
+        .setRadius(Math.max(48, Math.min(event.zone.width, event.zone.height) * 0.46));
+    } else if (event.kind === "energy-storm" && event.zone?.kind === "circle") {
+      graphics.lineStyle(profile.strokeWidth + 8, 0x02070b, 0.76).strokeCircle(event.zone.x, event.zone.y, event.zone.radius);
+      graphics.lineStyle(profile.strokeWidth, profile.secondary, 0.98).strokeCircle(event.zone.x, event.zone.y, event.zone.radius);
+      graphics.lineStyle(4, profile.primary, 0.74).strokeCircle(event.zone.x, event.zone.y, event.zone.radius * 0.82);
+      graphics.fillStyle(profile.secondary, profile.fillAlpha * 0.72).fillCircle(event.zone.x, event.zone.y, event.zone.radius);
+      pulse.setPosition(event.zone.x, event.zone.y).setRadius(event.zone.radius);
+    } else {
+      graphics.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
+      graphics.strokeRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
+      graphics.lineStyle(profile.strokeWidth, profile.primary, 0.72).strokeRect(12, 12, ARENA_WIDTH - 24, ARENA_HEIGHT - 24);
+      pulse.setPosition(ARENA_WIDTH / 2, ARENA_HEIGHT / 2).setRadius(Math.min(ARENA_WIDTH, ARENA_HEIGHT) * 0.42);
+    }
+
+    pulse
+      .setVisible(true)
+      .setFillStyle(profile.primary, 0.028)
+      .setStrokeStyle(5, profile.secondary, 0.6);
+    this.mapEventParticlePool?.forEach((image) => image
+      .setVisible(true)
+      .setActive(true)
+      .setTint(profile.secondary)
+      .setDisplaySize(24, 24));
+  }
+
+  private updateMapEventVisual(now: number): void {
+    const event = this.snapshot?.phase === "finished" ? null : this.snapshot?.mapEvent;
+    const pulse = this.mapEventPulse;
+    const pool = this.mapEventParticlePool;
+    if (!event || !pulse || !pool || this.mapEventRevision === "hidden") return;
+    const profile = mapEventVisualModel(event);
+    const cycle = (now % 1_600) / 1_600;
+    pulse.setScale(0.86 + cycle * 0.22).setAlpha(0.78 - cycle * 0.52);
+
+    pool.forEach((image, index) => {
+      const progress = (cycle + index / pool.capacity) % 1;
+      if (event.kind === "supply-drop" && event.point) {
+        const angle = index / pool.capacity * Math.PI * 2;
+        image
+          .setPosition(event.point.x + Math.cos(angle) * (30 + 34 * progress), event.point.y + 72 - progress * 168)
+          .setRotation(-Math.PI / 2)
+          .setDisplaySize(13 + progress * 10, 32 + progress * 18)
+          .setAlpha(0.18 + Math.sin(progress * Math.PI) * 0.76);
+        return;
+      }
+      if (event.kind === "area-lockdown" && event.zone?.kind === "rect") {
+        const point = rectanglePerimeterPoint(event.zone, progress);
+        image
+          .setPosition(point.x, point.y)
+          .setRotation(point.rotation)
+          .setDisplaySize(13, 38)
+          .setAlpha(0.3 + Math.sin(progress * Math.PI) * 0.66);
+        return;
+      }
+      const center = event.zone?.kind === "circle"
+        ? { x: event.zone.x, y: event.zone.y }
+        : { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+      const angle = index / pool.capacity * Math.PI * 2 + cycle * Math.PI * 2;
+      const baseRadius = event.zone?.kind === "circle" ? event.zone.radius : Math.min(ARENA_WIDTH, ARENA_HEIGHT) * 0.42;
+      const radius = event.kind === "global-scan" ? baseRadius * progress : baseRadius * (0.92 + Math.sin(progress * Math.PI * 2) * 0.08);
+      image
+        .setPosition(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius)
+        .setRotation(angle + Math.PI / 2)
+        .setDisplaySize(event.kind === "global-scan" ? 12 : 18, event.kind === "global-scan" ? 44 : 28)
+        .setAlpha(0.22 + Math.sin(progress * Math.PI) * 0.68);
     });
   }
 

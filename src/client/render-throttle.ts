@@ -11,6 +11,7 @@ export function roomUiRevision(room: RoomSnapshot | null): string {
     room.pendingWinnerId ?? "",
     room.mapSelection ?? "reactor-core",
     room.mapMechanicsEnabled ?? true,
+    room.mapEventsEnabled ?? true,
     players,
   ].join("|");
 }

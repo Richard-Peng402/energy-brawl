@@ -12,6 +12,7 @@ import {
 import { ServerInfoRefreshController, type ServerInfoRefreshState } from "./server-info-refresh";
 import { teamLabel } from "./team-label";
 import { mapMechanicLobbyView, randomMapMechanicSummaries } from "./map-mechanic-visuals";
+import { mapEventLobbyView } from "./map-event-visuals";
 
 export class HostApp {
   private readonly network = new GameNetworkClient(false);
@@ -57,6 +58,10 @@ export class HostApp {
     this.find<HTMLInputElement>("#host-map-mechanics").addEventListener("change", (event) => {
       const checkbox = event.target as HTMLInputElement;
       void this.admin({ type: "setMapMechanics", enabled: checkbox.checked });
+    });
+    this.find<HTMLInputElement>("#host-map-events").addEventListener("change", (event) => {
+      const checkbox = event.target as HTMLInputElement;
+      void this.admin({ type: "setMapEvents", enabled: checkbox.checked });
     });
     this.find("#host-team-controls").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-team-action]");
@@ -204,6 +209,9 @@ export class HostApp {
     const checkbox = this.find<HTMLInputElement>("#host-map-mechanics");
     checkbox.checked = room?.mapMechanicsEnabled ?? true;
     checkbox.disabled = !lobbyRulesEnabled;
+    const eventCheckbox = this.find<HTMLInputElement>("#host-map-events");
+    eventCheckbox.checked = room?.mapEventsEnabled ?? true;
+    eventCheckbox.disabled = !lobbyRulesEnabled;
     const mapSelection = room?.mapSelection ?? "reactor-core";
     const mechanismsEnabled = room?.mapMechanicsEnabled ?? true;
     const mechanicDescription = this.find("#host-map-mechanic-description");
@@ -214,6 +222,8 @@ export class HostApp {
       const view = mapMechanicLobbyView(mapSelection, true);
       mechanicDescription.textContent = `${view.title} · ${view.timing} · ${view.counterplay}`;
     }
+    const eventView = mapEventLobbyView(room?.mapEventsEnabled ?? true);
+    this.find("#host-map-event-description").textContent = `${eventView.summary}${eventView.counterplay ? ` ${eventView.counterplay}` : ""}`;
     this.find("#host-team-controls").innerHTML = presentation.matchMode === "solo"
       ? ""
       : presentation.teamScores.map((team) => {
@@ -355,7 +365,7 @@ function hostTemplate(): string {
     <section class="host-status-band">
       <div><span>房间状态</span><strong id="host-phase">大厅</strong></div>
       <label class="host-mode-control">模式<select id="host-mode"><option value="solo">个人战</option><option value="team3v3">3v3</option><option value="team2v2v2">2v2v2</option><option value="domination3v3">据点 3v3</option><option value="domination2v2v2">据点 2v2v2</option></select></label>
-      <div class="host-map-settings"><label>地图<select id="host-map"><option value="reactor-core">反应堆核心</option><option value="neon-docks">霓虹港区</option><option value="crystal-ruins">晶脉遗迹</option><option value="random">随机轮换</option></select></label><label class="host-map-mechanic-control"><input id="host-map-mechanics" type="checkbox" checked />动态机制</label><p id="host-map-mechanic-description">每张地图拥有独立的动态战场机制</p></div>
+      <div class="host-map-settings"><label>地图<select id="host-map"><option value="reactor-core">反应堆核心</option><option value="neon-docks">霓虹港区</option><option value="crystal-ruins">晶脉遗迹</option><option value="random">随机轮换</option></select></label><label class="host-map-mechanic-control"><input id="host-map-mechanics" type="checkbox" checked />动态机制</label><label class="host-map-mechanic-control"><input id="host-map-events" type="checkbox" checked />临时事件</label><p id="host-map-mechanic-description">每张地图拥有独立的动态战场机制</p><p id="host-map-event-description">补给、封锁、扫描与风暴会在战斗中轮换</p></div>
       <div><span>真人玩家</span><strong id="host-count">0 / 6</strong></div>
       <div class="host-actions">
         <button id="host-start" class="primary-button" type="button" disabled>开始对局</button>
