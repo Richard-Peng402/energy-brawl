@@ -37,6 +37,7 @@ import { firstWallHit, moveCircleSafely, moveCircleUntilBlocked, sweepCircleCirc
 import { StaticSpatialIndex } from "../shared/spatial-index";
 import { circleHitsCircle, circleHitsRect, clamp, distanceSquared, normalize } from "../shared/math";
 import { selectMatchMvp } from "../shared/match-results";
+import { defaultTacticalModuleForCharacter, type TacticalModuleId } from "../shared/tactical-module-catalog";
 import {
   advanceSkillSystem,
   acceptSkillAction,
@@ -75,6 +76,7 @@ import {
   type MapMechanicState,
 } from "./map-mechanic-system";
 import { appendPresentationEvent } from "./presentation-events";
+import { neutralTacticalRuntimeModifiers, tacticalRuntimeModifiers } from "./tactical-modules";
 
 const EXCLUSIVE_SKILL_EVENT_CAPACITY = 24;
 const PROJECTILE_IMPACT_EVENT_CAPACITY = 32;
@@ -86,6 +88,7 @@ export interface PlayerSeed {
   id: string;
   nickname: string;
   characterId: CharacterId;
+  tacticalModuleId?: TacticalModuleId;
   isBot: boolean;
   stats?: Partial<AdminStats>;
   teamId?: TeamId | null;
@@ -101,11 +104,22 @@ export interface WorldPlayer extends PlayerSnapshot {
   exclusiveSkillState?: ExclusiveRuntimeState | null;
   recentDamageSources: Map<string, number>;
   statusEffects: StatusEffectStore;
+  projectileMaxDistance: number;
+  projectileRadius: number;
+  shieldStrengthMultiplier: number;
+  shieldMoveMultiplier: number;
+  selfHealingMultiplier: number;
+  activeHealingMultiplier: number;
+  receivedHealingMultiplier: number;
+  regenDelayAddMs: number;
+  exclusivePotencyMultiplier: number;
 }
 
 export interface WorldProjectile extends ProjectileSnapshot {
   distanceTraveled: number;
   damage?: number;
+  maxDistance?: number;
+  radius?: number;
 }
 
 export interface GameWorld {
@@ -183,6 +197,10 @@ export function createGameWorld(
   const players = new Map<string, WorldPlayer>();
   seeds.forEach((seed, index) => {
     const character = getCharacter(seed.characterId);
+    const tacticalModuleId = seed.tacticalModuleId ?? defaultTacticalModuleForCharacter(seed.characterId);
+    const tactical = seed.tacticalModuleId
+      ? tacticalRuntimeModifiers(seed.tacticalModuleId)
+      : neutralTacticalRuntimeModifiers();
     const spawn = spawnPoints[index % spawnPoints.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
     const maxHealth = Math.max(seed.stats?.maxHealth ?? character.maxHealth, seed.stats?.health ?? 0);
     const health = Math.min(seed.stats?.health ?? maxHealth, maxHealth);
@@ -190,6 +208,7 @@ export function createGameWorld(
       id: seed.id,
       nickname: seed.nickname,
       characterId: seed.characterId,
+      tacticalModuleId,
       isBot: seed.isBot,
       color: character.color,
       connected: !seed.isBot,
@@ -204,7 +223,7 @@ export function createGameWorld(
       damage: seed.stats?.damage ?? character.damage,
       moveSpeed: seed.stats?.moveSpeed ?? character.moveSpeed,
       fireCooldownMs: seed.stats?.fireCooldownMs ?? character.fireCooldownMs,
-      projectileSpeed: seed.stats?.projectileSpeed ?? character.projectileSpeed,
+      projectileSpeed: (seed.stats?.projectileSpeed ?? character.projectileSpeed) * tactical.projectileSpeedMultiplier,
       score: seed.stats?.score ?? 0,
       kills: seed.stats?.kills ?? 0,
       energyCollected: seed.stats?.energyCollected ?? 0,
@@ -233,11 +252,20 @@ export function createGameWorld(
       mapHealingAccumulatorMs: 0,
       killStreak: 0,
       teamId: seed.teamId ?? null,
-      exclusiveSkillCooldownMs: seed.stats?.exclusiveSkillCooldownMs ?? DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS,
+      exclusiveSkillCooldownMs: (seed.stats?.exclusiveSkillCooldownMs ?? DEFAULT_EXCLUSIVE_SKILL_COOLDOWN_MS) * tactical.exclusiveCooldownMultiplier,
       exclusiveSkillReadyAt: now,
       exclusiveSkillState: null,
       recentDamageSources: new Map(),
       statusEffects: new Map(),
+      projectileMaxDistance: PROJECTILE_MAX_DISTANCE * tactical.projectileDistanceMultiplier,
+      projectileRadius: PROJECTILE_RADIUS * tactical.projectileRadiusMultiplier,
+      shieldStrengthMultiplier: tactical.shieldMultiplier,
+      shieldMoveMultiplier: tactical.shieldMoveMultiplier,
+      selfHealingMultiplier: tactical.selfHealingMultiplier,
+      activeHealingMultiplier: tactical.activeHealingMultiplier,
+      receivedHealingMultiplier: tactical.receivedHealingMultiplier,
+      regenDelayAddMs: tactical.regenDelayAddMs,
+      exclusivePotencyMultiplier: tactical.exclusivePotencyMultiplier,
     });
   });
 
@@ -473,7 +501,7 @@ export function collectEnergy(world: GameWorld, playerId: string, energyId: stri
   addPlayerScore(world, player, ENERGY_SCORE);
   player.energyCollected += 1;
   if (player.characterId === "medic") {
-    const healed = Math.min(player.maxHealth - player.health, MEDIC_ENERGY_HEAL);
+    const healed = Math.min(player.maxHealth - player.health, MEDIC_ENERGY_HEAL * player.selfHealingMultiplier);
     player.health += healed;
     player.healingDone = (player.healingDone ?? 0) + healed;
   }
@@ -539,14 +567,23 @@ export function applyWorldExclusiveSkill(world: GameWorld, playerId: string, dir
   if (result.definition.id === "pulse-heal") {
     const healedTargetIds: string[] = [];
     const cleansedTargetIds: string[] = [];
-    const selfHealed = Math.min(player.maxHealth - player.health, result.definition.balance.selfHeal ?? 28);
+    const selfHealed = Math.min(
+      player.maxHealth - player.health,
+      (result.definition.balance.selfHeal ?? 28) * player.selfHealingMultiplier * player.exclusivePotencyMultiplier,
+    );
     player.health += selfHealed;
     player.healingDone = (player.healingDone ?? 0) + selfHealed;
     if (selfHealed > 0) healedTargetIds.push(player.id);
     if (clearPurifiableStatus(player.statusEffects).length > 0) cleansedTargetIds.push(player.id);
     for (const ally of world.players.values()) {
       if (world.matchMode !== "solo" && ally.id !== player.id && ally.alive && ally.teamId !== null && ally.teamId === player.teamId && distanceSquared(ally, player) <= (result.definition.balance.radius ?? 280) ** 2) {
-        const healed = Math.min(ally.maxHealth - ally.health, result.definition.balance.allyHeal ?? 34);
+        const healed = Math.min(
+          ally.maxHealth - ally.health,
+          (result.definition.balance.allyHeal ?? 34)
+            * player.activeHealingMultiplier
+            * ally.receivedHealingMultiplier
+            * player.exclusivePotencyMultiplier,
+        );
         ally.health += healed;
         player.healingDone = (player.healingDone ?? 0) + healed;
         if (healed > 0) healedTargetIds.push(ally.id);
@@ -603,8 +640,8 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     finishedAt: world.finishedAt,
     matchMvpId: world.matchMvpId,
     matchMvpScore: world.matchMvpScore,
-    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, mapHealingAccumulatorMs: _mapHealingAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, statusEffects, ...player }) => ({ ...player, combatStates: [...statusEffects.values()].map(({ id, startedAt, expiresAt }) => ({ id, startedAt, expiresAt })) })),
-    projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, ...projectile }) => projectile),
+    players: [...world.players.values()].map(({ input: _input, nextFireAt: _nextFireAt, lastCombatAt: _lastCombatAt, regenAccumulatorMs: _regenAccumulatorMs, mapHealingAccumulatorMs: _mapHealingAccumulatorMs, killStreak: _killStreak, recentDamageSources: _recentDamageSources, statusEffects, projectileMaxDistance: _projectileMaxDistance, projectileRadius: _projectileRadius, shieldStrengthMultiplier: _shieldStrengthMultiplier, shieldMoveMultiplier: _shieldMoveMultiplier, selfHealingMultiplier: _selfHealingMultiplier, activeHealingMultiplier: _activeHealingMultiplier, receivedHealingMultiplier: _receivedHealingMultiplier, regenDelayAddMs: _regenDelayAddMs, exclusivePotencyMultiplier: _exclusivePotencyMultiplier, ...player }) => ({ ...player, combatStates: [...statusEffects.values()].map(({ id, startedAt, expiresAt }) => ({ id, startedAt, expiresAt })) })),
+    projectiles: [...world.projectiles.values()].map(({ distanceTraveled: _distanceTraveled, damage: _damage, maxDistance: _maxDistance, radius: _radius, ...projectile }) => projectile),
     energy: [...world.energy.values()],
     skillOrbs: [...world.skillSystem.orbs.values()],
     killFeed: [...world.killFeed],
@@ -742,7 +779,7 @@ function executeSkill(world: GameWorld, player: WorldPlayer, skill: SkillType): 
     case "dash":
       return executeDash(world, player);
     case "shield":
-      player.skillShieldHealth = SHIELD_STRENGTH;
+      player.skillShieldHealth = SHIELD_STRENGTH * player.shieldStrengthMultiplier;
       player.skillShieldUntil = world.now + SHIELD_DURATION_MS;
       return true;
     case "spread": {
@@ -754,7 +791,7 @@ function executeSkill(world: GameWorld, player: WorldPlayer, skill: SkillType): 
     }
     case "heal":
       if (player.health >= player.maxHealth) return false;
-      player.health = Math.min(player.maxHealth, player.health + HEAL_AMOUNT);
+      player.health = Math.min(player.maxHealth, player.health + HEAL_AMOUNT * player.selfHealingMultiplier);
       return true;
   }
 }
@@ -861,6 +898,7 @@ function effectiveMoveMultiplier(world: GameWorld, player: WorldPlayer): number 
   if (hasActiveStatusEffect(player.statusEffects, "neon-overdrive", world.now)) {
     multiplier *= MAP_MECHANICS["neon-docks"].effect.moveMultiplier;
   }
+  if (player.skillShieldUntil > world.now && player.skillShieldHealth > 0) multiplier *= player.shieldMoveMultiplier;
   return multiplier;
 }
 
@@ -936,12 +974,14 @@ function spawnProjectile(world: GameWorld, player: WorldPlayer, angle: number, d
   world.projectiles.set(id, {
     id,
     ownerId: player.id,
-    x: player.x + direction.x * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
-    y: player.y + direction.y * (PLAYER_RADIUS + PROJECTILE_RADIUS + 4),
+    x: player.x + direction.x * (PLAYER_RADIUS + player.projectileRadius + 4),
+    y: player.y + direction.y * (PLAYER_RADIUS + player.projectileRadius + 4),
     vx: direction.x * projectileSpeed,
     vy: direction.y * projectileSpeed,
     damage,
     distanceTraveled: 0,
+    maxDistance: player.projectileMaxDistance,
+    radius: player.projectileRadius,
   });
 }
 
@@ -950,7 +990,9 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
     if (world.phase === "finished") break;
     const speed = Math.hypot(projectile.vx, projectile.vy);
     const requestedDistance = speed * deltaMs / 1_000;
-    const remainingDistance = PROJECTILE_MAX_DISTANCE - projectile.distanceTraveled;
+    const maxDistance = projectile.maxDistance ?? PROJECTILE_MAX_DISTANCE;
+    const radius = projectile.radius ?? PROJECTILE_RADIUS;
+    const remainingDistance = maxDistance - projectile.distanceTraveled;
     const activeDistance = Math.min(requestedDistance, remainingDistance);
     if (activeDistance <= 0 || speed <= 0) {
       world.projectiles.delete(projectile.id);
@@ -961,15 +1003,15 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
     const wallHit = firstWallHit(
       projectile,
       delta,
-      PROJECTILE_RADIUS,
-      world.mapWalls.query(movementBounds(projectile, delta, PROJECTILE_RADIUS)),
+      radius,
+      world.mapWalls.query(movementBounds(projectile, delta, radius)),
     );
     let targetHit: { player: WorldPlayer; time: number } | null = null;
     for (const player of world.players.values()) {
       if (player.id === projectile.ownerId || !player.alive) continue;
       const owner = world.players.get(projectile.ownerId);
       if (owner && owner.teamId !== null && owner.teamId === player.teamId) continue;
-      const hit = sweepCircleCircle(projectile, delta, PROJECTILE_RADIUS, player, PLAYER_RADIUS);
+      const hit = sweepCircleCircle(projectile, delta, radius, player, PLAYER_RADIUS);
       if (hit && (!targetHit || hit.time < targetHit.time)) targetHit = { player, time: hit.time };
     }
 
@@ -1005,7 +1047,7 @@ function advanceProjectiles(world: GameWorld, deltaMs: number): void {
     projectile.x += delta.x;
     projectile.y += delta.y;
     projectile.distanceTraveled += Math.hypot(delta.x, delta.y);
-    if (activeDistance < requestedDistance || projectile.distanceTraveled >= PROJECTILE_MAX_DISTANCE || projectile.x < PROJECTILE_RADIUS || projectile.x > ARENA_WIDTH - PROJECTILE_RADIUS || projectile.y < PROJECTILE_RADIUS || projectile.y > ARENA_HEIGHT - PROJECTILE_RADIUS) {
+    if (activeDistance < requestedDistance || projectile.distanceTraveled >= maxDistance || projectile.x < radius || projectile.x > ARENA_WIDTH - radius || projectile.y < radius || projectile.y > ARENA_HEIGHT - radius) {
       world.projectiles.delete(projectile.id);
     }
   }
@@ -1096,7 +1138,7 @@ function advanceCrystalHealing(world: GameWorld, intervalStart: number, interval
     const points = Math.floor(player.mapHealingAccumulatorMs / pointIntervalMs);
     if (points > 0) {
       player.mapHealingAccumulatorMs -= points * pointIntervalMs;
-      const healed = Math.min(points, player.maxHealth - player.health);
+      const healed = Math.min(points * player.receivedHealingMultiplier, player.maxHealth - player.health);
       player.health += healed;
       player.healingDone = (player.healingDone ?? 0) + healed;
       player.mapMechanicContribution!.mechanicHealing += healed;
@@ -1112,7 +1154,7 @@ function advanceCombatRegeneration(world: GameWorld, deltaMs: number): void {
       player.regenAccumulatorMs = 0;
       continue;
     }
-    if (world.now - player.lastCombatAt < COMBAT_REGEN_DELAY_MS) continue;
+    if (world.now - player.lastCombatAt < COMBAT_REGEN_DELAY_MS + player.regenDelayAddMs) continue;
     player.regenAccumulatorMs += deltaMs;
     const points = Math.floor(player.regenAccumulatorMs / pointIntervalMs);
     if (points <= 0) continue;

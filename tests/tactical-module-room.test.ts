@@ -45,4 +45,21 @@ describe("tactical module room selection", () => {
     expect(room.changeTacticalModule("socket", "damage-boost" as never)).toMatchObject({ ok: false });
     expect(room.snapshot().players[0]!.tacticalModuleId).toBe(before);
   });
+
+  it("reapplies module ratios after host overrides in the lobby and match", () => {
+    const room = new GameRoom();
+    const joined = room.joinHuman("socket", {
+      nickname: "测试",
+      characterId: "blaze",
+      tacticalModuleId: "ballistic-acceleration",
+    });
+    const playerId = joined.data!.playerId;
+    expect(room.applyHostAdminCommand({ type: "setStat", playerId, stat: "projectileSpeed", value: 1_000 })).toEqual({ ok: true });
+    room.setReady("socket", true);
+    room.startMatch();
+    expect(room.gameWorld()!.players.get(playerId)!.projectileSpeed).toBe(1_180);
+
+    expect(room.applyHostAdminCommand({ type: "setStat", playerId, stat: "projectileSpeed", value: 800 })).toEqual({ ok: true });
+    expect(room.gameWorld()!.players.get(playerId)!.projectileSpeed).toBe(944);
+  });
 });

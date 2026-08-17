@@ -10,6 +10,7 @@ export interface ExclusiveSkillPlayer {
   id: string; characterId: CharacterId; x: number; y: number; angle: number; health: number; maxHealth: number; alive: boolean;
   teamId?: "red" | "blue" | "gold" | null; moveSpeed: number; fireCooldownMs: number; damage: number;
   exclusiveSkillCooldownMs?: number; exclusiveSkillReadyAt?: number;
+  exclusivePotencyMultiplier?: number;
   exclusiveSkillState?: ExclusiveRuntimeState | null;
 }
 export interface ExclusiveRuntimeState { skillId: ExclusiveSkillId; startedAt: number; expiresAt: number; anchor?: Vec2; usedDash?: boolean; movementFrom?: Vec2; movementTarget?: Vec2; movementStartedAt?: number; movementEndsAt?: number; returning?: boolean; }
@@ -33,6 +34,7 @@ export function applyExclusiveSkill(
   targeting: ExclusiveSkillTargetingContext = DEFAULT_TARGETING_CONTEXT,
 ): ExclusiveResult {
   const definition = getExclusiveSkill(player.characterId);
+  const potency = clamp(player.exclusivePotencyMultiplier ?? 1, 0.5, 1);
   if (definition.id === "breach" && player.exclusiveSkillState?.skillId === definition.id && player.exclusiveSkillState.anchor && now <= player.exclusiveSkillState.expiresAt) {
     const origin = { x: player.x, y: player.y };
     const target = player.exclusiveSkillState.anchor;
@@ -59,7 +61,7 @@ export function applyExclusiveSkill(
         skillId: definition.id,
         origin,
         direction: aim,
-        range: definition.balance.dashDistance ?? 0,
+        range: (definition.balance.dashDistance ?? 0) * potency,
         bounds: targeting.bounds,
         playerRadius: targeting.playerRadius,
         walls: targeting.walls,
@@ -73,7 +75,7 @@ export function applyExclusiveSkill(
   const state: ExclusiveRuntimeState = {
     skillId: definition.id,
     startedAt: now,
-    expiresAt: now + Math.max(300, definition.balance.durationMs),
+    expiresAt: now + Math.max(300, definition.balance.durationMs * potency),
     anchor: definition.id === "breach" ? origin : undefined,
     usedDash: false,
     movementFrom: definition.id === "breach" ? origin : undefined,

@@ -43,6 +43,7 @@ import {
   type PlayerSeed,
 } from "./simulation";
 import { clearSkillSlot } from "./skill-system";
+import { neutralTacticalRuntimeModifiers, tacticalRuntimeModifiers } from "./tactical-modules";
 import { assignBalancedTeams, hasDuplicateCharacterOnTeam, swapTeams } from "./team-system";
 
 interface RoomSeat extends PlayerSeed {
@@ -622,10 +623,22 @@ export class GameRoom {
         break;
       case "moveSpeed": player.moveSpeed = value; break;
       case "fireCooldownMs": player.fireCooldownMs = value; break;
-      case "projectileSpeed": player.projectileSpeed = value; break;
+      case "projectileSpeed": {
+        const tactical = player.tacticalModuleId
+          ? tacticalRuntimeModifiers(player.tacticalModuleId)
+          : neutralTacticalRuntimeModifiers();
+        player.projectileSpeed = value * tactical.projectileSpeedMultiplier;
+        break;
+      }
       case "kills": player.kills = value; break;
       case "energyCollected": player.energyCollected = value; break;
-      case "exclusiveSkillCooldownMs": player.exclusiveSkillCooldownMs = value; break;
+      case "exclusiveSkillCooldownMs": {
+        const tactical = player.tacticalModuleId
+          ? tacticalRuntimeModifiers(player.tacticalModuleId)
+          : neutralTacticalRuntimeModifiers();
+        player.exclusiveSkillCooldownMs = value * tactical.exclusiveCooldownMultiplier;
+        break;
+      }
     }
     if (player.health < previousHealth) {
       player.lastCombatAt = this.world.now;

@@ -7,6 +7,7 @@ import {
   getTacticalModule,
   isTacticalModuleId,
 } from "../src/shared/tactical-module-catalog";
+import { tacticalRuntimeModifiers } from "../src/server/tactical-modules";
 
 describe("tactical module catalog", () => {
   it("defines four modules with a benefit, tradeoff, and counterplay", () => {
@@ -35,5 +36,32 @@ describe("tactical module catalog", () => {
   it("rejects unknown module identifiers", () => {
     expect(isTacticalModuleId("damage-boost")).toBe(false);
     expect(isTacticalModuleId(null)).toBe(false);
+  });
+
+  it("accelerates projectiles without increasing damage or fire rate", () => {
+    expect(tacticalRuntimeModifiers("ballistic-acceleration")).toMatchObject({
+      projectileSpeedMultiplier: 1.18,
+      projectileDistanceMultiplier: 0.88,
+      projectileRadiusMultiplier: 0.9,
+      damageMultiplier: 1,
+      fireCooldownMultiplier: 1,
+    });
+  });
+
+  it("pairs each remaining benefit with its required cost", () => {
+    expect(tacticalRuntimeModifiers("shield-reinforcement")).toMatchObject({
+      shieldMultiplier: 1.3,
+      shieldMoveMultiplier: 0.93,
+    });
+    expect(tacticalRuntimeModifiers("healing-amplifier")).toMatchObject({
+      activeHealingMultiplier: 1.22,
+      selfHealingMultiplier: 1.1,
+      receivedHealingMultiplier: 1.1,
+      regenDelayAddMs: 750,
+    });
+    expect(tacticalRuntimeModifiers("cooldown-converter")).toMatchObject({
+      exclusiveCooldownMultiplier: 0.85,
+      exclusivePotencyMultiplier: 0.88,
+    });
   });
 });
