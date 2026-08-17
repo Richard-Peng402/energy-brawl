@@ -81,13 +81,7 @@ class CdpClient {
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(profileRoot, { recursive: true });
 
-const playerSocket = await connectSocket();
 const nickname = `视觉验收${Date.now().toString().slice(-5)}`;
-const joinResult = await acknowledge(playerSocket, "join", { nickname, characterId: "blaze" });
-if (!joinResult?.ok || !joinResult.data) throw new Error(joinResult?.error ?? "Could not create visual smoke player");
-const readyResult = await acknowledge(playerSocket, "setReady", true);
-if (!readyResult?.ok) throw new Error(readyResult?.error ?? "Could not ready visual smoke player");
-playerSocket.disconnect();
 
 const edge = spawn(edgePath, [
   "--headless=new",
@@ -117,28 +111,89 @@ try {
   await cdp.open();
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
-  await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-    source: `try {
-      localStorage.setItem("energy-brawl.reconnect-token", ${JSON.stringify(joinResult.data.reconnectToken)});
-      localStorage.setItem("energy-brawl.player-id", ${JSON.stringify(joinResult.data.playerId)});
-      localStorage.setItem("energy-brawl.nickname", ${JSON.stringify(nickname)});
-    } catch {}`,
-  });
+  const evaluate = async (expression) => {
+    const result = await cdp.send("Runtime.evaluate", { expression, returnByValue: true });
+    return result.result.value;
+  };
+  const ensureReady = async () => {
+    const alreadyReady = await evaluate(`(() => {
+      const button = document.querySelector('#ready-button');
+      return Boolean(button && button.classList.contains("is-ready"));
+    })()`);
+    if (alreadyReady) return;
+
+    const selected = await evaluate(`(() => {
+      const character = document.querySelector('[data-character-id]:not(:disabled)');
+      if (!character) return false;
+      character.click();
+      return true;
+    })()`);
+    if (!selected) throw new Error("No character is available for the visual smoke player");
+    await waitFor(() => evaluate(`(() => {
+      const button = document.querySelector('#ready-button');
+      return Boolean(button && !button.disabled);
+    })()`));
+
+    const clicked = await evaluate(`(() => {
+      const button = document.querySelector('#ready-button');
+      if (!button || button.disabled || button.classList.contains("is-ready")) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!clicked) throw new Error("Could not click the ready button");
+    try {
+      await waitFor(() => evaluate(`(() => {
+        const button = document.querySelector('#ready-button');
+        return Boolean(button && button.classList.contains("is-ready"));
+      })()`));
+    } catch (error) {
+      const diagnostics = await evaluate(`(() => {
+        const button = document.querySelector('#ready-button');
+        const selected = document.querySelector('[data-character-id][aria-pressed="true"]');
+        return {
+          button: button ? { className: button.className, disabled: button.disabled, text: button.textContent } : null,
+          selectedCharacter: selected?.getAttribute('data-character-id') ?? null,
+          availableCharacters: [...document.querySelectorAll('[data-character-id]:not(:disabled)')]
+            .map((character) => character.getAttribute('data-character-id')),
+          connection: document.querySelector('#connection-status')?.textContent ?? null,
+          toast: document.querySelector('#toast')?.textContent ?? null,
+          pageText: document.body.innerText.slice(-800),
+        };
+      })()`);
+      throw new Error(`Ready was not confirmed: ${JSON.stringify(diagnostics)}`, { cause: error });
+    }
+  };
   await cdp.send("Page.navigate", { url: `${baseUrl}/` });
   await waitFor(async () => {
-    const result = await cdp.send("Runtime.evaluate", { expression: "Boolean(document.querySelector('#ready-button'))", returnByValue: true });
+    const result = await cdp.send("Runtime.evaluate", { expression: "Boolean(document.querySelector('#join-form'))", returnByValue: true });
+    return result.result.value;
+  });
+  await cdp.send("Runtime.evaluate", {
+    expression: `(() => {
+      const form = document.querySelector('#join-form');
+      const input = document.querySelector('#nickname');
+      if (!form || !input) return false;
+      input.value = ${JSON.stringify(nickname)};
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      form.requestSubmit();
+      return true;
+    })()`,
+    returnByValue: true,
+  });
+  await waitFor(async () => {
+    const result = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const button = document.querySelector('#ready-button');
+        return Boolean(button && !button.classList.contains('is-hidden'));
+      })()`,
+      returnByValue: true,
+    });
     return result.result.value;
   });
 
   const report = [];
   for (const mapId of maps) {
-    await waitFor(async () => {
-      const result = await cdp.send("Runtime.evaluate", {
-        expression: `(() => { const button = document.querySelector('#ready-button'); if (!button || button.classList.contains('is-hidden')) return false; if (button.textContent?.includes('准备') && !button.textContent.includes('取消')) button.click(); return true; })()`,
-        returnByValue: true,
-      });
-      return result.result.value;
-    });
+    await ensureReady();
     await wait(250);
 
     const mapResult = await acknowledge(hostSocket, "hostAdminCommand", { token: hostToken, command: { type: "setMap", mapSelection: mapId } });
