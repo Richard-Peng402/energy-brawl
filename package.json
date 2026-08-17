@@ -18,6 +18,7 @@
     "load-test:v4": "tsx scripts/v4-load-test.ts",
     "load-test:diagnostics": "tsx scripts/diagnostics-load-test.ts",
     "test": "vitest",
+    "test:network-faults": "vitest --run tests/network-faults.test.ts",
     "typecheck": "tsc --noEmit",
     "doctor": "tsx scripts/release-doctor.ts",
     "smoke:maps": "node scripts/map-visual-smoke.mjs",

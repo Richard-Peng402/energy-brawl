@@ -272,10 +272,12 @@ export class GameRoom {
     if (player) {
       this.pendingInputs.delete(seat.id);
       this.pendingSkillActions.delete(seat.id);
+      this.pendingExclusiveSkillActions.delete(seat.id);
       player.connected = true;
       player.isBot = false;
       player.lastProcessedInput = 0;
       player.lastProcessedSkillAction = 0;
+      player.lastProcessedExclusiveSkillAction = 0;
       player.input = {
         seq: 0,
         moveX: 0,
@@ -403,6 +405,7 @@ export class GameRoom {
     if (!seat) return;
     this.pendingInputs.delete(playerId);
     this.pendingSkillActions.delete(playerId);
+    this.pendingExclusiveSkillActions.delete(playerId);
     seat.socketId = null;
     seat.connected = false;
     seat.ready = false;
@@ -600,6 +603,7 @@ export class GameRoom {
     }
     this.pendingInputs.delete(playerId);
     this.pendingSkillActions.delete(playerId);
+    this.pendingExclusiveSkillActions.delete(playerId);
     if (!this.world) {
       this.seats.delete(playerId);
       if (this.pendingWinnerId === playerId) this.pendingWinnerId = null;
