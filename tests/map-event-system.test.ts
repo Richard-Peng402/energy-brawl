@@ -53,6 +53,18 @@ describe("temporary map event state machine", () => {
     expect(state.claimedPlayerIds.size).toBe(0);
   });
 
+  it("limits elimination rounds to one temporary event", () => {
+    const state = createMapEventState("reactor-core", 0, true, 1)!;
+    const onePerRound = { mapMechanicBusy: false, allowNewEvent: true, maxEvents: 1 } as const;
+    advanceMapEventState(state, 45_000, onePerRound);
+    advanceMapEventState(state, state.phaseEndsAt, onePerRound);
+    advanceMapEventState(state, state.phaseEndsAt, onePerRound);
+    advanceMapEventState(state, state.phaseEndsAt, onePerRound);
+    expect(state.eventSeq).toBe(1);
+    expect(state.phase).toBe("idle");
+    expect(state.phaseEndsAt).toBe(Number.POSITIVE_INFINITY);
+  });
+
   it("serializes copied participant data and selected geometry", () => {
     const state = createMapEventState("reactor-core", 0, true, 0)!;
     advanceMapEventState(state, 45_000, open);

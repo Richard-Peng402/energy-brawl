@@ -143,7 +143,7 @@ export function mapEventVisualRevision(snapshot: MapEventSnapshot | null | undef
       : snapshot.zone
         ? `rect:${snapshot.zone.x}:${snapshot.zone.y}:${snapshot.zone.width}:${snapshot.zone.height}`
         : "arena";
-  return `${snapshot.eventSeq}:${snapshot.kind}:${snapshot.phase}:${geometry}`;
+  return `round:${snapshot.round}:${snapshot.eventSeq}:${snapshot.kind}:${snapshot.phase}:${geometry}`;
 }
 
 export function selectMapEventFeedback(
@@ -152,7 +152,7 @@ export function selectMapEventFeedback(
   serverTime: number,
 ): MapEventFeedbackEvent | null {
   if (!next || (next.phase !== "warning" && next.phase !== "active")) return null;
-  const key = `${next.eventSeq}:${next.kind}:${next.phase}`;
-  if (previous && `${previous.eventSeq}:${previous.kind}:${previous.phase}` === key) return null;
+  const key = `${next.round}:${next.eventSeq}:${next.kind}:${next.phase}`;
+  if (previous && `${previous.round}:${previous.eventSeq}:${previous.kind}:${previous.phase}` === key) return null;
   return { key, kind: next.kind, stage: next.phase, at: serverTime };
 }

@@ -833,6 +833,7 @@ function advanceWorldMapEvent(world: GameWorld, startedAt: number, endedAt: numb
   advanceMapEventState(state, endedAt, {
     mapMechanicBusy: mechanicBusy,
     allowNewEvent: world.phase === "playing",
+    maxEvents: world.eliminationState ? 1 : undefined,
   });
   if (state.phase !== "active") return;
 
@@ -874,7 +875,7 @@ function updateSupplyDrop(world: GameWorld, state: MapEventState, startedAt: num
   }
   state.claimedPlayerIds.add(claimant.id);
   state.phaseEndsAt = endedAt;
-  advanceMapEventState(state, endedAt, { mapMechanicBusy: false, allowNewEvent: world.phase === "playing" });
+  advanceMapEventState(state, endedAt, { mapMechanicBusy: false, allowNewEvent: world.phase === "playing", maxEvents: world.eliminationState ? 1 : undefined });
 }
 
 function updateAreaLockdown(world: GameWorld, state: MapEventState, endedAt: number): void {

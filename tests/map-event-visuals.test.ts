@@ -50,6 +50,13 @@ describe("temporary map event presentation", () => {
     expect(selectMapEventFeedback(warning, warning, 1_050)).toBeNull();
     expect(selectMapEventFeedback(warning, active, 5_000)).toMatchObject({ kind: "area-lockdown", stage: "active" });
   });
+
+  it("treats the same event sequence in a new round as a new feedback event", () => {
+    const previous = event("area-lockdown", { round: 1, eventSeq: 1, phase: "active" });
+    const next = event("area-lockdown", { round: 2, eventSeq: 1, phase: "warning" });
+    expect(selectMapEventFeedback(previous, next, 8_000)?.key).toBe("2:1:area-lockdown:warning");
+    expect(mapEventVisualRevision(next)).toContain("round:2");
+  });
 });
 
 function event(kind: MapEventSnapshot["kind"], overrides: Partial<MapEventSnapshot> = {}): MapEventSnapshot {

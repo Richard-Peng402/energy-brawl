@@ -17,6 +17,7 @@ const MAX_TRANSITIONS_PER_ADVANCE = 1_024;
 export interface MapEventAdvanceOptions {
   mapMechanicBusy: boolean;
   allowNewEvent: boolean;
+  maxEvents?: number;
 }
 
 export interface MapEventState {
@@ -69,7 +70,7 @@ export function advanceMapEventState(state: MapEventState, now: number, options:
     transitions += 1;
     const boundary = state.phaseEndsAt;
     if (state.phase === "idle") {
-      if (!options.allowNewEvent) {
+      if (!options.allowNewEvent || reachedEventLimit(state, options)) {
         clearRoundState(state);
         state.phaseEndsAt = Number.POSITIVE_INFINITY;
         break;
@@ -90,7 +91,7 @@ export function advanceMapEventState(state: MapEventState, now: number, options:
       enterPhase(state, "cooldown", boundary, getMapEventDefinition(state.kind).cooldownMs);
       continue;
     }
-    if (!options.allowNewEvent) {
+    if (!options.allowNewEvent || reachedEventLimit(state, options)) {
       clearRoundState(state);
       state.phase = "idle";
       state.phaseStartedAt = boundary;
@@ -109,6 +110,10 @@ export function advanceMapEventState(state: MapEventState, now: number, options:
     Object.assign(state, selectGeometry(state.mapId, state.kind, state.round));
     enterWarning(state, boundary);
   }
+}
+
+function reachedEventLimit(state: MapEventState, options: MapEventAdvanceOptions): boolean {
+  return Number.isFinite(options.maxEvents) && state.eventSeq >= Math.max(0, Math.trunc(options.maxEvents ?? 0));
 }
 
 export function mapEventSnapshot(state: MapEventState): MapEventSnapshot {

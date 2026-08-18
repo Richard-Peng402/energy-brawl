@@ -78,6 +78,11 @@ export function selectLatestKillFeedback(
   return { event, streakToPlay: isNewRecentLocalKill ? event.streak : null };
 }
 
+export function shouldUseLocalAttackFeedback(snapshot: GameSnapshot, ownerId: string, localPlayerId: string | null): boolean {
+  if (ownerId !== localPlayerId) return false;
+  return snapshot.players.find((player) => player.id === localPlayerId)?.alive === true;
+}
+
 export type CombatFeedbackEventType = "hurt" | "low-health" | "death" | "kill";
 
 export interface CombatFeedbackEvent {

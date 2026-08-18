@@ -31,6 +31,7 @@ import {
   shouldRenderProjectileImageEffect,
   shouldShowProjectileTrace,
   selectCombatFeedbackEvents,
+  shouldUseLocalAttackFeedback,
   type CombatFeedbackEvent,
 } from "./combat-feedback";
 import {
@@ -1590,7 +1591,7 @@ class ArenaScene extends Phaser.Scene {
           this.playProjectileImageEffect("muzzle", muzzleX, muzzleY, color, owner.angle, presentation.muzzle);
           const localView = this.localPlayerId ? this.playerViews.get(this.localPlayerId) : null;
           this.audio.playFire({
-            local: owner.id === this.localPlayerId,
+            local: shouldUseLocalAttackFeedback(lifecycleSnapshot, owner.id, this.localPlayerId),
             sourceId: owner.id,
             distance: localView ? Math.hypot(owner.x - localView.container.x, owner.y - localView.container.y) : 1_200,
           });
