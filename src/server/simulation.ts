@@ -66,6 +66,7 @@ import type {
   ProjectileImpactEvent,
   ProjectileSnapshot,
   Vec2,
+  EliminationSnapshot,
 } from "../shared/protocol";
 import {
   advanceMapMechanicState,
@@ -367,8 +368,6 @@ export function resetWorldForEliminationRound(world: GameWorld, now: number): vo
   world.mapMechanicState = createMapMechanicState(world.mapId, now, world.mapMechanicsEnabled);
   world.mapEventState = createMapEventState(world.mapId, now, world.mapEventsEnabled, 0);
   world.eliminationState.firstEliminationTeamId = null;
-  world.eliminationState.phase = "prep";
-  world.eliminationState.deadline = now + world.eliminationState.rules.prepMs;
   for (const [index, player] of [...world.players.values()].entries()) {
     const spawn = world.mapSpawnPoints[index % world.mapSpawnPoints.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
     player.x = spawn.x;
@@ -733,6 +732,19 @@ export function refreshWorldScoreState(world: GameWorld, playerId: string): void
 }
 
 export function worldToSnapshot(world: GameWorld): GameSnapshot {
+  const elimination: EliminationSnapshot | null = world.eliminationState ? {
+    phase: world.eliminationState.phase,
+    roundIndex: world.eliminationState.roundIndex,
+    roundScores: (Object.entries(world.eliminationState.scores) as Array<[TeamId, number]>).map(([teamId, score]) => ({
+      teamId,
+      score,
+      targetScore: getModeDefinition(world.matchMode).targetScore,
+    })),
+    deadline: world.eliminationState.deadline,
+    maxScoredRounds: world.eliminationState.rules.maxScoredRounds,
+    decisive: world.eliminationState.decisive,
+    rounds: world.eliminationState.rounds.map((round) => ({ ...round })),
+  } : null;
   return {
     serverTime: world.now,
     phase: world.phase,
@@ -785,6 +797,7 @@ export function worldToSnapshot(world: GameWorld): GameSnapshot {
     mapId: world.mapId,
     mapMechanic: world.mapMechanicState ? mapMechanicSnapshot(world.mapMechanicState) : null,
     mapEvent: world.mapEventState ? mapEventSnapshot(world.mapEventState) : null,
+    elimination,
   };
 }
 

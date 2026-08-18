@@ -39,11 +39,14 @@ import {
   forceWorldWinner,
   finishWorldMatch,
   refreshWorldScoreState,
+  resetWorldForEliminationRound,
   stepWorld,
   worldToSnapshot,
   type GameWorld,
   type PlayerSeed,
 } from "./simulation";
+import { advanceElimination, recordElimination, resetEliminationRound } from "./team-elimination";
+import type { EliminationWorldView as SharedEliminationWorldView } from "../shared/team-elimination";
 import { clearSkillSlot } from "./skill-system";
 import { neutralTacticalRuntimeModifiers, tacticalRuntimeModifiers } from "./tactical-modules";
 import { assignBalancedTeams, hasDuplicateCharacterOnTeam, swapTeams } from "./team-system";
@@ -470,7 +473,29 @@ export class GameRoom {
       return lifecycleChanged;
     }
 
+    if (this.world.eliminationState?.phase === "prep") {
+      this.world.now = this.clockMs;
+      const transitions = advanceElimination(this.world.eliminationState, this.clockMs, this.eliminationWorldView(this.world));
+      if (transitions.some((transition) => transition.type === "phase" && transition.phase === "live")) {
+        this.pendingInputs.clear();
+        this.pendingSkillActions.clear();
+        this.pendingExclusiveSkillActions.clear();
+      }
+      return lifecycleChanged || transitions.length > 0;
+    }
+
+    if (this.world.eliminationState?.phase === "result") {
+      if (this.clockMs < this.world.eliminationState.deadline) return lifecycleChanged;
+      resetEliminationRound(this.world.eliminationState, this.clockMs);
+      resetWorldForEliminationRound(this.world, this.clockMs);
+      this.pendingInputs.clear();
+      this.pendingSkillActions.clear();
+      this.pendingExclusiveSkillActions.clear();
+      return true;
+    }
+
     const wasFinished = this.worldIsFinished();
+    const previousEliminationView = this.world.eliminationState ? this.eliminationWorldView(this.world) : null;
 
     for (const [playerId, input] of this.pendingInputs) applyPlayerInput(this.world, playerId, input);
     this.pendingInputs.clear();
@@ -496,10 +521,46 @@ export class GameRoom {
       this.nextBotThinkAt.set(player.id, this.clockMs + profile.reactionMinMs + Math.random() * profile.reactionJitterMs);
     }
     stepWorld(this.world, deltaMs);
+    if (this.world.eliminationState) {
+      this.recordDecisiveElimination(previousEliminationView, this.eliminationWorldView(this.world));
+      const transitions = advanceElimination(this.world.eliminationState, this.clockMs, this.eliminationWorldView(this.world));
+      const matchWinner = transitions.find((transition) => transition.type === "match-won");
+      if (matchWinner?.type === "match-won") {
+        forceWorldTeamWinner(this.world, matchWinner.winnerTeamId);
+        this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
+      }
+      if (transitions.length > 0) return true;
+    }
     if (this.worldIsFinished() && this.autoResetAt === null) {
       this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
     }
     return lifecycleChanged || (!wasFinished && this.worldIsFinished());
+  }
+
+  private eliminationWorldView(world: GameWorld): SharedEliminationWorldView {
+    const aliveByTeam = { red: 0, blue: 0 };
+    const healthByTeam = { red: 0, blue: 0 };
+    const maxHealthByTeam = { red: 0, blue: 0 };
+    for (const player of world.players.values()) {
+      if (player.teamId !== "red" && player.teamId !== "blue") continue;
+      maxHealthByTeam[player.teamId] += player.maxHealth;
+      healthByTeam[player.teamId] += player.health;
+      if (player.alive) aliveByTeam[player.teamId] += 1;
+    }
+    return {
+      aliveByTeam,
+      healthRatioByTeam: {
+        red: maxHealthByTeam.red > 0 ? healthByTeam.red / maxHealthByTeam.red : 0,
+        blue: maxHealthByTeam.blue > 0 ? healthByTeam.blue / maxHealthByTeam.blue : 0,
+      },
+    };
+  }
+
+  private recordDecisiveElimination(previous: SharedEliminationWorldView | null, current: SharedEliminationWorldView): void {
+    const state = this.world?.eliminationState;
+    if (!state || state.phase !== "decisive" || !previous) return;
+    if (current.aliveByTeam.red < previous.aliveByTeam.red) recordElimination(state, "blue");
+    if (current.aliveByTeam.blue < previous.aliveByTeam.blue) recordElimination(state, "red");
   }
 
   snapshot(): RoomSnapshot {
