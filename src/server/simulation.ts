@@ -94,6 +94,7 @@ import {
   type MatchHighlightTracker,
 } from "./match-highlight-tracker";
 import type { MatchHighlight } from "../shared/match-highlights";
+import { createEliminationState, type EliminationState } from "./team-elimination";
 
 const EXCLUSIVE_SKILL_EVENT_CAPACITY = 24;
 const PROJECTILE_IMPACT_EVENT_CAPACITY = 32;
@@ -181,6 +182,7 @@ export interface GameWorld {
   mapMechanicState: MapMechanicState | null;
   mapEventsEnabled: boolean;
   mapEventState: MapEventState | null;
+  eliminationState: EliminationState | null;
 }
 
 export interface CreateGameWorldOptions {
@@ -340,6 +342,7 @@ export function createGameWorld(
     mapMechanicState: createMapMechanicState(mapId, now, mapMechanicsEnabled),
     mapEventsEnabled: options.mapEventsEnabled ?? false,
     mapEventState: createMapEventState(mapId, now, options.mapEventsEnabled ?? false, options.mapEventSeed ?? 0),
+    eliminationState: matchMode === "teamElimination3v3" ? createEliminationState(now) : null,
   };
 
   while (world.energy.size < MAX_ENERGY && spawnEnergy(world)) {
@@ -347,6 +350,50 @@ export function createGameWorld(
   }
   seedInitialSkillOrbs(world.skillSystem, [...players.values()]);
   return world;
+}
+
+export function resetWorldForEliminationRound(world: GameWorld, now: number): void {
+  if (!world.eliminationState || world.phase === "finished") return;
+  world.now = now;
+  world.remainingMs = MATCH_DURATION_MS;
+  world.overtimePlayerIds = [];
+  world.holderId = null;
+  world.holdRemainingMs = null;
+  world.projectiles.clear();
+  world.energy.clear();
+  world.nextEnergySpawnAt = now;
+  world.nextEnergyPoint = 0;
+  world.skillSystem = createSkillSystem(now, Math.random, getMapDefinition(world.mapId).skillOrbSpawnPoints, getMapDefinition(world.mapId).walls);
+  world.mapMechanicState = createMapMechanicState(world.mapId, now, world.mapMechanicsEnabled);
+  world.mapEventState = createMapEventState(world.mapId, now, world.mapEventsEnabled, 0);
+  world.eliminationState.firstEliminationTeamId = null;
+  world.eliminationState.phase = "prep";
+  world.eliminationState.deadline = now + world.eliminationState.rules.prepMs;
+  for (const [index, player] of [...world.players.values()].entries()) {
+    const spawn = world.mapSpawnPoints[index % world.mapSpawnPoints.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+    player.x = spawn.x;
+    player.y = spawn.y;
+    player.vx = 0;
+    player.vy = 0;
+    player.health = player.maxHealth;
+    player.alive = true;
+    player.respawnAt = null;
+    player.shieldUntil = now + SPAWN_SHIELD_MS;
+    player.skillShieldHealth = 0;
+    player.skillShieldUntil = 0;
+    player.skillSlot = { type: null, charges: 0 };
+    player.lastCombatAt = now;
+    player.regenAccumulatorMs = 0;
+    player.mapHealingAccumulatorMs = 0;
+    player.killStreak = 0;
+    player.recentDamageSources.clear();
+    clearAllStatusEffects(player.statusEffects);
+    clearExclusiveSkillState(player);
+  }
+  while (world.energy.size < MAX_ENERGY && spawnEnergy(world)) {
+    // Fill every valid configured point once after the round reset.
+  }
+  seedInitialSkillOrbs(world.skillSystem, [...world.players.values()]);
 }
 
 export function applyPlayerInput(world: GameWorld, playerId: string, input: PlayerInput): boolean {
@@ -398,7 +445,7 @@ export function stepWorld(world: GameWorld, deltaMs: number): void {
     expireStatusEffects(player.statusEffects, world.now);
     if (player.skillShieldUntil <= world.now) player.skillShieldHealth = 0;
     if (!player.alive) {
-      if (player.respawnAt !== null && world.now >= player.respawnAt) respawnPlayer(world, player);
+      if (!world.eliminationState && player.respawnAt !== null && world.now >= player.respawnAt) respawnPlayer(world, player);
       continue;
     }
     const movement = advanceExclusiveMovement(world, player);
@@ -487,7 +534,7 @@ function applyWorldDamage(
   victim.alive = false;
   victim.vx = 0;
   victim.vy = 0;
-  victim.respawnAt = eventAt + RESPAWN_DELAY_MS;
+  victim.respawnAt = world.eliminationState ? null : eventAt + RESPAWN_DELAY_MS;
   victim.input = { ...EMPTY_INPUT, seq: victim.lastProcessedInput };
   victim.skillShieldHealth = 0;
   victim.skillShieldUntil = 0;

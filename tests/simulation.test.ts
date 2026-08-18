@@ -164,6 +164,23 @@ describe("reactor venting", () => {
   });
 });
 
+describe("team elimination simulation boundaries", () => {
+  it("initializes a round state and does not respawn dead players", () => {
+    const world = createGameWorld([
+      { id: "red-1", nickname: "红一", characterId: "blaze", isBot: false, teamId: "red" },
+      { id: "blue-1", nickname: "蓝一", characterId: "fortress", isBot: false, teamId: "blue" },
+    ], 0, "teamElimination3v3", "reactor-core");
+    expect((world as unknown as { eliminationState?: { phase: string; roundIndex: number } }).eliminationState).toMatchObject({ phase: "prep", roundIndex: 1 });
+
+    const victim = world.players.get("blue-1")!;
+    victim.alive = false;
+    victim.respawnAt = null;
+    stepWorld(world, RESPAWN_DELAY_MS + 1);
+    expect(victim.alive).toBe(false);
+    expect(victim.respawnAt).toBeNull();
+  });
+});
+
 describe("presentation event snapshots", () => {
   it("initializes empty histories and serializes copied event arrays", () => {
     const world = createWorld();
