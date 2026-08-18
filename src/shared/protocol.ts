@@ -11,6 +11,7 @@ import type { MapEventSnapshot } from "./map-events";
 import type { MatchHighlight } from "./match-highlights";
 import type { BotDifficulty } from "./bot-difficulty";
 import type { RoomPresetV1 } from "./room-presets";
+import type { EliminationPhase, EliminationRules } from "./team-elimination";
 import type {
   ClientDiagnosticSample,
   DeviceDiagnosticProfile,
@@ -167,6 +168,7 @@ export interface RoomSnapshot {
   mapMechanicsEnabled?: boolean;
   mapEventsEnabled?: boolean;
   botDifficulty?: BotDifficulty;
+  eliminationRules?: EliminationRules;
   teamScores?: TeamScoreSnapshot[];
   players: Array<
     Pick<PlayerSnapshot, "id" | "nickname" | "characterId" | "tacticalModuleId" | "color" | "isBot" | "connected" | "ready"> & AdminStats & { teamId?: TeamId | null }
@@ -199,6 +201,25 @@ export interface GameSnapshot {
   mapEvent?: MapEventSnapshot | null;
   exclusiveSkillEvents?: readonly ExclusiveSkillEvent[];
   projectileImpactEvents?: readonly ProjectileImpactEvent[];
+  elimination?: EliminationSnapshot | null;
+}
+
+export interface EliminationRoundSummary {
+  roundIndex: number;
+  winnerTeamId: TeamId | null;
+  reason: "eliminated" | "timeout" | "decisive" | "forced" | "draw";
+  redAlive: number;
+  blueAlive: number;
+}
+
+export interface EliminationSnapshot {
+  phase: EliminationPhase;
+  roundIndex: number;
+  roundScores: TeamScoreSnapshot[];
+  deadline: number;
+  maxScoredRounds: number;
+  decisive: boolean;
+  rounds: EliminationRoundSummary[];
 }
 
 export interface CapturePointSnapshot extends Vec2 {

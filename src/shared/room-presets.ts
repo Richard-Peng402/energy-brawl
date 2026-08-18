@@ -4,6 +4,7 @@ import { isBotDifficulty, type BotDifficulty } from "./bot-difficulty";
 import { MAP_CATALOG, type MapSelection } from "./map-catalog";
 import { isMatchMode, type MatchMode } from "./mode-catalog";
 import type { AdminStat, AdminStats } from "./protocol";
+import type { EliminationRules } from "./team-elimination";
 
 export interface RoomPresetV1 {
   schemaVersion: 1;
@@ -15,6 +16,7 @@ export interface RoomPresetV1 {
   mapMechanicsEnabled: boolean;
   mapEventsEnabled: boolean;
   botDifficulty: BotDifficulty;
+  eliminationRules?: Partial<EliminationRules>;
   characterOverrides: Partial<Record<CharacterId, Partial<AdminStats>>>;
 }
 
