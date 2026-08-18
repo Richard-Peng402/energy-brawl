@@ -21,7 +21,7 @@ import {
   type CharacterAssetState,
   type CharacterDirection,
 } from "./asset-registry";
-import { resolveCameraView, shouldSnapCameraOnRespawn } from "./camera-follow";
+import { resolveCameraView, shouldSnapCameraOnEliminationRound, shouldSnapCameraOnRespawn } from "./camera-follow";
 import { CombatAudio } from "./combat-audio";
 import { teamLabel } from "./team-label";
 import {
@@ -315,6 +315,7 @@ class ArenaScene extends Phaser.Scene {
   private mapMechanicRevision = "hidden";
   private mapEventRevision = "hidden";
   private latestSnapshotReceivedAt = 0;
+  private lastEliminationRoundIndex: number | null = null;
   private renderDelayMs = 100;
   private correctionRemaining: Vec2 = { x: 0, y: 0 };
   private readonly failedTextureKeys = new Set<string>();
@@ -493,6 +494,14 @@ class ArenaScene extends Phaser.Scene {
       (snapshot.projectileImpactEvents?.at(-1)?.eventSeq ?? 0)
         === (this.snapshot.projectileImpactEvents?.at(-1)?.eventSeq ?? 0)
     ) return;
+    const eliminationRoundChanged = shouldSnapCameraOnEliminationRound(this.lastEliminationRoundIndex, snapshot.elimination?.roundIndex);
+    if (eliminationRoundChanged) {
+      this.clearExclusiveStageFeedback();
+      this.lastExclusiveSkillEventSeq = snapshot.exclusiveSkillEvents?.at(-1)?.eventSeq ?? null;
+      this.lastProjectileImpactEventSeq = snapshot.projectileImpactEvents?.at(-1)?.eventSeq ?? null;
+      this.mapMechanicRevision = "";
+      this.mapEventRevision = "";
+    }
     const selectedSkillFeedback = selectExclusiveSkillFeedback(
       snapshot.exclusiveSkillEvents ?? [],
       this.lastExclusiveSkillEventSeq,
@@ -510,6 +519,7 @@ class ArenaScene extends Phaser.Scene {
     this.onCombatFeedback(feedbackEvents);
     const advancesAnchor = shouldAdvanceSnapshotAnchor(this.snapshot?.serverTime ?? null, snapshot.serverTime);
     this.snapshot = snapshot;
+    this.lastEliminationRoundIndex = snapshot.elimination?.roundIndex ?? null;
     this.snapshotBuffer.push(snapshot);
     if (advancesAnchor) this.latestSnapshotReceivedAt = performance.now();
     if (this.ready) {
@@ -517,6 +527,7 @@ class ArenaScene extends Phaser.Scene {
         snapshot,
         this.drainExclusiveSkillFeedback(snapshot),
         this.drainProjectileImpactFeedback(),
+        eliminationRoundChanged,
       );
     }
   }
@@ -678,6 +689,7 @@ class ArenaScene extends Phaser.Scene {
     snapshot: GameSnapshot,
     skillFeedback: readonly ClassifiedExclusiveSkillFeedback[] = [],
     projectileImpactFeedback: readonly ProjectileImpactEvent[] = [],
+    eliminationRoundChanged = false,
   ): void {
     this.consumeExclusiveSkillFeedback(skillFeedback);
     this.consumeProjectileImpactFeedback(projectileImpactFeedback, snapshot);
@@ -696,7 +708,7 @@ class ArenaScene extends Phaser.Scene {
       const view = this.playerViews.get(player.id) ?? this.createPlayerView(player);
       if (player.id === this.localPlayerId) {
         this.diagnosticHooks.onAuthoritativeInput(player.lastProcessedInput);
-        localPlayerRespawned = shouldSnapCameraOnRespawn(view.wasAlive, player.alive);
+        localPlayerRespawned = shouldSnapCameraOnRespawn(view.wasAlive, player.alive) || (eliminationRoundChanged && player.alive);
         if (localPlayerRespawned) {
           view.container.setPosition(player.x, player.y);
           this.correctionRemaining = { x: 0, y: 0 };

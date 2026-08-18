@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCameraView, shouldSnapCameraOnRespawn } from "../src/client/camera-follow";
+import { resolveCameraView, shouldSnapCameraOnEliminationRound, shouldSnapCameraOnRespawn } from "../src/client/camera-follow";
 
 describe("camera follow", () => {
   const viewport = { width: 900, height: 500 };
@@ -26,5 +26,11 @@ describe("camera follow", () => {
     expect(shouldSnapCameraOnRespawn(false, true)).toBe(true);
     expect(shouldSnapCameraOnRespawn(true, true)).toBe(false);
     expect(shouldSnapCameraOnRespawn(true, false)).toBe(false);
+  });
+
+  it("requests a camera snap when an elimination round changes even without a respawn transition", () => {
+    expect(shouldSnapCameraOnEliminationRound(2, 3)).toBe(true);
+    expect(shouldSnapCameraOnEliminationRound(2, 2)).toBe(false);
+    expect(shouldSnapCameraOnEliminationRound(null, 1)).toBe(false);
   });
 });

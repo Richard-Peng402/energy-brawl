@@ -36,6 +36,10 @@ export function shouldSnapCameraOnRespawn(wasAlive: boolean, alive: boolean): bo
   return !wasAlive && alive;
 }
 
+export function shouldSnapCameraOnEliminationRound(previousRound: number | null | undefined, nextRound: number | null | undefined): boolean {
+  return previousRound !== null && previousRound !== undefined && nextRound !== null && nextRound !== undefined && nextRound > previousRound;
+}
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
