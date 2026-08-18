@@ -15,6 +15,7 @@ import { teamLabel } from "./team-label";
 import { mapMechanicLobbyView, randomMapMechanicSummaries } from "./map-mechanic-visuals";
 import { mapEventLobbyView } from "./map-event-visuals";
 import { RoomPresetStore } from "./room-preset-store";
+import { DEFAULT_ELIMINATION_RULES, ELIMINATION_RULE_LIMITS, type EliminationRules } from "../shared/team-elimination";
 
 export class HostApp {
   private readonly network = new GameNetworkClient(false);
@@ -69,6 +70,15 @@ export class HostApp {
     });
     this.find<HTMLSelectElement>("#host-bot-difficulty").addEventListener("change", (event) => {
       void this.admin({ type: "setBotDifficulty", difficulty: (event.target as HTMLSelectElement).value as BotDifficulty });
+    });
+    this.find("#host-elimination-rules").addEventListener("change", (event) => {
+      const input = (event.target as HTMLElement).closest<HTMLInputElement>("input[data-elimination-rule]");
+      if (!input) return;
+      const key = input.dataset.eliminationRule as keyof EliminationRules | undefined;
+      if (!key) return;
+      const value = Number(input.value) * (key.endsWith("Ms") ? 1_000 : 1);
+      if (!Number.isSafeInteger(value)) return;
+      void this.admin({ type: "setEliminationRules", rules: { [key]: value } });
     });
     this.find<HTMLSelectElement>("#host-preset").addEventListener("change", (event) => {
       this.selectedPresetId = (event.target as HTMLSelectElement).value || null;
@@ -280,6 +290,24 @@ export class HostApp {
     const botDifficulty = this.find<HTMLSelectElement>("#host-bot-difficulty");
     botDifficulty.value = room?.botDifficulty ?? "normal";
     botDifficulty.disabled = !lobbyRulesEnabled;
+    const eliminationRules = room?.eliminationRules ?? DEFAULT_ELIMINATION_RULES;
+    const eliminationControls = this.find<HTMLElement>("#host-elimination-rules");
+    const eliminationMode = presentation.matchMode === "teamElimination3v3";
+    eliminationControls.hidden = !eliminationMode;
+    eliminationControls.setAttribute("aria-hidden", String(!eliminationMode));
+    for (const input of eliminationControls.querySelectorAll<HTMLInputElement>("input[data-elimination-rule]")) {
+      const key = input.dataset.eliminationRule as keyof EliminationRules;
+      const divisor = key.endsWith("Ms") ? 1_000 : 1;
+      const value = eliminationRules[key] / divisor;
+      if (document.activeElement !== input) input.value = String(value);
+      const [, maximum] = ELIMINATION_RULE_LIMITS[key];
+      input.max = String(maximum / divisor);
+      input.disabled = !lobbyRulesEnabled;
+    }
+    const eliminationSummary = this.find("#host-elimination-summary");
+    eliminationSummary.textContent = eliminationMode
+      ? `先赢 ${Math.floor(eliminationRules.maxScoredRounds / 2) + 1} 回合 · 每回合 ${formatSeconds(eliminationRules.liveMs)} 战斗`
+      : "团队歼灭模式专用设置";
     this.renderPresetControls(lobbyRulesEnabled);
     const mapSelection = room?.mapSelection ?? "reactor-core";
     const mechanismsEnabled = room?.mapMechanicsEnabled ?? true;
@@ -433,7 +461,7 @@ function hostTemplate(): string {
     </header>
     <section class="host-status-band">
       <div><span>房间状态</span><strong id="host-phase">大厅</strong></div>
-      <label class="host-mode-control">模式<select id="host-mode"><option value="solo">个人战</option><option value="team3v3">3v3</option><option value="team2v2v2">2v2v2</option><option value="domination3v3">据点 3v3</option><option value="domination2v2v2">据点 2v2v2</option></select></label>
+      <label class="host-mode-control">模式<select id="host-mode"><option value="solo">个人战</option><option value="team3v3">3v3</option><option value="team2v2v2">2v2v2</option><option value="domination3v3">据点 3v3</option><option value="domination2v2v2">据点 2v2v2</option><option value="teamElimination3v3">团队歼灭 3v3</option></select></label>
       <div class="host-map-settings"><label>地图<select id="host-map"><option value="reactor-core">反应堆核心</option><option value="neon-docks">霓虹港区</option><option value="crystal-ruins">晶脉遗迹</option><option value="random">随机轮换</option></select></label><label class="host-map-mechanic-control"><input id="host-map-mechanics" type="checkbox" checked />动态机制</label><label class="host-map-mechanic-control"><input id="host-map-events" type="checkbox" checked />临时事件</label><p id="host-map-mechanic-description">每张地图拥有独立的动态战场机制</p><p id="host-map-event-description">补给、封锁、扫描与风暴会在战斗中轮换</p></div>
       <div><span>真人玩家</span><strong id="host-count">0 / 6</strong></div>
       <div class="host-actions">
@@ -446,6 +474,16 @@ function hostTemplate(): string {
       <label>房间预设<select id="host-preset"><option value="">暂无本机预设</option></select></label>
       <button id="host-preset-save" type="button">保存</button><button id="host-preset-apply" type="button">应用</button><button id="host-preset-rename" type="button">重命名</button><button id="host-preset-delete" type="button">删除</button>
       <label>机器人<select id="host-bot-difficulty"><option value="easy">简单</option><option value="normal">标准</option><option value="hard">困难</option></select></label>
+    </section>
+    <section id="host-elimination-rules" class="host-elimination-rules" hidden aria-label="团队歼灭回合设置">
+      <div class="host-elimination-heading"><div><span class="eyebrow">ROUND CONTROL</span><h2>团队歼灭回合参数</h2></div><p id="host-elimination-summary">团队歼灭模式专用设置</p></div>
+      <div class="host-elimination-grid">
+        <label>目标回合<input type="number" min="1" max="7" step="1" data-elimination-rule="maxScoredRounds" /></label>
+        <label>准备时间（秒）<input type="number" min="5" max="15" step="1" data-elimination-rule="prepMs" /></label>
+        <label>战斗时间（秒）<input type="number" min="20" max="90" step="1" data-elimination-rule="liveMs" /></label>
+        <label>加时（秒）<input type="number" min="5" max="20" step="1" data-elimination-rule="overtimeMs" /></label>
+        <label>决胜时间（秒）<input type="number" min="15" max="60" step="1" data-elimination-rule="decisiveMs" /></label>
+      </div>
     </section>
     <section class="host-main">
       <div class="join-station">
@@ -489,4 +527,9 @@ function phaseName(phase: string): string {
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character] ?? character);
+}
+
+function formatSeconds(milliseconds: number): string {
+  const seconds = milliseconds / 1_000;
+  return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)} 秒`;
 }

@@ -19,6 +19,26 @@ export const DEFAULT_ELIMINATION_RULES: Readonly<EliminationRules> = {
   decisiveMs: 30_000,
 };
 
+export const ELIMINATION_RULE_LIMITS = {
+  maxScoredRounds: [1, 7],
+  prepMs: [5_000, 15_000],
+  liveMs: [20_000, 90_000],
+  overtimeMs: [5_000, 20_000],
+  decisiveMs: [15_000, 60_000],
+} as const;
+
+export type EliminationRulesNormalization = { ok: true; rules: EliminationRules } | { ok: false; error: string };
+
+export function normalizeEliminationRules(value: Partial<EliminationRules> | undefined): EliminationRulesNormalization {
+  const rules = { ...DEFAULT_ELIMINATION_RULES, ...(value ?? {}) };
+  for (const key of Object.keys(ELIMINATION_RULE_LIMITS) as Array<keyof EliminationRules>) {
+    const raw = rules[key];
+    const [minimum, maximum] = ELIMINATION_RULE_LIMITS[key];
+    if (!Number.isSafeInteger(raw) || raw < minimum || raw > maximum) return { ok: false, error: "回合参数超出安全范围" };
+  }
+  return { ok: true, rules };
+}
+
 export interface EliminationScore {
   red: number;
   blue: number;

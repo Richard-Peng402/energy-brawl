@@ -96,6 +96,7 @@ import {
 } from "./match-highlight-tracker";
 import type { MatchHighlight } from "../shared/match-highlights";
 import { createEliminationState, type EliminationState } from "./team-elimination";
+import type { EliminationRules } from "../shared/team-elimination";
 
 const EXCLUSIVE_SKILL_EVENT_CAPACITY = 24;
 const PROJECTILE_IMPACT_EVENT_CAPACITY = 32;
@@ -190,6 +191,7 @@ export interface CreateGameWorldOptions {
   mapMechanicsEnabled?: boolean;
   mapEventsEnabled?: boolean;
   mapEventSeed?: number;
+  eliminationRules?: Partial<EliminationRules>;
 }
 
 const EMPTY_INPUT: PlayerInput = {
@@ -343,7 +345,7 @@ export function createGameWorld(
     mapMechanicState: createMapMechanicState(mapId, now, mapMechanicsEnabled),
     mapEventsEnabled: options.mapEventsEnabled ?? false,
     mapEventState: createMapEventState(mapId, now, options.mapEventsEnabled ?? false, options.mapEventSeed ?? 0),
-    eliminationState: matchMode === "teamElimination3v3" ? createEliminationState(now) : null,
+    eliminationState: matchMode === "teamElimination3v3" ? createEliminationState(now, options.eliminationRules) : null,
   };
 
   while (world.energy.size < MAX_ENERGY && spawnEnergy(world)) {

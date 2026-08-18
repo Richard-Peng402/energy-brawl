@@ -4,7 +4,7 @@ import { isBotDifficulty, type BotDifficulty } from "./bot-difficulty";
 import { MAP_CATALOG, type MapSelection } from "./map-catalog";
 import { isMatchMode, type MatchMode } from "./mode-catalog";
 import type { AdminStat, AdminStats } from "./protocol";
-import type { EliminationRules } from "./team-elimination";
+import { normalizeEliminationRules, type EliminationRules } from "./team-elimination";
 
 export interface RoomPresetV1 {
   schemaVersion: 1;
@@ -48,6 +48,8 @@ export function normalizeRoomPreset(value: unknown): RoomPresetNormalization {
   if (typeof candidate.mapMechanicsEnabled !== "boolean" || typeof candidate.mapEventsEnabled !== "boolean") return invalid("房间预设地图开关无效");
   if (!isBotDifficulty(candidate.botDifficulty)) return invalid("房间预设机器人难度无效");
   if (!candidate.characterOverrides || typeof candidate.characterOverrides !== "object" || Array.isArray(candidate.characterOverrides)) return invalid("房间预设角色参数无效");
+  const eliminationRulesResult = normalizeEliminationRules(candidate.eliminationRules);
+  if (!eliminationRulesResult.ok) return eliminationRulesResult;
 
   const characterOverrides: RoomPresetV1["characterOverrides"] = {};
   for (const [characterId, rawStats] of Object.entries(candidate.characterOverrides)) {
@@ -63,6 +65,9 @@ export function normalizeRoomPreset(value: unknown): RoomPresetNormalization {
     characterOverrides[characterId] = stats;
   }
 
+  const eliminationRules = candidate.matchMode === "teamElimination3v3" || candidate.eliminationRules !== undefined
+    ? eliminationRulesResult.rules
+    : undefined;
   return {
     ok: true,
     preset: {
@@ -75,6 +80,7 @@ export function normalizeRoomPreset(value: unknown): RoomPresetNormalization {
       mapMechanicsEnabled: candidate.mapMechanicsEnabled,
       mapEventsEnabled: candidate.mapEventsEnabled,
       botDifficulty: candidate.botDifficulty,
+      ...(eliminationRules ? { eliminationRules } : {}),
       characterOverrides,
     },
   };

@@ -305,6 +305,7 @@ export type HostAdminCommand =
   | { type: "setMapMechanics"; enabled: boolean }
   | { type: "setMapEvents"; enabled: boolean }
   | { type: "setBotDifficulty"; difficulty: BotDifficulty }
+  | { type: "setEliminationRules"; rules: Partial<EliminationRules> }
   | { type: "applyRoomPreset"; preset: RoomPresetV1 }
   | { type: "swapTeams"; firstPlayerId: string; secondPlayerId: string }
   | { type: "forceTeamWinner"; teamId: TeamId };

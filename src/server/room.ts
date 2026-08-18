@@ -46,7 +46,7 @@ import {
   type PlayerSeed,
 } from "./simulation";
 import { advanceElimination, recordElimination, resetEliminationRound } from "./team-elimination";
-import type { EliminationWorldView as SharedEliminationWorldView } from "../shared/team-elimination";
+import { DEFAULT_ELIMINATION_RULES, normalizeEliminationRules, type EliminationRules, type EliminationWorldView as SharedEliminationWorldView } from "../shared/team-elimination";
 import { clearSkillSlot } from "./skill-system";
 import { neutralTacticalRuntimeModifiers, tacticalRuntimeModifiers } from "./tactical-modules";
 import { assignBalancedTeams, hasDuplicateCharacterOnTeam, swapTeams } from "./team-system";
@@ -83,6 +83,7 @@ export class GameRoom {
   private mapMechanicsEnabled = true;
   private mapEventsEnabled = true;
   private botDifficulty: BotDifficulty = "normal";
+  private eliminationRules: EliminationRules = { ...DEFAULT_ELIMINATION_RULES };
 
   setMapSelection(selection: MapSelection): Ack {
     if (this.world) return { ok: false, error: "对局开始后无法切换地图" };
@@ -113,6 +114,14 @@ export class GameRoom {
     return { ok: true };
   }
 
+  setEliminationRules(rules: Partial<EliminationRules>): Ack {
+    if (this.world) return { ok: false, error: "只能在大厅修改回合参数" };
+    const normalized = normalizeEliminationRules(rules);
+    if (!normalized.ok) return { ok: false, error: normalized.error };
+    this.eliminationRules = normalized.rules;
+    return { ok: true };
+  }
+
   applyRoomPreset(preset: RoomPresetV1): Ack {
     if (this.world) return { ok: false, error: "只能在大厅应用房间预设" };
     const normalized = normalizeRoomPreset(preset);
@@ -126,6 +135,8 @@ export class GameRoom {
     this.mapMechanicsEnabled = next.mapMechanicsEnabled;
     this.mapEventsEnabled = next.mapEventsEnabled;
     this.botDifficulty = next.botDifficulty;
+    const presetEliminationRules = normalizeEliminationRules(next.eliminationRules);
+    this.eliminationRules = presetEliminationRules.ok ? presetEliminationRules.rules : { ...DEFAULT_ELIMINATION_RULES };
     this.pendingWinnerId = null;
     this.pendingWinnerTeamId = null;
     for (const seat of this.seats.values()) {
@@ -177,6 +188,7 @@ export class GameRoom {
     if (command.type === "setMapMechanics") return this.setMapMechanicsEnabled(command.enabled);
     if (command.type === "setMapEvents") return this.setMapEventsEnabled(command.enabled);
     if (command.type === "setBotDifficulty") return this.setBotDifficulty(command.difficulty);
+    if (command.type === "setEliminationRules") return this.setEliminationRules(command.rules);
     if (command.type === "applyRoomPreset") return this.applyRoomPreset(command.preset);
     if (command.type === "swapTeams") return this.swapPlayerTeams(command.firstPlayerId, command.secondPlayerId);
     if (command.type === "forceTeamWinner") {
@@ -345,6 +357,7 @@ export class GameRoom {
     this.world = createGameWorld([...this.seats.values()], this.clockMs, this.matchMode, map.id, {
       mapMechanicsEnabled: this.mapMechanicsEnabled,
       mapEventsEnabled: this.mapEventsEnabled,
+      eliminationRules: this.eliminationRules,
     });
     this.autoResetAt = null;
     this.pendingInputs.clear();
@@ -602,6 +615,7 @@ export class GameRoom {
       mapMechanicsEnabled: this.mapMechanicsEnabled,
       mapEventsEnabled: this.mapEventsEnabled,
       botDifficulty: this.botDifficulty,
+      eliminationRules: { ...this.eliminationRules },
       teamScores: this.world
         ? isCaptureMode(this.matchMode)
           ? worldToSnapshot(this.world).captureScores

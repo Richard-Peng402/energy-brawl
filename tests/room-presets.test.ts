@@ -33,6 +33,7 @@ describe("atomic room presets", () => {
         mapMechanicsEnabled: false,
         mapEventsEnabled: false,
         botDifficulty: "hard",
+        eliminationRules: { liveMs: 30_000, decisiveMs: 45_000 },
         characterOverrides: { blaze: { health: 140, maxHealth: 140, damage: 31 } },
       }),
     })).toEqual({ ok: true });
@@ -43,8 +44,19 @@ describe("atomic room presets", () => {
       mapMechanicsEnabled: false,
       mapEventsEnabled: false,
       botDifficulty: "hard",
+      eliminationRules: { liveMs: 30_000, decisiveMs: 45_000 },
       players: [expect.objectContaining({ health: 140, maxHealth: 140, damage: 31 })],
     });
+  });
+
+  it("applies validated elimination rules only in the lobby", () => {
+    const room = new GameRoom();
+    expect(room.setEliminationRules({ liveMs: 30_000 })).toEqual({ ok: true });
+    expect(room.snapshot().eliminationRules).toMatchObject({ liveMs: 30_000, prepMs: 8_000 });
+    room.joinHuman("socket-rules", { nickname: "回合参数", characterId: "blaze" });
+    room.setReady("socket-rules", true);
+    room.startMatch();
+    expect(room.setEliminationRules({ liveMs: 30_000 })).toMatchObject({ ok: false });
   });
 
   it("rejects preset application after the match starts", () => {
@@ -53,6 +65,29 @@ describe("atomic room presets", () => {
     room.setReady("socket", true);
     room.startMatch();
     expect(room.applyHostAdminCommand({ type: "applyRoomPreset", preset: preset() }).ok).toBe(false);
+  });
+
+  it("fills safe elimination defaults for an elimination preset", () => {
+    const result = normalizeRoomPreset(preset({
+      matchMode: "teamElimination3v3",
+      eliminationRules: { liveMs: 30_000 },
+    }));
+    expect(result).toMatchObject({
+      ok: true,
+      preset: {
+        eliminationRules: {
+          maxScoredRounds: 7,
+          prepMs: 8_000,
+          liveMs: 30_000,
+          overtimeMs: 10_000,
+          decisiveMs: 30_000,
+        },
+      },
+    });
+  });
+
+  it("rejects elimination rules outside the room safety limits", () => {
+    expect(normalizeRoomPreset(preset({ eliminationRules: { liveMs: 1_000 } }))).toMatchObject({ ok: false });
   });
 });
 

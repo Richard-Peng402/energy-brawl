@@ -70,6 +70,7 @@ export class RoomPresetStore {
       mapMechanicsEnabled: room.mapMechanicsEnabled ?? true,
       mapEventsEnabled: room.mapEventsEnabled ?? true,
       botDifficulty: room.botDifficulty ?? "normal",
+      ...(room.eliminationRules ? { eliminationRules: { ...room.eliminationRules } } : {}),
       characterOverrides,
     };
   }
