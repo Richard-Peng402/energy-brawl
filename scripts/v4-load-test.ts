@@ -30,6 +30,8 @@ export interface V4LoadReport {
   postFinishApplications: number;
   snapshotBytesP95: number;
   eventCount: number;
+  eliminationPhasesObserved: number;
+  eliminationRoundIndex: number;
   expiredStateResidue: number;
   peakProjectiles: number;
   finished: boolean;
@@ -69,6 +71,8 @@ export function runV4LoadSimulation(
   let lastMechanicRevision = "";
   let lastEventRevision = "";
   let eventCount = 0;
+  const eliminationPhases = new Set<string>();
+  let eliminationRoundIndex = 0;
   let peakProjectiles = 0;
   const snapshotBytes: number[] = [];
   const illegalZoneOverlaps = countIllegalZoneOverlaps(mapId);
@@ -98,10 +102,14 @@ export function runV4LoadSimulation(
       lastMechanicRevision = mechanicRevision;
     }
     const mapEvent = snapshot.mapEvent;
-    const eventRevision = mapEvent ? `${mapEvent.eventSeq}:${mapEvent.phase}:${mapEvent.kind}` : "";
+    const eventRevision = mapEvent ? `${mapEvent.round}:${mapEvent.eventSeq}:${mapEvent.phase}:${mapEvent.kind}` : "";
     if (eventRevision && eventRevision !== lastEventRevision) {
       if (mapEvent?.phase === "warning") eventCount += 1;
       lastEventRevision = eventRevision;
+    }
+    if (snapshot.elimination) {
+      eliminationPhases.add(snapshot.elimination.phase);
+      eliminationRoundIndex = Math.max(eliminationRoundIndex, snapshot.elimination.roundIndex);
     }
     for (const player of snapshot.players) {
       if (player.alive && walls.some((wall) => circleHitsRect(player, PLAYER_RADIUS, wall))) wallViolations += 1;
@@ -142,6 +150,8 @@ export function runV4LoadSimulation(
     postFinishApplications,
     snapshotBytesP95: percentile95(snapshotBytes),
     eventCount,
+    eliminationPhasesObserved: eliminationPhases.size,
+    eliminationRoundIndex,
     expiredStateResidue: staleCombatStates + expiredMapStates + postFinishApplications,
     peakProjectiles,
     finished,
@@ -151,9 +161,11 @@ export function runV4LoadSimulation(
 export function validateV4LoadReport(report: V4LoadReport): string[] {
   const errors: string[] = [];
   if (report.clients !== 6) errors.push("expected six clients");
-  if (!["solo", "team3v3", "team2v2v2", "domination3v3", "domination2v2v2"].includes(report.mode)) errors.push("unsupported load mode");
+  if (!["solo", "team3v3", "team2v2v2", "domination3v3", "domination2v2v2", "teamElimination3v3"].includes(report.mode)) errors.push("unsupported load mode");
   if (!["reactor-core", "neon-docks", "crystal-ruins"].includes(report.mapId)) errors.push("unsupported map");
   if (report.mode.startsWith("domination") && !report.capturePointObserved) errors.push("capture point state was not observed");
+  if (report.mode === "teamElimination3v3" && report.eliminationPhasesObserved < 2) errors.push("fewer than two elimination phases observed");
+  if (report.mode === "teamElimination3v3" && report.eliminationRoundIndex < 1) errors.push("elimination round state was not observed");
   if (report.exclusiveSkillRequests < 6) errors.push("exclusive skills were not exercised");
   if (report.wallViolations !== 0) errors.push(`wall violations: ${report.wallViolations}`);
   if (report.staleCombatStates !== 0) errors.push(`stale combat states: ${report.staleCombatStates}`);
@@ -199,7 +211,7 @@ function percentile95(values: readonly number[]): number {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const seconds = Number(process.env.V4_LOAD_SECONDS ?? 60);
   const reports = (["reactor-core", "neon-docks", "crystal-ruins"] as const).flatMap((mapId) =>
-    (["solo", "team3v3", "team2v2v2", "domination3v3", "domination2v2v2"] as const).flatMap((mode) =>
+    (["solo", "team3v3", "team2v2v2", "domination3v3", "domination2v2v2", "teamElimination3v3"] as const).flatMap((mode) =>
       [true, false].map((mapEventsEnabled) => runV4LoadSimulation(seconds, mode, mapId, { mapMechanicsEnabled: true, mapEventsEnabled })),
     ),
   );

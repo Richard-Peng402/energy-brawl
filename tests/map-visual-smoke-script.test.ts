@@ -61,6 +61,15 @@ describe("map visual smoke player flow", () => {
     expect(source).not.toContain("const event = latestGame?.mapEvent ?? null");
   });
 
+  it("covers team elimination HUD, spectator and round result states", () => {
+    expect(source).toContain('teamElimination3v3');
+    expect(source).toContain("#elimination-hud:not(.is-hidden)");
+    expect(source).toContain("#elimination-spectator:not(.is-hidden)");
+    expect(source).toContain("#elimination-round-result:not(.is-hidden)");
+    expect(source).toContain("observedRoundPhase");
+    expect(source).toContain("roundScores");
+  });
+
   it("requires event geometry whenever the visual event has a bounded area", () => {
     expect(source).toContain("Event boundary assertion failed");
     expect(source).toContain("eventAtCapture?.point ?? eventAtCapture?.zone");

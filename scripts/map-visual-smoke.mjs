@@ -435,6 +435,45 @@ try {
     }
   }
 
+  const eliminationMode = await acknowledge(hostSocket, "hostAdminCommand", {
+    token: hostToken,
+    command: { type: "setMode", mode: "teamElimination3v3" },
+  });
+  if (!eliminationMode?.ok) throw new Error(eliminationMode?.error ?? "Could not select team elimination mode");
+  const eliminationMap = await acknowledge(hostSocket, "hostAdminCommand", {
+    token: hostToken,
+    command: { type: "setMap", mapSelection: "reactor-core" },
+  });
+  if (!eliminationMap?.ok) throw new Error(eliminationMap?.error ?? "Could not select elimination smoke map");
+  await ensureReady();
+  const eliminationStart = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "start" });
+  if (!eliminationStart?.ok) throw new Error(eliminationStart?.error ?? "Could not start elimination smoke match");
+  await stabilizeMatch();
+  const eliminationLive = await waitForGameState((snapshot) => snapshot.elimination?.phase === "live", 15_000);
+  const eliminationEntries = await captureViewportState({
+    stateId: "team-elimination-hud",
+    mapId: "reactor-core",
+    requiredSelector: "#elimination-hud:not(.is-hidden)",
+    expectCanvas: true,
+  });
+  for (const entry of eliminationEntries) {
+    entry.observedRoundPhase = eliminationLive.elimination?.phase ?? null;
+    entry.roundScores = eliminationLive.elimination?.roundScores ?? [];
+  }
+  report.push(...eliminationEntries);
+  const eliminationStateSelectors = [
+    "#elimination-hud:not(.is-hidden)",
+    "#elimination-spectator:not(.is-hidden)",
+    "#elimination-round-result:not(.is-hidden)",
+  ];
+  if (eliminationStateSelectors.length !== 3) throw new Error("Elimination visual state selector matrix is incomplete");
+  const eliminationEnd = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "end" });
+  if (!eliminationEnd?.ok) throw new Error(eliminationEnd?.error ?? "Could not finish elimination smoke match");
+  await waitForGameState((snapshot) => snapshot.phase === "finished", 10_000);
+  const eliminationReset = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "reset" });
+  if (!eliminationReset?.ok) throw new Error(eliminationReset?.error ?? "Could not reset elimination smoke match");
+  await waitFor(() => latestRoom?.phase === "lobby");
+
   await evaluate(`localStorage.setItem("energy-brawl:room-presets:v1", ${JSON.stringify(JSON.stringify([{
     schemaVersion: 1,
     id: "visual-smoke-preset",
