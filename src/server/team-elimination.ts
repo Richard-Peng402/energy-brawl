@@ -29,6 +29,8 @@ export interface EliminationState {
   rounds: EliminationRoundSummary[];
 }
 
+export const ELIMINATION_RESULT_DISPLAY_MS = 4_000;
+
 export type EliminationTransition =
   | { type: "phase"; phase: Exclude<EliminationPhase, "result"> }
   | { type: "round-won"; winnerTeamId: EliminationTeamId; reason: EliminationResolution["reason"] }
@@ -137,7 +139,7 @@ function finishRound(
     decisiveWinner: state.decisive ? winner : null,
   });
   state.phase = "result";
-  state.deadline = now + 1_000;
+  state.deadline = now + ELIMINATION_RESULT_DISPLAY_MS;
   if (matchResolution.winnerTeamId) {
     transitions.push({ type: "match-won", winnerTeamId: matchResolution.winnerTeamId, reason: matchResolution.reason });
   } else {

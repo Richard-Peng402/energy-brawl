@@ -78,6 +78,7 @@ describe("team elimination rules", () => {
       healthRatioByTeam: { red: 1, blue: 0 },
     })).toEqual([{ type: "round-won", winnerTeamId: "red", reason: "eliminated" }]);
     expect(state.scores).toEqual({ red: 1, blue: 0 });
+    expect(state.deadline).toBe(52_000);
   });
 
   it("enters decisive phase after a tied overtime and resets the next round", () => {

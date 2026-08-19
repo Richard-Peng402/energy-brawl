@@ -32,6 +32,7 @@ import type {
 import { chooseBotDecision } from "./bot";
 import {
   applyPlayerInput,
+  damagePlayer,
   applyWorldExclusiveSkill,
   applyWorldSkillAction,
   createGameWorld,
@@ -736,8 +737,12 @@ export class GameRoom {
     const previousHealth = player.health;
     switch (stat) {
       case "health":
-        if (value > player.maxHealth) player.maxHealth = value;
-        player.health = value;
+        if (value <= 0 && player.alive) {
+          damagePlayer(this.world, playerId, "", Math.max(1, previousHealth + 1));
+        } else {
+          if (value > player.maxHealth) player.maxHealth = value;
+          player.health = value;
+        }
         break;
       case "maxHealth":
         player.maxHealth = value;

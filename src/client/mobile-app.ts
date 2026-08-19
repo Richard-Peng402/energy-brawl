@@ -854,6 +854,9 @@ export class MobileApp {
     this.syncMapMechanicFeedback(snapshot);
     this.syncMapEventFeedback(snapshot);
     const own = snapshot.players.find((player) => player.id === this.network.playerId);
+    const eliminationMode = snapshot.matchMode === "teamElimination3v3" && snapshot.elimination !== null;
+    this.find<HTMLElement>("#match-clock").classList.toggle("is-hidden", eliminationMode);
+    this.find<HTMLElement>("#team-score").classList.toggle("is-hidden", eliminationMode);
     const leaders = [...snapshot.players].sort((a, b) => b.score - a.score || b.kills - a.kills);
     const ownTeamScore = own?.teamId ? snapshot.teamScores?.find((team) => team.teamId === own.teamId) : undefined;
     const ownCaptureScore = own?.teamId ? snapshot.captureScores?.find((team) => team.teamId === own.teamId) : undefined;

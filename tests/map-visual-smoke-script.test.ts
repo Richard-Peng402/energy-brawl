@@ -68,6 +68,14 @@ describe("map visual smoke player flow", () => {
     expect(source).toContain("#elimination-round-result:not(.is-hidden)");
     expect(source).toContain("observedRoundPhase");
     expect(source).toContain("roundScores");
+    expect(source).toContain("team-elimination-spectator");
+    expect(source).toContain("team-elimination-round-result");
+    expect(source).toContain("team-elimination-next-round");
+    expect(source).toContain("localPlayerId");
+    expect(source).toContain("localAlive = false");
+    expect(source).toContain("localAlive = true");
+    expect(source).toContain("eliminationRules: { maxScoredRounds: 7");
+    expect(source).toContain('type: "applyRoomPreset"');
   });
 
   it("requires event geometry whenever the visual event has a bounded area", () => {

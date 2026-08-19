@@ -12,6 +12,7 @@ const profileRoot = path.join(outputRoot, "edge-profile");
 const argument = (name) => process.argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3);
 const baseUrl = argument("url") ?? process.env.MAP_SMOKE_URL ?? "http://127.0.0.1:3001";
 const hostToken = argument("token") ?? process.env.MAP_SMOKE_HOST_TOKEN;
+const eliminationOnly = argument("elimination-only") === "true";
 const edgePath = process.env.EDGE_PATH ?? "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";
 const debugPort = Number(process.env.MAP_SMOKE_DEBUG_PORT ?? 9331);
 
@@ -356,7 +357,7 @@ try {
   });
 
   let capturedResults = false;
-  for (const mapId of maps) {
+  if (!eliminationOnly) for (const mapId of maps) {
     for (const device of devices) {
       await setDevice(device);
       await ensureReady();
@@ -445,6 +446,26 @@ try {
     command: { type: "setMap", mapSelection: "reactor-core" },
   });
   if (!eliminationMap?.ok) throw new Error(eliminationMap?.error ?? "Could not select elimination smoke map");
+  const eliminationPreset = await acknowledge(hostSocket, "hostAdminCommand", {
+    token: hostToken,
+    command: {
+      type: "applyRoomPreset",
+      preset: {
+        schemaVersion: 1,
+        id: "visual-elimination-preset",
+        name: "Visual Elimination QA",
+        updatedAt: Date.now(),
+        matchMode: "teamElimination3v3",
+        mapSelection: "reactor-core",
+        mapMechanicsEnabled: true,
+        mapEventsEnabled: false,
+        botDifficulty: "normal",
+        eliminationRules: { maxScoredRounds: 7, prepMs: 5_000, liveMs: 20_000, overtimeMs: 5_000, decisiveMs: 15_000 },
+        characterOverrides: {},
+      },
+    },
+  });
+  if (!eliminationPreset?.ok) throw new Error(eliminationPreset?.error ?? "Could not configure elimination smoke rules");
   await ensureReady();
   const eliminationStart = await acknowledge(hostSocket, "hostCommand", { token: hostToken, command: "start" });
   if (!eliminationStart?.ok) throw new Error(eliminationStart?.error ?? "Could not start elimination smoke match");
@@ -461,6 +482,79 @@ try {
     entry.roundScores = eliminationLive.elimination?.roundScores ?? [];
   }
   report.push(...eliminationEntries);
+
+  const localPlayerId = eliminationLive.players.find((player) => !player.isBot)?.id;
+  if (!localPlayerId) throw new Error("Could not identify the local smoke player in team elimination");
+  const enemyBots = eliminationLive.players.filter((player) => player.isBot && player.teamId !== eliminationLive.players.find((candidate) => candidate.id === localPlayerId)?.teamId);
+  const alliedBots = eliminationLive.players.filter((player) => player.isBot && player.teamId === eliminationLive.players.find((candidate) => candidate.id === localPlayerId)?.teamId);
+  const spectatorFixtureCommands = [
+    { type: "setStat", playerId: localPlayerId, stat: "maxHealth", value: 500 },
+    { type: "setStat", playerId: localPlayerId, stat: "health", value: 0 },
+    ...alliedBots.flatMap((player) => [
+      { type: "setStat", playerId: player.id, stat: "maxHealth", value: 500 },
+      { type: "setStat", playerId: player.id, stat: "health", value: 500 },
+      { type: "setStat", playerId: player.id, stat: "damage", value: 0 },
+    ]),
+    ...enemyBots.flatMap((player) => [
+      { type: "setStat", playerId: player.id, stat: "damage", value: 200 },
+      { type: "setStat", playerId: player.id, stat: "fireCooldownMs", value: 100 },
+      { type: "setStat", playerId: player.id, stat: "moveSpeed", value: 600 },
+      { type: "setStat", playerId: player.id, stat: "projectileSpeed", value: 2_000 },
+    ]),
+  ];
+  const fixtureResults = await Promise.all(spectatorFixtureCommands.map((command) => acknowledge(hostSocket, "hostAdminCommand", { token: hostToken, command })));
+  const fixtureFailure = fixtureResults.find((result) => !result?.ok);
+  if (fixtureFailure) throw new Error(fixtureFailure.error ?? "Could not prepare team elimination spectator fixture");
+  const spectatorState = await waitForGameState(
+    (snapshot) => snapshot.elimination?.phase !== "result" && snapshot.players.find((player) => player.id === localPlayerId)?.alive === false,
+    15_000,
+  );
+  const stopEnemyResults = await Promise.all(enemyBots.map((player) => acknowledge(hostSocket, "hostAdminCommand", { token: hostToken, command: { type: "setStat", playerId: player.id, stat: "damage", value: 0 } })));
+  const stopEnemyFailure = stopEnemyResults.find((result) => !result?.ok);
+  if (stopEnemyFailure) throw new Error(stopEnemyFailure.error ?? "Could not stabilize team elimination spectator state");
+  const spectatorEntries = await captureViewportState({
+    stateId: "team-elimination-spectator",
+    mapId: "reactor-core",
+    requiredSelector: "#elimination-spectator:not(.is-hidden)",
+    expectCanvas: true,
+  });
+  for (const entry of spectatorEntries) {
+    entry.observedRoundPhase = spectatorState.elimination?.phase ?? null;
+    entry.spectatorTarget = await evaluate("document.querySelector('#elimination-spectator-target')?.textContent ?? ''");
+    entry.localAlive = false;
+  }
+  report.push(...spectatorEntries);
+
+  const roundResultState = await waitForGameState((snapshot) => snapshot.elimination?.phase === "result", 30_000);
+  const roundResultEntries = await captureViewportState({
+    stateId: "team-elimination-round-result",
+    mapId: "reactor-core",
+    requiredSelector: "#elimination-round-result:not(.is-hidden)",
+    expectCanvas: true,
+  });
+  for (const entry of roundResultEntries) {
+    entry.observedRoundPhase = roundResultState.elimination?.phase ?? null;
+    entry.roundScores = roundResultState.elimination?.roundScores ?? [];
+  }
+  report.push(...roundResultEntries);
+
+  const nextRoundState = await waitForGameState(
+    (snapshot) => snapshot.elimination?.roundIndex === (roundResultState.elimination?.roundIndex ?? 1) + 1 && snapshot.elimination?.phase === "prep" && snapshot.players.find((player) => player.id === localPlayerId)?.alive === true,
+    10_000,
+  );
+  const nextRoundEntries = await captureViewportState({
+    stateId: "team-elimination-next-round",
+    mapId: "reactor-core",
+    requiredSelector: "#elimination-hud:not(.is-hidden)",
+    expectCanvas: true,
+  });
+  for (const entry of nextRoundEntries) {
+    entry.observedRoundPhase = nextRoundState.elimination?.phase ?? null;
+    entry.observedRoundIndex = nextRoundState.elimination?.roundIndex ?? null;
+    entry.localAlive = true;
+  }
+  report.push(...nextRoundEntries);
+
   const eliminationStateSelectors = [
     "#elimination-hud:not(.is-hidden)",
     "#elimination-spectator:not(.is-hidden)",

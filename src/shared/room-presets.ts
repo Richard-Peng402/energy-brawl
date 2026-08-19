@@ -21,7 +21,7 @@ export interface RoomPresetV1 {
 }
 
 export const ADMIN_STAT_RANGES: Readonly<Record<AdminStat, readonly [number, number]>> = {
-  health: [1, 500],
+  health: [0, 500],
   maxHealth: [1, 500],
   damage: [0, 200],
   score: [0, 99],

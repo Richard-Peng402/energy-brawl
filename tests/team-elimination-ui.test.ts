@@ -32,6 +32,12 @@ describe("team elimination host controls", () => {
     expect(mobileSource).toContain("const showRespawnCountdown = !snapshot.elimination && own?.alive === false");
   });
 
+  it("hides the normal score and clock overlays while elimination HUD is active", () => {
+    expect(mobileSource).toContain('const eliminationMode = snapshot.matchMode === "teamElimination3v3" && snapshot.elimination !== null');
+    expect(mobileSource).toContain('this.find<HTMLElement>("#match-clock").classList.toggle("is-hidden", eliminationMode)');
+    expect(mobileSource).toContain('this.find<HTMLElement>("#team-score").classList.toggle("is-hidden", eliminationMode)');
+  });
+
   it("keeps round result as one concise announcement", () => {
     expect(buildEliminationRoundResult(snapshot({ phase: "result" }))).toEqual({ visible: true, text: "第 4 回合：红队获胜 · 全灭" });
   });

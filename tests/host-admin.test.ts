@@ -70,6 +70,11 @@ describe("secure host admin authorization", () => {
     expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "forceTeamWinner", teamId: "red" } }, "lobby", false)).toEqual({ ok: true });
   });
 
+  it("allows zero health as the explicit host elimination value", () => {
+    const service = new HostAdminService("secret");
+    expect(service.authorize({ remoteAddress: "::1", token: "secret", command: { type: "setStat", playerId: "p1", stat: "health", value: 0 } }, "playing", true)).toEqual({ ok: true });
+  });
+
   it("records applied and rejected results while retaining only the latest two hundred logs", () => {
     let time = 0;
     const service = new HostAdminService("secret", () => ++time);
