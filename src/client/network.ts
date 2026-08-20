@@ -24,6 +24,7 @@ import type {
   TeamSignalEvent,
   TeamSignalKind,
 } from "../shared/protocol";
+import { NetworkHealth } from "./network-health";
 
 export type CharacterSelectionCard = (typeof CHARACTER_CATALOG)[number] & {
   selected: boolean;
@@ -85,9 +86,13 @@ export class GameNetworkClient {
   playerId: string | null = localStorage.getItem(PLAYER_KEY);
   notice = "";
   latestTeamSignal: TeamSignalEvent | null = null;
+  latestHandover: import("../shared/protocol").PlayerHandoverEvent | null = null;
+  readonly networkHealth = new NetworkHealth({ windowSize: 20 });
   private readonly listeners = new Set<NetworkListener>();
   private diagnosticsProfileSent = false;
   private connectionGeneration = 0;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private hasConnectedBefore = false;
 
   get connectionVersion(): number {
     return this.connectionGeneration;
@@ -102,6 +107,10 @@ export class GameNetworkClient {
       this.snapshotMode = "full";
       this.diagnosticsProfileSent = false;
       this.notice = "";
+      this.networkHealth.setReconnecting(false);
+      if (this.hasConnectedBefore) this.networkHealth.recordReconnect();
+      this.hasConnectedBefore = true;
+      this.startNetworkHeartbeat();
       this.notify();
       if (autoReconnectPlayer) void this.tryReconnect();
     });
@@ -110,6 +119,8 @@ export class GameNetworkClient {
       this.connected = false;
       this.playerSessionReady = false;
       this.hostDiagnostics = null;
+      this.networkHealth.setReconnecting(true);
+      this.stopNetworkHeartbeat();
       this.notify();
     });
     this.socket.on("roomState", (room) => {
@@ -127,6 +138,11 @@ export class GameNetworkClient {
     });
     this.socket.on("teamSignal", (event) => {
       this.latestTeamSignal = event;
+      this.notify();
+    });
+    this.socket.on("playerHandover", (event) => {
+      this.latestHandover = event;
+      this.notice = event.controlOwner === "bot" ? "玩家已掉线，AI 接管中" : "玩家已重新连接，控制权已恢复";
       this.notify();
     });
     this.socket.on("diagnosticsSession", ({ matchId }) => {
@@ -244,7 +260,41 @@ export class GameNetworkClient {
 
   dispose(): void {
     this.listeners.clear();
+    this.stopNetworkHeartbeat();
     this.socket.disconnect();
+  }
+
+  private startNetworkHeartbeat(): void {
+    this.stopNetworkHeartbeat();
+    this.heartbeatTimer = setInterval(() => void this.sampleNetworkHealth(), 2_000);
+    void this.sampleNetworkHealth();
+  }
+
+  private stopNetworkHeartbeat(): void {
+    if (this.heartbeatTimer === null) return;
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+
+  private async sampleNetworkHealth(): Promise<void> {
+    if (!this.connected) return;
+    const sentAt = Date.now();
+    const receivedAt = await new Promise<number | null>((resolve) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(null);
+      }, 1_000);
+      this.socket.emit("diagnosticsPing", sentAt, () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(Date.now());
+      });
+    });
+    this.networkHealth.recordHeartbeat({ sentAt, receivedAt });
+    this.notify();
   }
 
   private async tryReconnect(): Promise<void> {

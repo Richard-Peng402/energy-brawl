@@ -59,6 +59,7 @@ interface RoomSeat extends PlayerSeed {
   socketId: string | null;
   reconnectToken: string | null;
   connected: boolean;
+  controlOwner: "human" | "bot";
   ready: boolean;
   disconnectedAt: number | null;
   pendingControlRecovery?: boolean;
@@ -74,6 +75,7 @@ export class GameRoom {
   private readonly pendingSkillActions = new Map<string, UseSkillPayload>();
   private readonly pendingExclusiveSkillActions = new Map<string, UseExclusiveSkillPayload>();
   private readonly kickedSocketIds: string[] = [];
+  private readonly handoverEvents: Array<{ playerId: string; controlOwner: "human" | "bot"; serverTime: number }> = [];
   private world: GameWorld | null = null;
   private clockMs = 0;
   private autoResetAt: number | null = null;
@@ -259,6 +261,7 @@ export class GameRoom {
       socketId,
       reconnectToken,
       connected: true,
+      controlOwner: "human",
       ready: false,
       disconnectedAt: null,
       teamId: null,
@@ -284,8 +287,10 @@ export class GameRoom {
     if (seat.socketId) this.socketPlayers.delete(seat.socketId);
     seat.socketId = socketId;
     seat.connected = true;
+    seat.controlOwner = "human";
     seat.disconnectedAt = null;
     this.socketPlayers.set(socketId, seat.id);
+    this.handoverEvents.push({ playerId: seat.id, controlOwner: "human", serverTime: this.clockMs });
     const player = this.world?.players.get(seat.id);
     if (player) {
       this.pendingInputs.delete(seat.id);
@@ -416,6 +421,7 @@ export class GameRoom {
     this.pendingExclusiveSkillActions.delete(playerId);
     seat.socketId = null;
     seat.connected = false;
+    seat.controlOwner = "bot";
     seat.ready = false;
     seat.disconnectedAt = this.clockMs;
     seat.pendingControlRecovery = false;
@@ -425,6 +431,11 @@ export class GameRoom {
       player.connected = false;
       player.isBot = true;
     }
+    this.handoverEvents.push({ playerId, controlOwner: "bot", serverTime: this.clockMs });
+  }
+
+  consumeHandoverEvents(): Array<{ playerId: string; controlOwner: "human" | "bot"; serverTime: number }> {
+    return this.handoverEvents.splice(0);
   }
 
   handleInput(socketId: string, input: PlayerInput): boolean {
@@ -613,6 +624,7 @@ export class GameRoom {
             color: character.color,
             isBot: seat.isBot,
             connected: seat.connected,
+            controlOwner: seat.controlOwner,
             ready: seat.ready,
             teamId: seat.teamId,
             health: Math.min(seat.stats?.health ?? maxHealth, maxHealth),
@@ -678,6 +690,14 @@ export class GameRoom {
 
   playerIdForSocket(socketId: string): string | undefined {
     return this.socketPlayers.get(socketId);
+  }
+
+  hasReconnectToken(token: string): boolean {
+    return [...this.seats.values()].some((seat) => seat.reconnectToken === token);
+  }
+
+  playerCount(): number {
+    return this.seats.size;
   }
 
   private canStart(): boolean {
@@ -823,6 +843,7 @@ export class GameRoom {
         socketId: null,
         reconnectToken: null,
         connected: false,
+        controlOwner: "bot",
         ready: true,
         disconnectedAt: null,
         teamId: null,

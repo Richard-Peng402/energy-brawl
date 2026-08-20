@@ -220,7 +220,16 @@ input:focus-visible {
   color: #bdeee1;
   font-size: 12px;
   font-weight: 700;
+  max-width: min(48vw, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
+
+.connection-state[data-network-level="unstable"] { color: #ffd166; }
+.connection-state[data-network-level="poor"],
+.connection-state[data-network-level="reconnecting"] { color: #ff8d8d; }
 
 .connection-state::before {
   content: "";

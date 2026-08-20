@@ -694,8 +694,14 @@ export class MobileApp {
 
   private renderConnection(): void {
     const element = this.find("#connection-state");
+    const health = this.network.networkHealth.snapshot();
+    const levelLabel = health.level === "good" ? "良好" : health.level === "unstable" ? "波动" : health.level === "poor" ? "不稳定" : "重连中";
+    const rtt = health.rttMs === null ? "--" : `${health.rttMs}ms`;
+    element.textContent = `${this.network.connected ? "已连接" : "正在重连"} · ${levelLabel} · ${rtt} · 丢失 ${health.lossPercent}% · 重连 ${health.reconnects}`;
+    element.dataset.networkLevel = health.level;
     element.textContent = this.network.connected ? "局域网已连接" : "正在重连";
     element.classList.toggle("is-offline", !this.network.connected);
+    element.textContent = `${this.network.connected ? "已连接" : "正在重连"} · ${levelLabel} · ${rtt} · 丢失 ${health.lossPercent}% · 重连 ${health.reconnects}`;
   }
 
   private renderColors(): void {

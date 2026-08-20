@@ -81,6 +81,7 @@ export interface PlayerSnapshot extends Vec2 {
   color: string;
   isBot: boolean;
   connected: boolean;
+  controlOwner?: "human" | "bot";
   ready: boolean;
   vx: number;
   vy: number;
@@ -218,6 +219,21 @@ export interface GameSnapshot {
   elimination?: EliminationSnapshot | null;
 }
 
+export type RoomDirectoryPhase = "lobby" | "playing" | "finished";
+
+export interface RoomSummary {
+  code: string;
+  playerCount: number;
+  maxPlayers: number;
+  phase: RoomDirectoryPhase;
+  matchMode?: MatchMode;
+  mapSelection?: MapSelection;
+}
+
+export interface RoomDirectorySnapshot {
+  rooms: RoomSummary[];
+}
+
 export interface EliminationRoundSummary {
   roundIndex: number;
   winnerTeamId: TeamId | null;
@@ -306,6 +322,13 @@ export interface Ack<T = undefined> {
 export interface JoinResult {
   playerId: string;
   reconnectToken: string;
+  roomCode?: string;
+}
+
+export interface PlayerHandoverEvent {
+  playerId: string;
+  controlOwner: "human" | "bot";
+  serverTime: number;
 }
 
 export type HostCommand = "start" | "end" | "reset";
@@ -352,6 +375,7 @@ export interface ServerToClientEvents {
   diagnosticsSession: (session: { matchId: string | null }) => void;
   hostDiagnostics: (snapshot: HostDiagnosticsSnapshot) => void;
   diagnosticReport: (report: DiagnosticReport) => void;
+  playerHandover: (event: PlayerHandoverEvent) => void;
 }
 
 export interface ServerInfo {

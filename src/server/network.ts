@@ -99,7 +99,10 @@ export function attachGameNetwork(
   let latestGameSnapshot: GameSnapshot | null = null;
   const lastTeamSignalAt = new Map<string, number>();
 
-  const broadcastRoom = () => io.emit("roomState", room.snapshot());
+  const broadcastRoom = () => {
+    io.emit("roomState", room.snapshot());
+    for (const event of room.consumeHandoverEvents()) io.emit("playerHandover", event);
+  };
   const broadcastGame = () => {
     const snapshot = room.gameSnapshot();
     latestGameSnapshot = snapshot;
