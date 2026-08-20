@@ -43,6 +43,14 @@ describe("mobile lobby compact landscape layout", () => {
     expect(compactLandscape).toContain("grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr)");
   });
 
+  it("narrows the intro pane on short iPhone landscape screens", () => {
+    const generalLandscapeHeader = "@media (max-width: 1000px) and (orientation: landscape)";
+    const shortLandscapeHeader = "@media (max-width: 1000px) and (max-height: 470px) and (orientation: landscape)";
+    const shortLandscape = extractBlock(styles, shortLandscapeHeader);
+    expect(shortLandscape).toContain("grid-template-columns: clamp(210px, 25vw, 240px) minmax(0, 1fr)");
+    expect(styles.indexOf(shortLandscapeHeader)).toBeGreaterThan(styles.indexOf(generalLandscapeHeader));
+  });
+
   it("keeps pre-match mechanism copy compact and the opening banner away from controls", () => {
     expect(mobileApp).toContain("data-map-mechanic-card");
     expect(mobileApp).toContain('id="map-mechanic-opening"');
@@ -54,6 +62,32 @@ describe("mobile lobby compact landscape layout", () => {
     expect(banner).toContain("pointer-events: none");
     expect(banner).toContain("top:");
     expect(banner).not.toContain("bottom:");
+  });
+
+  it("moves lobby map notices into the post-join side panel", () => {
+    expect(mobileApp).toContain('class="lobby-info-panel"');
+    expect(mobileApp).toContain('data-map-mechanic-card');
+    expect(mobileApp).toContain('data-map-event-card');
+    const introStart = mobileApp.indexOf('<div class="lobby-intro">');
+    const workspaceStart = mobileApp.indexOf('<div class="lobby-workspace">');
+    const infoStart = mobileApp.indexOf('<aside class="lobby-info-panel"');
+    const mechanicStart = mobileApp.indexOf('data-map-mechanic-card', infoStart);
+    const eventStart = mobileApp.indexOf('data-map-event-card', infoStart);
+    expect(introStart).toBeGreaterThanOrEqual(0);
+    expect(workspaceStart).toBeGreaterThan(introStart);
+    expect(infoStart).toBeGreaterThan(workspaceStart);
+    expect(mechanicStart).toBeGreaterThan(infoStart);
+    expect(eventStart).toBeGreaterThan(infoStart);
+  });
+
+  it("shows all tactical modules without a horizontal scroller", () => {
+    const tactical = extractBlock(styles, ".tactical-module-list");
+    expect(tactical).toContain("grid-template-columns: repeat(4, minmax(0, 1fr))");
+    expect(tactical).toContain("overflow-x: hidden");
+    expect(extractBlock(styles, ".tactical-module-section")).toContain("grid-column: 1 / -1");
+    const compact = extractBlock(styles, "@media (max-width: 900px) and (orientation: landscape)");
+    expect(compact).toContain(".tactical-module-list");
+    expect(compact).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
   });
 });
 

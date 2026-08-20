@@ -27,7 +27,9 @@ import type {
   ServerToClientEvents,
   UseExclusiveSkillPayload,
   UseSkillPayload,
+  TeamSignalPayload,
 } from "../shared/protocol";
+import { TEAM_SIGNAL_KINDS } from "../shared/protocol";
 import { isCharacterId } from "../shared/character-catalog";
 import { isMatchMode, TEAM_IDS } from "../shared/mode-catalog";
 import { MAP_CATALOG } from "../shared/map-catalog";
@@ -44,6 +46,7 @@ import { maskNetworkAddress } from "./network-address";
 
 interface InterServerEvents {}
 const SNAPSHOT_DEADLINE_EPSILON_MS = 1e-6;
+const TEAM_SIGNAL_COOLDOWN_MS = 800;
 
 interface SocketData {
   snapshotRate: 20 | 30;
@@ -94,6 +97,7 @@ export function attachGameNetwork(
   let previousCatchUpLimitHits = 0;
   let activeDiagnosticsMatchId: string | null = null;
   let latestGameSnapshot: GameSnapshot | null = null;
+  const lastTeamSignalAt = new Map<string, number>();
 
   const broadcastRoom = () => io.emit("roomState", room.snapshot());
   const broadcastGame = () => {
@@ -305,6 +309,29 @@ export function attachGameNetwork(
       if (isUseExclusiveSkillPayload(payload)) room.handleExclusiveSkillAction(socket.id, payload);
     });
 
+    socket.on("teamSignal", (payload) => {
+      const playerId = room.playerIdForSocket(socket.id);
+      const snapshot = room.snapshot();
+      const sender = playerId ? snapshot.players.find((player) => player.id === playerId) : undefined;
+      if (!playerId || !sender?.connected || sender.teamId == null || (snapshot.phase !== "playing" && snapshot.phase !== "overtime") || !isTeamMatchMode(snapshot.matchMode) || !isTeamSignalPayload(payload)) return;
+      const now = Date.now();
+      if (now - (lastTeamSignalAt.get(playerId) ?? Number.NEGATIVE_INFINITY) < TEAM_SIGNAL_COOLDOWN_MS) return;
+      lastTeamSignalAt.set(playerId, now);
+      const event = {
+        id: randomUUID(),
+        serverTime: room.gameSnapshot()?.serverTime ?? now,
+        senderId: playerId,
+        senderName: sender.nickname,
+        teamId: sender.teamId,
+        kind: payload.kind,
+      } as const;
+      for (const target of io.sockets.sockets.values()) {
+        const targetId = room.playerIdForSocket(target.id);
+        const targetSeat = targetId ? snapshot.players.find((player) => player.id === targetId) : undefined;
+        if (targetSeat?.teamId === sender.teamId) target.emit("teamSignal", event);
+      }
+    });
+
     socket.on("hostCommand", (payload, acknowledge) => {
       if (!payload || payload.token !== hostToken || !isHostCommand(payload.command)) {
         sendAcknowledgement(acknowledge, invalid("主机权限无效"));
@@ -344,6 +371,7 @@ export function attachGameNetwork(
       lastInputAt.delete(socket.id);
       diagnosticProfiles.delete(socket.id);
       const playerId = room.playerIdForSocket(socket.id);
+      if (playerId) lastTeamSignalAt.delete(playerId);
       if (playerId && activeDiagnosticsMatchId) diagnostics.recordDisconnect(playerId, diagnosticsNow());
       room.disconnect(socket.id);
       broadcastRoom();
@@ -500,6 +528,15 @@ function isUseExclusiveSkillPayload(payload: unknown): payload is UseExclusiveSk
   if (!payload || typeof payload !== "object") return false;
   const candidate = payload as Partial<UseExclusiveSkillPayload>;
   return Number.isSafeInteger(candidate.skillActionSeq) && candidate.skillActionSeq! >= 0 && Number.isFinite(candidate.directionX) && Number.isFinite(candidate.directionY);
+}
+
+function isTeamSignalPayload(payload: unknown): payload is TeamSignalPayload {
+  if (!payload || typeof payload !== "object") return false;
+  return TEAM_SIGNAL_KINDS.includes((payload as Partial<TeamSignalPayload>).kind as never);
+}
+
+function isTeamMatchMode(mode: GameSnapshot["matchMode"]): boolean {
+  return mode === "team3v3" || mode === "team2v2v2" || mode === "domination3v3" || mode === "domination2v2v2" || mode === "teamElimination3v3";
 }
 
 function isPerformanceHint(hint: unknown): hint is PerformanceHint {

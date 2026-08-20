@@ -25,6 +25,22 @@ export interface EliminationRoundHistoryItem {
   reasonLabel: string;
   scoreLabel: string;
 }
+export interface EliminationRoundPanelView {
+  visible: boolean;
+  items: EliminationRoundHistoryItem[];
+}
+
+
+export function buildEliminationRoundContext(snapshot: GameSnapshot, playerId: string | null): string {
+  const elimination = snapshot.elimination;
+  if (snapshot.matchMode !== "teamElimination3v3" || !elimination) return "";
+  const own = snapshot.players.find((player) => player.id === playerId);
+  const side = own?.teamId === "red" ? "红队" : own?.teamId === "blue" ? "蓝队" : "你的队伍";
+  const last = elimination.rounds.at(-1);
+  if (elimination.phase === "prep") return `第 ${elimination.roundIndex} 回合准备 · ${side}出生侧 · 队伍布阵`;
+  if (elimination.phase === "result" && last) return `${last.winnerTeamId === "red" ? "红队" : "蓝队"}拿下第 ${last.roundIndex} 回合 · 下一回合重新布阵`;
+  return `第 ${elimination.roundIndex} 回合 · ${side} · 先倒下的一方进入观战`;
+}
 
 const PHASE_LABELS = {
   prep: "准备",
@@ -90,6 +106,16 @@ export function buildEliminationRoundHistory(snapshot: GameSnapshot): Eliminatio
     reasonLabel: REASON_LABELS[round.reason],
     scoreLabel: `存活 ${round.redAlive} - ${round.blueAlive}`,
   }));
+}
+
+export function buildEliminationRoundPanel(snapshot: GameSnapshot): EliminationRoundPanelView {
+  if (snapshot.matchMode !== "teamElimination3v3" || !snapshot.elimination?.rounds.length) {
+    return { visible: false, items: [] };
+  }
+  return {
+    visible: true,
+    items: [...buildEliminationRoundHistory(snapshot)].reverse(),
+  };
 }
 
 function aliveCount(players: readonly PlayerSnapshot[], teamId: "red" | "blue"): number {

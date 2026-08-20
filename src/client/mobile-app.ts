@@ -8,7 +8,7 @@ import {
   isTacticalModuleId,
   type TacticalModuleId,
 } from "../shared/tactical-module-catalog";
-import type { GamePhase, GameSnapshot, MapMechanicSnapshot, PlayerSnapshot } from "../shared/protocol";
+import type { GamePhase, GameSnapshot, MapMechanicSnapshot, PlayerSnapshot, TeamSignalKind } from "../shared/protocol";
 import type { MapEventSnapshot } from "../shared/map-events";
 import { CHARACTER_ASSETS, CHARACTER_SELECTION_ASSETS, EXCLUSIVE_SKILL_ICON_ASSETS, SKILL_ICON_ASSETS } from "./asset-registry";
 import { CombatAudio } from "./combat-audio";
@@ -66,7 +66,8 @@ import {
   selectMapEventFeedback,
 } from "./map-event-visuals";
 import { renderMatchHighlights } from "./match-highlight-ui";
-import { buildEliminationHud, buildEliminationRoundHistory, buildEliminationRoundResult, buildEliminationSpectator } from "./elimination-ui";
+import { buildEliminationHud, buildEliminationRoundContext, buildEliminationRoundHistory, buildEliminationRoundPanel, buildEliminationRoundResult, buildEliminationSpectator } from "./elimination-ui";
+import { selectEliminationRoundFeedback } from "./elimination-feedback";
 
 const NAME_KEY = "energy-brawl.nickname";
 const HAPTICS_MODE_KEY = "energy-brawl.haptics-mode";
@@ -133,6 +134,8 @@ export class MobileApp {
   private previousMapEventSnapshot: MapEventSnapshot | null = null;
   private mechanicBannerTimer = 0;
   private lastObservedRoomPhase: GamePhase | null = null;
+  private lastTeamSignalId = "";
+  private lastEliminationFeedbackRevision = "";
 
   constructor(private readonly root: HTMLElement) {
     root.innerHTML = mobileTemplate();
@@ -258,6 +261,12 @@ export class MobileApp {
       const result = await this.network.setReady(!ownSeat?.ready);
       if (!result.ok) this.showToast(result.error ?? "无法修改准备状态");
     });
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-team-signal]")) {
+      button.addEventListener("click", () => {
+        const kind = button.dataset.teamSignal as TeamSignalKind | undefined;
+        if (kind) this.network.sendTeamSignal(kind);
+      });
+    }
     this.find<HTMLButtonElement>("#return-lobby").addEventListener("click", async () => {
       const result = await this.network.returnToLobby();
       if (!result.ok) this.showToast(result.error ?? "无法返回大厅");
@@ -429,6 +438,10 @@ export class MobileApp {
       }
       const target = event.target as HTMLElement | null;
       if (target?.matches("input, textarea, select")) return;
+      if (!event.repeat) {
+        const signal = ({ Digit1: "group", Digit2: "attack", Digit3: "retreat", Digit4: "heal" } as const)[event.code];
+        if (signal) this.network.sendTeamSignal(signal);
+      }
       const boundCodes = new Set(Object.values(this.controlSettings.keys));
       if (!boundCodes.has(event.code)) return;
       event.preventDefault();
@@ -851,6 +864,8 @@ export class MobileApp {
 
   private renderHud(snapshot: GameSnapshot): void {
     this.renderEliminationHud(snapshot);
+    this.syncEliminationRoundFeedback(snapshot);
+    this.renderTeamSignals(snapshot);
     this.syncMapMechanicFeedback(snapshot);
     this.syncMapEventFeedback(snapshot);
     const own = snapshot.players.find((player) => player.id === this.network.playerId);
@@ -940,6 +955,27 @@ export class MobileApp {
     this.renderExclusiveSkillButton(own, snapshot.serverTime);
   }
 
+  private syncEliminationRoundFeedback(snapshot: GameSnapshot): void {
+    const selected = selectEliminationRoundFeedback(snapshot, this.network.playerId, this.lastEliminationFeedbackRevision);
+    this.lastEliminationFeedbackRevision = selected.revision;
+    if (!selected.event) return;
+    this.audio.playEliminationRound(selected.event.outcome);
+    this.haptics.handleEliminationRound(selected.event);
+  }
+
+  private renderTeamSignals(snapshot: GameSnapshot): void {
+    const teamMode = snapshot.matchMode !== "solo";
+    for (const button of this.root.querySelectorAll<HTMLElement>("[data-team-signal]")) button.classList.toggle("is-hidden", !teamMode);
+    const signal = this.network.latestTeamSignal;
+    if (!signal || signal.id === this.lastTeamSignalId) return;
+    this.lastTeamSignalId = signal.id;
+    const ownTeam = snapshot.players.find((player) => player.id === this.network.playerId)?.teamId;
+    if (signal.teamId === ownTeam) {
+      const labels = { group: "集合", attack: "进攻", retreat: "撤退", heal: "需要治疗" } as const;
+      this.showToast(`${signal.senderName}：${labels[signal.kind]}`);
+    }
+  }
+
   private renderEliminationHud(snapshot: GameSnapshot): void {
     const hud = buildEliminationHud(snapshot, this.network.playerId);
     const hudElement = this.find<HTMLElement>("#elimination-hud");
@@ -950,6 +986,14 @@ export class MobileApp {
       this.find("#elimination-phase").textContent = hud.phaseLabel;
       this.find("#elimination-countdown").textContent = hud.countdownLabel;
       this.find("#elimination-alive").textContent = hud.aliveLabel;
+      this.find("#elimination-context").textContent = buildEliminationRoundContext(snapshot, this.network.playerId);
+    const panel = buildEliminationRoundPanel(snapshot);
+    const panelElement = this.find<HTMLElement>("#elimination-round-panel");
+    panelElement.classList.toggle("is-hidden", !panel.visible);
+    panelElement.innerHTML = panel.items.map((round) =>
+      `<div><b>R${round.roundIndex}</b><span>${round.winnerLabel}</span><small>${round.reasonLabel}</small></div>`,
+    ).join("");
+
     }
 
     const spectator = buildEliminationSpectator(snapshot, this.network.playerId);
@@ -1118,7 +1162,7 @@ export class MobileApp {
     }
   }
 
-  private showCombatFallback(type: CombatFeedbackEvent["type"] | "map-mechanic" | "exclusive-skill"): void {
+  private showCombatFallback(type: CombatFeedbackEvent["type"] | "map-mechanic" | "exclusive-skill" | "elimination-round"): void {
     const arena = this.find("#arena-screen");
     arena.dataset.combatFeedback = type;
     window.setTimeout(() => {
@@ -1332,8 +1376,6 @@ function mobileTemplate(): string {
           <div id="lobby-intro-copy" class="lobby-intro-copy"><span class="eyebrow">LAN ARENA · 6 PLAYERS</span>
           <h1>能量乱斗</h1>
           <p id="lobby-status">正在连接房间</p></div>
-          <section class="map-mechanic-card" data-map-mechanic-card aria-live="polite"></section>
-          <section class="map-mechanic-card map-event-card" data-map-event-card aria-live="polite"></section>
         </div>
         <div class="lobby-workspace">
           <section class="character-panel">
@@ -1351,6 +1393,10 @@ function mobileTemplate(): string {
             <div id="roster" class="roster-grid"></div>
             <button id="ready-button" class="ready-button is-hidden" type="button">准备</button>
           </div>
+          <aside class="lobby-info-panel" aria-label="地图提示">
+            <section class="map-mechanic-card" data-map-mechanic-card aria-live="polite"></section>
+            <section class="map-mechanic-card map-event-card" data-map-event-card aria-live="polite"></section>
+          </aside>
         </div>
       </section>
 
@@ -1365,9 +1411,16 @@ function mobileTemplate(): string {
           </div>
           <div id="match-clock" class="match-clock">5:00</div>
           <div id="team-score" class="team-score">个人战</div>
-          <div id="elimination-hud" class="elimination-hud is-hidden" aria-live="polite"><strong id="elimination-score"></strong><span id="elimination-round"></span><span id="elimination-phase"></span><span id="elimination-countdown"></span><span id="elimination-alive"></span></div>
+          <div id="elimination-hud" class="elimination-hud is-hidden" aria-live="polite"><strong id="elimination-score"></strong><span id="elimination-round"></span><span id="elimination-phase"></span><span id="elimination-countdown"></span><span id="elimination-alive"></span><small id="elimination-context"></small></div>
           <div id="elimination-spectator" class="elimination-spectator is-hidden" aria-live="polite"><strong>观战中</strong><span id="elimination-spectator-target">等待队友</span></div>
           <div id="elimination-round-result" class="elimination-round-result is-hidden" aria-live="polite"></div>
+          <div id="elimination-round-panel" class="elimination-round-panel is-hidden" aria-label="回合历史"></div>
+          <div id="team-signals" class="team-signals" aria-label="队伍快速信号">
+            <button type="button" data-team-signal="group" title="集合">集合<kbd>1</kbd></button>
+            <button type="button" data-team-signal="attack" title="进攻">进攻<kbd>2</kbd></button>
+            <button type="button" data-team-signal="retreat" title="撤退">撤退<kbd>3</kbd></button>
+            <button type="button" data-team-signal="heal" title="需要治疗">治疗<kbd>4</kbd></button>
+          </div>
           <div id="capture-status" class="capture-status" aria-live="polite"></div>
           <div id="map-mechanic-opening" class="map-mechanic-opening" aria-live="polite"></div>
           <div id="map-mechanic-status" class="map-mechanic-status" aria-live="polite"></div>

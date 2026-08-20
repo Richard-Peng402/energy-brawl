@@ -21,6 +21,8 @@ import type {
   PlayerInput,
   RoomSnapshot,
   ServerToClientEvents,
+  TeamSignalEvent,
+  TeamSignalKind,
 } from "../shared/protocol";
 
 export type CharacterSelectionCard = (typeof CHARACTER_CATALOG)[number] & {
@@ -82,6 +84,7 @@ export class GameNetworkClient {
   latestDiagnosticReport: DiagnosticReport | null = null;
   playerId: string | null = localStorage.getItem(PLAYER_KEY);
   notice = "";
+  latestTeamSignal: TeamSignalEvent | null = null;
   private readonly listeners = new Set<NetworkListener>();
   private diagnosticsProfileSent = false;
   private connectionGeneration = 0;
@@ -120,6 +123,10 @@ export class GameNetworkClient {
     });
     this.socket.on("notice", (message) => {
       this.notice = message;
+      this.notify();
+    });
+    this.socket.on("teamSignal", (event) => {
+      this.latestTeamSignal = event;
       this.notify();
     });
     this.socket.on("diagnosticsSession", ({ matchId }) => {
@@ -174,6 +181,10 @@ export class GameNetworkClient {
 
   sendExclusiveSkillAction(skillActionSeq: number, directionX: number, directionY: number): void {
     if (this.connected && this.playerSessionReady) this.socket.emit("useExclusiveSkill", { skillActionSeq, directionX, directionY });
+  }
+
+  sendTeamSignal(kind: TeamSignalKind): void {
+    if (this.connected && this.playerSessionReady) this.socket.emit("teamSignal", { kind });
   }
 
   sendPerformanceHint(hint: PerformanceHint): void {

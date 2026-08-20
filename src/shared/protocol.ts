@@ -157,6 +157,20 @@ export interface UseExclusiveSkillPayload {
   directionY: number;
 }
 
+export const TEAM_SIGNAL_KINDS = ["group", "attack", "retreat", "heal"] as const;
+export type TeamSignalKind = (typeof TEAM_SIGNAL_KINDS)[number];
+
+export interface TeamSignalPayload { kind: TeamSignalKind; }
+
+export interface TeamSignalEvent {
+  id: string;
+  serverTime: number;
+  senderId: string;
+  senderName: string;
+  teamId: TeamId;
+  kind: TeamSignalKind;
+}
+
 export interface RoomSnapshot {
   phase: GamePhase;
   canStart: boolean;
@@ -325,6 +339,7 @@ export interface ClientToServerEvents {
   playerInput: (input: PlayerInput) => void;
   useSkill: (payload: UseSkillPayload) => void;
   useExclusiveSkill: (payload: UseExclusiveSkillPayload) => void;
+  teamSignal: (payload: TeamSignalPayload) => void;
   hostCommand: (payload: { token: string; command: HostCommand }, acknowledge: (result: Ack) => void) => void;
   hostAdminCommand: (payload: { token: string; command: HostAdminCommand }, acknowledge: (result: Ack) => void) => void;
 }
@@ -333,6 +348,7 @@ export interface ServerToClientEvents {
   roomState: (snapshot: RoomSnapshot) => void;
   gameState: (snapshot: GameSnapshot | null) => void;
   notice: (message: string) => void;
+  teamSignal: (event: TeamSignalEvent) => void;
   diagnosticsSession: (session: { matchId: string | null }) => void;
   hostDiagnostics: (snapshot: HostDiagnosticsSnapshot) => void;
   diagnosticReport: (report: DiagnosticReport) => void;

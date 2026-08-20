@@ -4,6 +4,7 @@ import { exclusiveSkillHapticPattern } from "./exclusive-skill-audio";
 import type { ExclusiveSkillRelationship } from "./exclusive-skill-feedback";
 import type { ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import type { ExclusiveSkillEventStage } from "../shared/protocol";
+import type { EliminationRoundFeedbackEvent } from "./elimination-feedback";
 
 export type HapticsMode = "off" | "light" | "standard" | "strong";
 
@@ -11,7 +12,7 @@ export interface CombatHapticsOptions {
   vibrate?: (pattern: number | readonly number[]) => boolean;
   now?: () => number;
   mode?: HapticsMode;
-  onFallback?: (type: CombatFeedbackEventType | "map-mechanic" | "exclusive-skill") => void;
+  onFallback?: (type: CombatFeedbackEventType | "map-mechanic" | "exclusive-skill" | "elimination-round") => void;
 }
 
 export interface ExclusiveSkillHapticEvent {
@@ -61,7 +62,7 @@ function basePattern(event: CombatFeedbackEvent): readonly number[] {
 export class CombatHaptics {
   private readonly vibrate: ((pattern: number | readonly number[]) => boolean) | null;
   private readonly now: () => number;
-  private readonly onFallback: (type: CombatFeedbackEventType | "map-mechanic" | "exclusive-skill") => void;
+  private readonly onFallback: (type: CombatFeedbackEventType | "map-mechanic" | "exclusive-skill" | "elimination-round") => void;
   private mode: HapticsMode;
   private readonly seenKeys = new Set<string>();
   private readonly lastAt = new Map<CombatFeedbackEventType, number>();
@@ -128,6 +129,20 @@ export class CombatHaptics {
       try { this.vibrate(pattern); } catch { this.onFallback("exclusive-skill"); }
     } else {
       this.onFallback("exclusive-skill");
+    }
+  }
+
+  handleEliminationRound(event: EliminationRoundFeedbackEvent): void {
+    if (this.seenKeys.has(event.key)) return;
+    this.seenKeys.add(event.key);
+    if (this.seenKeys.size > 256) this.seenKeys.delete(this.seenKeys.values().next().value as string);
+    if (this.mode === "off") return;
+    const base = event.outcome === "win" ? [35, 20, 50, 20, 75] : [100, 35, 55];
+    const pattern = scalePattern(base, this.mode);
+    if (this.vibrate) {
+      try { this.vibrate(pattern); } catch { this.onFallback("elimination-round"); }
+    } else {
+      this.onFallback("elimination-round");
     }
   }
 

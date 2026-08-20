@@ -213,6 +213,20 @@ function createMapMechanicContribution(): MapMechanicContribution {
   };
 }
 
+function eliminationSpawnPoint(
+  spawnPoints: readonly Vec2[],
+  teamId: "red" | "blue",
+  teamSlot: number,
+  roundIndex: number,
+): Vec2 {
+  const teamSize = Math.max(1, Math.floor(spawnPoints.length / 2));
+  const sidesSwapped = roundIndex % 2 === 0;
+  const usesSecondSide = (teamId === "blue") !== sidesSwapped;
+  const sideOffset = usesSecondSide ? teamSize : 0;
+  return spawnPoints[sideOffset + (teamSlot % teamSize)]
+    ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+}
+
 export function createGameWorld(
   seeds: readonly PlayerSeed[],
   now = 0,
@@ -225,13 +239,17 @@ export function createGameWorld(
   const mapWalls = new StaticSpatialIndex(map.walls);
   const spawnPoints = map.spawnPointsByMode?.[matchMode] ?? map.spawnPoints;
   const players = new Map<string, WorldPlayer>();
+  const eliminationTeamSlots = { red: 0, blue: 0 };
   seeds.forEach((seed, index) => {
     const character = getCharacter(seed.characterId);
     const tacticalModuleId = seed.tacticalModuleId ?? defaultTacticalModuleForCharacter(seed.characterId);
     const tactical = seed.tacticalModuleId
       ? tacticalRuntimeModifiers(seed.tacticalModuleId)
       : neutralTacticalRuntimeModifiers();
-    const spawn = spawnPoints[index % spawnPoints.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+    const spawn = matchMode === "teamElimination3v3" && (seed.teamId === "red" || seed.teamId === "blue")
+      ? eliminationSpawnPoint(spawnPoints, seed.teamId, eliminationTeamSlots[seed.teamId]++, 1)
+      : spawnPoints[index % spawnPoints.length]
+        ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
     const maxHealth = Math.max(seed.stats?.maxHealth ?? character.maxHealth, seed.stats?.health ?? 0);
     const health = Math.min(seed.stats?.health ?? maxHealth, maxHealth);
     players.set(seed.id, {
@@ -370,8 +388,12 @@ export function resetWorldForEliminationRound(world: GameWorld, now: number): vo
   world.mapMechanicState = createMapMechanicState(world.mapId, now, world.mapMechanicsEnabled);
   world.mapEventState = createMapEventState(world.mapId, now, world.mapEventsEnabled, 0);
   world.eliminationState.firstEliminationTeamId = null;
+  const eliminationTeamSlots = { red: 0, blue: 0 };
   for (const [index, player] of [...world.players.values()].entries()) {
-    const spawn = world.mapSpawnPoints[index % world.mapSpawnPoints.length] ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+    const spawn = player.teamId === "red" || player.teamId === "blue"
+      ? eliminationSpawnPoint(world.mapSpawnPoints, player.teamId, eliminationTeamSlots[player.teamId]++, world.eliminationState.roundIndex)
+      : world.mapSpawnPoints[index % world.mapSpawnPoints.length]
+        ?? { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
     player.x = spawn.x;
     player.y = spawn.y;
     player.vx = 0;

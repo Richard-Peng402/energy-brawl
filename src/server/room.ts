@@ -45,6 +45,7 @@ import {
   worldToSnapshot,
   type GameWorld,
   type PlayerSeed,
+  type WorldPlayer,
 } from "./simulation";
 import { advanceElimination, recordElimination, resetEliminationRound } from "./team-elimination";
 import { DEFAULT_ELIMINATION_RULES, normalizeEliminationRules, type EliminationRules, type EliminationWorldView as SharedEliminationWorldView } from "../shared/team-elimination";
@@ -60,6 +61,7 @@ interface RoomSeat extends PlayerSeed {
   connected: boolean;
   ready: boolean;
   disconnectedAt: number | null;
+  pendingControlRecovery?: boolean;
 }
 
 const BOT_NAMES = ["脉冲", "闪光", "电弧", "磁暴", "回声", "星火"];
@@ -290,20 +292,9 @@ export class GameRoom {
       this.pendingSkillActions.delete(seat.id);
       this.pendingExclusiveSkillActions.delete(seat.id);
       player.connected = true;
-      player.isBot = false;
-      player.lastProcessedInput = 0;
-      player.lastProcessedSkillAction = 0;
-      player.lastProcessedExclusiveSkillAction = 0;
-      player.input = {
-        seq: 0,
-        moveX: 0,
-        moveY: 0,
-        aimX: Math.cos(player.angle),
-        aimY: Math.sin(player.angle),
-        firing: false,
-      };
-      player.vx = 0;
-      player.vy = 0;
+      const eliminationPhase = this.world?.eliminationState?.phase;
+      seat.pendingControlRecovery = eliminationPhase === "live" || eliminationPhase === "overtime" || eliminationPhase === "decisive";
+      if (!seat.pendingControlRecovery) this.restoreHumanControl(seat, player);
     }
     return { ok: true, data: { playerId: seat.id, reconnectToken: seat.reconnectToken } };
   }
@@ -427,6 +418,7 @@ export class GameRoom {
     seat.connected = false;
     seat.ready = false;
     seat.disconnectedAt = this.clockMs;
+    seat.pendingControlRecovery = false;
 
     const player = this.world?.players.get(playerId);
     if (player) {
@@ -437,7 +429,7 @@ export class GameRoom {
 
   handleInput(socketId: string, input: PlayerInput): boolean {
     const seat = this.seatForSocket(socketId);
-    if (!seat || !seat.connected || seat.isBot || !this.world || this.world.phase === "finished") return false;
+    if (!seat || !seat.connected || seat.isBot || seat.pendingControlRecovery || !this.world || this.world.phase === "finished") return false;
     if (!Number.isSafeInteger(input.seq) || input.seq < 0) return false;
     const player = this.world.players.get(seat.id);
     const queued = this.pendingInputs.get(seat.id);
@@ -448,7 +440,7 @@ export class GameRoom {
 
   handleSkillAction(socketId: string, payload: UseSkillPayload): boolean {
     const seat = this.seatForSocket(socketId);
-    if (!seat || !seat.connected || seat.isBot || !this.world || this.world.phase === "finished") return false;
+    if (!seat || !seat.connected || seat.isBot || seat.pendingControlRecovery || !this.world || this.world.phase === "finished") return false;
     if (!Number.isSafeInteger(payload.skillActionSeq) || payload.skillActionSeq < 0) return false;
     const player = this.world.players.get(seat.id);
     const queued = this.pendingSkillActions.get(seat.id);
@@ -464,7 +456,7 @@ export class GameRoom {
 
   handleExclusiveSkillAction(socketId: string, payload: UseExclusiveSkillPayload): boolean {
     const seat = this.seatForSocket(socketId);
-    if (!seat || !seat.connected || seat.isBot || !this.world || this.world.phase === "finished") return false;
+    if (!seat || !seat.connected || seat.isBot || seat.pendingControlRecovery || !this.world || this.world.phase === "finished") return false;
     if (!Number.isSafeInteger(payload.skillActionSeq) || payload.skillActionSeq < 0 || !Number.isFinite(payload.directionX) || !Number.isFinite(payload.directionY)) return false;
     const player = this.world.players.get(seat.id);
     const queued = this.pendingExclusiveSkillActions.get(seat.id);
@@ -505,6 +497,7 @@ export class GameRoom {
       this.pendingInputs.clear();
       this.pendingSkillActions.clear();
       this.pendingExclusiveSkillActions.clear();
+      this.restorePendingEliminationControls();
       return true;
     }
 
@@ -568,6 +561,35 @@ export class GameRoom {
         blue: maxHealthByTeam.blue > 0 ? healthByTeam.blue / maxHealthByTeam.blue : 0,
       },
     };
+  }
+
+  private restorePendingEliminationControls(): void {
+    if (!this.world) return;
+    for (const seat of this.seats.values()) {
+      if (!seat.pendingControlRecovery || !seat.connected) continue;
+      const player = this.world.players.get(seat.id);
+      if (player) this.restoreHumanControl(seat, player);
+    }
+  }
+
+  private restoreHumanControl(seat: RoomSeat, player: WorldPlayer): void {
+    seat.pendingControlRecovery = false;
+    player.connected = true;
+    player.isBot = false;
+    player.lastProcessedInput = 0;
+    player.lastProcessedSkillAction = 0;
+    player.lastProcessedExclusiveSkillAction = 0;
+    player.input = {
+      seq: 0,
+      moveX: 0,
+      moveY: 0,
+      aimX: Math.cos(player.angle),
+      aimY: Math.sin(player.angle),
+      firing: false,
+    };
+    player.vx = 0;
+    player.vy = 0;
+    this.nextBotThinkAt.delete(seat.id);
   }
 
   private recordDecisiveElimination(previous: SharedEliminationWorldView | null, current: SharedEliminationWorldView): void {

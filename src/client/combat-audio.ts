@@ -15,8 +15,9 @@ import {
 import { getExclusiveSkillAudioProfile } from "./exclusive-skill-audio";
 import { EXCLUSIVE_SKILL_IDS, type ExclusiveSkillId } from "../shared/exclusive-skill-catalog";
 import type { ExclusiveSkillEventStage } from "../shared/protocol";
+import type { EliminationRoundOutcome } from "./elimination-feedback";
 
-export type CombatSoundKind = "fire" | "impact" | "hurt" | "pickup" | "kill" | "objective" | "map-mechanic" | "exclusive-skill";
+export type CombatSoundKind = "fire" | "impact" | "hurt" | "pickup" | "kill" | "objective" | "map-mechanic" | "exclusive-skill" | "elimination-round";
 export type ObjectiveSoundStage = "capture-start" | "contested" | "captured" | "overtime" | "finish";
 export type MapMechanicSoundStage = "warning" | "active";
 
@@ -31,6 +32,7 @@ export interface CombatSoundRequest {
   mapMechanicStage?: MapMechanicSoundStage;
   skillId?: ExclusiveSkillId;
   skillStage?: ExclusiveSkillEventStage;
+  eliminationOutcome?: EliminationRoundOutcome;
   pan?: number;
 }
 
@@ -43,6 +45,7 @@ export interface ApprovedCombatSound {
   mapMechanicStage?: MapMechanicSoundStage;
   skillId?: ExclusiveSkillId;
   skillStage?: ExclusiveSkillEventStage;
+  eliminationOutcome?: EliminationRoundOutcome;
   pan: number;
   priority: number;
 }
@@ -161,6 +164,22 @@ export function killStreakAssetUrl(streak: number): string {
   return `/assets/v3/audio/killstreak/kill-${killStreakCue(streak).tier}.wav`;
 }
 
+const ELIMINATION_ROUND_CUES: Readonly<Record<EliminationRoundOutcome, readonly SynthTone[]>> = {
+  win: [
+    { type: "triangle", startFrequency: 420, endFrequency: 620, duration: 0.14, volume: 0.22, delay: 0 },
+    { type: "triangle", startFrequency: 620, endFrequency: 920, duration: 0.16, volume: 0.25, delay: 0.12 },
+    { type: "sine", startFrequency: 920, endFrequency: 1_480, duration: 0.24, volume: 0.28, delay: 0.26 },
+  ],
+  loss: [
+    { type: "sawtooth", startFrequency: 260, endFrequency: 150, duration: 0.2, volume: 0.2, delay: 0 },
+    { type: "sine", startFrequency: 150, endFrequency: 72, duration: 0.34, volume: 0.3, delay: 0.14 },
+  ],
+};
+
+export function eliminationRoundAudioCue(outcome: EliminationRoundOutcome): readonly SynthTone[] {
+  return ELIMINATION_ROUND_CUES[outcome];
+}
+
 export interface SoundStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -193,6 +212,7 @@ const MAX_ACTIVE_VOICES_BY_KIND: Readonly<Record<CombatSoundKind, number>> = {
   objective: 2,
   "map-mechanic": 2,
   "exclusive-skill": 4,
+  "elimination-round": 1,
 };
 
 async function loadAudioBuffer(context: AudioContext, url: string): Promise<AudioBuffer> {
@@ -205,7 +225,7 @@ export function soundPriority(request: Pick<CombatSoundRequest, "kind" | "local"
   if (request.kind === "kill" && request.local) return 100;
   if (request.kind === "hurt" && request.local) return 90;
   if (request.kind === "exclusive-skill") return request.local ? 76 : 58;
-  if (request.kind === "objective" || request.kind === "map-mechanic") return 70;
+  if (request.kind === "objective" || request.kind === "map-mechanic" || request.kind === "elimination-round") return 70;
   if (request.kind === "fire") return request.local ? 42 : 20;
   return request.local ? 48 : 32;
 }
@@ -255,11 +275,12 @@ export class CombatAudioPolicy {
     }
     return {
       kind: request.kind,
-      gain: request.kind === "hurt" ? 1 : request.kind === "kill" || request.kind === "objective" || request.kind === "map-mechanic" ? 0.92 : request.local ? 0.78 : 0.45,
+      gain: request.kind === "hurt" ? 1 : request.kind === "kill" || request.kind === "objective" || request.kind === "map-mechanic" || request.kind === "elimination-round" ? 0.92 : request.local ? 0.78 : 0.45,
       streak: request.streak,
       objectiveStage: request.objectiveStage,
       mapMechanicKind: request.mapMechanicKind,
       mapMechanicStage: request.mapMechanicStage,
+      eliminationOutcome: request.eliminationOutcome,
       pan: Math.max(-0.75, Math.min(0.75, request.pan ?? 0)),
       priority: soundPriority(request),
     };
@@ -570,6 +591,10 @@ export class CombatAudio {
     this.play({ kind: "objective", local: true, objectiveStage: stage });
   }
 
+  playEliminationRound(outcome: EliminationRoundOutcome): void {
+    this.play({ kind: "elimination-round", local: true, eliminationOutcome: outcome });
+  }
+
   playMapMechanic(kind: MapMechanicKind, stage: MapMechanicSoundStage): void {
     this.play({ kind: "map-mechanic", local: true, mapMechanicKind: kind, mapMechanicStage: stage });
   }
@@ -700,6 +725,23 @@ export class CombatAudio {
               tone.delay,
               tone === finalTone ? finish : undefined,
               approved.pan,
+            );
+          }
+          break;
+        }
+        case "elimination-round": {
+          const cue = eliminationRoundAudioCue(approved.eliminationOutcome ?? "loss");
+          const finalTone = cue.at(-1)!;
+          for (const tone of cue) {
+            this.playTone(
+              context,
+              tone.type,
+              tone.startFrequency,
+              tone.endFrequency,
+              tone.duration,
+              tone.volume * mixedGain,
+              tone.delay,
+              tone === finalTone ? finish : undefined,
             );
           }
           break;
