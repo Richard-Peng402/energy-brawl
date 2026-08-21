@@ -416,6 +416,31 @@ input:focus-visible {
   color: #ffffff;
 }
 
+.room-tools { display: grid; gap: 6px; margin-top: 4px; padding-top: 8px; border-top: 1px solid rgb(77 163 255 / 18%); }
+.room-tools strong { color: #9ed7ff; font-size: 12px; letter-spacing: .08em; }
+.room-tool-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.room-tool-row input { min-width: 0; height: 34px; text-transform: uppercase; }
+.room-tool-row button, .room-list-item { min-height: 32px; border: 1px solid rgb(77 163 255 / 42%); border-radius: 4px; background: rgb(20 38 52 / 88%); color: #d9efff; font-size: 11px; font-weight: 800; cursor: pointer; }
+.room-list { display: grid; gap: 4px; max-height: 92px; overflow: auto; }
+.room-list-item { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px; text-align: left; }
+.room-list-item span, .room-list-empty { color: #8ea5b2; font-size: 10px; }
+
+.lifecycle-countdown {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 20;
+  transform: translateX(-50%);
+  border: 1px solid rgb(242 193 78 / 70%);
+  border-radius: 4px;
+  padding: 8px 18px;
+  background: rgb(20 28 34 / 94%);
+  color: #ffe29a;
+  font-size: 18px;
+  font-weight: 900;
+  box-shadow: 0 8px 22px rgb(0 0 0 / 24%);
+}
+
 .color-list {
   display: grid;
   grid-template-columns: repeat(6, 1fr);

@@ -51,7 +51,7 @@ export class HostApp {
   }
 
   private bindActions(): void {
-    this.find("#host-start").addEventListener("click", () => void this.command("start"));
+    this.find("#host-start").addEventListener("click", () => void this.command("startCountdown"));
     this.find("#host-end").addEventListener("click", () => void this.command("end"));
     this.find("#host-reset").addEventListener("click", () => void this.command("reset"));
     this.find<HTMLSelectElement>("#host-mode").addEventListener("change", (event) => {
@@ -190,7 +190,7 @@ export class HostApp {
     this.find<HTMLInputElement>("#stat-value").value = String(player[stat]);
   }
 
-  private async command(command: "start" | "end" | "reset"): Promise<void> {
+  private async command(command: "start" | "startCountdown" | "end" | "reset"): Promise<void> {
     const result = await this.network.hostCommand(this.token, command);
     this.message = result.ok ? "命令已执行" : result.error ?? "命令执行失败";
     this.render();

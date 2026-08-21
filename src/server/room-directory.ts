@@ -22,14 +22,17 @@ export class RoomDirectory {
 
   createRoom(hostSocketId: string): DirectoryRoom {
     const code = this.nextCode();
-    const entry: DirectoryRoom = {
-      code,
-      hostSocketId,
-      room: new GameRoom(),
-      createdAt: this.now(),
-      lastEmptyAt: this.now(),
-    };
-    this.rooms.set(code, entry);
+    return this.registerRoom(code, new GameRoom(), hostSocketId);
+  }
+
+  registerRoom(code: string, room: GameRoom, hostSocketId = ""): DirectoryRoom {
+    const normalized = normalizeRoomCode(code);
+    if (!/^[A-Z2-9]{6}$/.test(normalized) || this.rooms.has(normalized)) {
+      throw new Error(`Invalid or duplicate room code: ${code}`);
+    }
+    const now = this.now();
+    const entry: DirectoryRoom = { code: normalized, hostSocketId, room, createdAt: now, lastEmptyAt: now };
+    this.rooms.set(normalized, entry);
     return entry;
   }
 
@@ -43,7 +46,10 @@ export class RoomDirectory {
 
   findJoinable(): DirectoryRoom | undefined {
     return [...this.rooms.values()]
-      .filter((entry) => entry.room.snapshot().phase === "lobby" && entry.room.playerCount() < MAX_PLAYERS)
+      .filter((entry) => {
+        const phase = entry.room.snapshot().lifecyclePhase ?? "lobby";
+        return (phase === "lobby" || phase === "roleSelect") && entry.room.playerCount() < MAX_PLAYERS;
+      })
       .sort((a, b) => a.createdAt - b.createdAt)[0];
   }
 
@@ -69,13 +75,17 @@ export class RoomDirectory {
     return this.rooms.size;
   }
 
+  entries(): DirectoryRoom[] {
+    return [...this.rooms.values()];
+  }
+
   private summary(entry: DirectoryRoom): RoomSummary {
     const snapshot = entry.room.snapshot();
-    const phase: RoomDirectoryPhase = snapshot.phase === "lobby"
-      ? "lobby"
-      : snapshot.phase === "finished"
+    const phase: RoomDirectoryPhase = snapshot.lifecyclePhase === "countdown" || snapshot.lifecyclePhase === "playing" || snapshot.phase === "playing" || snapshot.phase === "overtime"
+      ? "playing"
+      : snapshot.lifecyclePhase === "results" || snapshot.phase === "finished"
         ? "finished"
-        : "playing";
+        : "lobby";
     return {
       code: entry.code,
       playerCount: entry.room.playerCount(),

@@ -30,6 +30,7 @@ export interface Rect extends Vec2 {
 }
 
 export type GamePhase = "lobby" | "playing" | "overtime" | "finished";
+export type RoomLifecyclePhase = "lobby" | "countdown" | "playing" | "results" | "roleSelect";
 
 export interface PlayerInput {
   seq: number;
@@ -174,6 +175,9 @@ export interface TeamSignalEvent {
 
 export interface RoomSnapshot {
   phase: GamePhase;
+  lifecyclePhase?: RoomLifecyclePhase;
+  countdownEndsAt?: number | null;
+  countdownRemainingMs?: number | null;
   canStart: boolean;
   pendingWinnerId: string | null;
   pendingWinnerTeamId?: TeamId | null;
@@ -311,6 +315,7 @@ export interface JoinPayload {
 
 export interface ReconnectPayload {
   token: string;
+  roomCode?: string;
 }
 
 export interface Ack<T = undefined> {
@@ -325,13 +330,18 @@ export interface JoinResult {
   roomCode?: string;
 }
 
+export interface RoomSelectionResult {
+  roomCode: string;
+  room: RoomSnapshot;
+}
+
 export interface PlayerHandoverEvent {
   playerId: string;
   controlOwner: "human" | "bot";
   serverTime: number;
 }
 
-export type HostCommand = "start" | "end" | "reset";
+export type HostCommand = "start" | "startCountdown" | "end" | "reset";
 
 export type HostAdminCommand =
   | { type: "setStat"; playerId: string; stat: AdminStat; value: number }
@@ -348,6 +358,10 @@ export type HostAdminCommand =
   | { type: "forceTeamWinner"; teamId: TeamId };
 
 export interface ClientToServerEvents {
+  listRooms: (acknowledge: (result: Ack<RoomDirectorySnapshot>) => void) => void;
+  createRoom: (acknowledge: (result: Ack<RoomSelectionResult>) => void) => void;
+  joinRoom: (roomCode: string, acknowledge: (result: Ack<RoomSelectionResult>) => void) => void;
+  quickJoin: (acknowledge: (result: Ack<RoomSelectionResult>) => void) => void;
   join: (payload: JoinPayload, acknowledge: (result: Ack<JoinResult>) => void) => void;
   changeCharacter: (characterId: CharacterId, acknowledge: (result: Ack) => void) => void;
   changeTacticalModule: (tacticalModuleId: TacticalModuleId, acknowledge: (result: Ack) => void) => void;
@@ -368,6 +382,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
+  roomDirectory: (snapshot: RoomDirectorySnapshot) => void;
   roomState: (snapshot: RoomSnapshot) => void;
   gameState: (snapshot: GameSnapshot | null) => void;
   notice: (message: string) => void;

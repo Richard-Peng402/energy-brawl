@@ -24,6 +24,7 @@ import type {
   HostAdminCommand,
   JoinPayload,
   JoinResult,
+  RoomLifecyclePhase,
   PlayerInput,
   RoomSnapshot,
   UseExclusiveSkillPayload,
@@ -79,6 +80,9 @@ export class GameRoom {
   private world: GameWorld | null = null;
   private clockMs = 0;
   private autoResetAt: number | null = null;
+  private lifecyclePhase: RoomLifecyclePhase = "lobby";
+  private countdownEndsAt: number | null = null;
+  private countdownMarker = -1;
   private nextPlayerNumber = 1;
   private pendingWinnerId: string | null = null;
   private pendingWinnerTeamId: TeamId | null = null;
@@ -338,12 +342,33 @@ export class GameRoom {
     const seat = this.seatForSocket(socketId);
     if (!seat?.connected || seat.isBot) return { ok: false, error: "尚未加入房间" };
     seat.ready = ready === true;
+    if (!seat.ready && this.lifecyclePhase === "countdown") {
+      this.lifecyclePhase = "lobby";
+      this.countdownEndsAt = null;
+      this.countdownMarker = -1;
+    }
     return { ok: true };
   }
 
-  startMatch(): Ack {
+  startMatch(options: { countdown?: boolean } = {}): Ack {
     if (this.world) return { ok: false, error: "对局已经开始" };
+    if (this.lifecyclePhase === "countdown") return { ok: false, error: "开局倒计时已经开始" };
     if (!this.canStart()) return { ok: false, error: "至少需要一名已准备的真人玩家" };
+
+    if (options.countdown) {
+      this.lifecyclePhase = "countdown";
+      this.countdownEndsAt = this.clockMs + 5_000;
+      this.countdownMarker = -1;
+      return { ok: true };
+    }
+
+    return this.createWorldMatch();
+  }
+
+  private createWorldMatch(): Ack {
+    this.lifecyclePhase = "playing";
+    this.countdownEndsAt = null;
+    this.countdownMarker = -1;
 
     this.removeDisconnectedLobbySeats();
     this.fillBotSeats();
@@ -382,6 +407,7 @@ export class GameRoom {
     if (!this.world) return { ok: false, error: "当前没有进行中的对局" };
     if (this.world.phase === "finished") return { ok: false, error: "Match already finished" };
     finishWorldMatch(this.world, []);
+    this.lifecyclePhase = "results";
     this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
     return { ok: true };
   }
@@ -395,6 +421,9 @@ export class GameRoom {
 
   resetToLobby(): Ack {
     this.world = null;
+    this.lifecyclePhase = "roleSelect";
+    this.countdownEndsAt = null;
+    this.countdownMarker = -1;
     this.autoResetAt = null;
     this.kickedSocketIds.splice(0);
     this.nextBotThinkAt.clear();
@@ -432,6 +461,26 @@ export class GameRoom {
       player.isBot = true;
     }
     this.handoverEvents.push({ playerId, controlOwner: "bot", serverTime: this.clockMs });
+  }
+
+  leave(socketId: string): void {
+    if (this.world) {
+      this.disconnect(socketId);
+      return;
+    }
+    const playerId = this.socketPlayers.get(socketId);
+    if (!playerId) return;
+    this.socketPlayers.delete(socketId);
+    this.seats.delete(playerId);
+    this.pendingInputs.delete(playerId);
+    this.pendingSkillActions.delete(playerId);
+    this.pendingExclusiveSkillActions.delete(playerId);
+    if (this.lifecyclePhase === "countdown") {
+      this.lifecyclePhase = "lobby";
+      this.countdownEndsAt = null;
+      this.countdownMarker = -1;
+    }
+    if (this.pendingWinnerId === playerId) this.pendingWinnerId = null;
   }
 
   consumeHandoverEvents(): Array<{ playerId: string; controlOwner: "human" | "bot"; serverTime: number }> {
@@ -480,7 +529,26 @@ export class GameRoom {
     if (!Number.isFinite(deltaMs) || deltaMs <= 0) return false;
     this.clockMs += deltaMs;
     const lifecycleChanged = this.expireReconnectTokens();
-    if (!this.world) return lifecycleChanged;
+    if (!this.world) {
+      if (this.lifecyclePhase === "countdown") {
+        if (!this.canStart()) {
+          this.lifecyclePhase = "lobby";
+          this.countdownEndsAt = null;
+          this.countdownMarker = -1;
+          return true;
+        }
+        if (this.countdownEndsAt !== null && this.clockMs >= this.countdownEndsAt) {
+          this.createWorldMatch();
+          return true;
+        }
+        const marker = Math.ceil((this.countdownEndsAt! - this.clockMs) / 1_000);
+        if (marker !== this.countdownMarker) {
+          this.countdownMarker = marker;
+          return true;
+        }
+      }
+      return lifecycleChanged;
+    }
     if (this.world.phase === "finished") {
       if (this.autoResetAt === null) this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
       if (this.clockMs >= this.autoResetAt) {
@@ -550,6 +618,7 @@ export class GameRoom {
       if (transitions.length > 0) return true;
     }
     if (this.worldIsFinished() && this.autoResetAt === null) {
+      this.lifecyclePhase = "results";
       this.autoResetAt = this.clockMs + LOBBY_RETURN_DELAY_MS;
     }
     return lifecycleChanged || (!wasFinished && this.worldIsFinished());
@@ -641,6 +710,9 @@ export class GameRoom {
         });
     return {
       phase: this.world?.phase ?? "lobby",
+      lifecyclePhase: this.lifecyclePhase,
+      countdownEndsAt: this.countdownEndsAt,
+      countdownRemainingMs: this.countdownEndsAt === null ? null : Math.max(0, this.countdownEndsAt - this.clockMs),
       canStart: this.canStart(),
       pendingWinnerId: this.pendingWinnerId,
       pendingWinnerTeamId: this.pendingWinnerTeamId,

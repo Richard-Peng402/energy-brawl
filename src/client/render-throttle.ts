@@ -7,6 +7,8 @@ export function roomUiRevision(room: RoomSnapshot | null): string {
     .join(";");
   return [
     room.phase,
+    room.lifecyclePhase ?? "lobby",
+    room.countdownRemainingMs ?? "",
     room.canStart,
     room.pendingWinnerId ?? "",
     room.mapSelection ?? "reactor-core",

@@ -19,6 +19,8 @@ import type {
   JoinResult,
   PerformanceHint,
   PlayerInput,
+  RoomDirectorySnapshot,
+  RoomSelectionResult,
   RoomSnapshot,
   ServerToClientEvents,
   TeamSignalEvent,
@@ -70,6 +72,7 @@ export function canReadyAfterCharacterSelection(hasSelectedCharacter: boolean, c
 
 const TOKEN_KEY = "energy-brawl.reconnect-token";
 const PLAYER_KEY = "energy-brawl.player-id";
+const ROOM_KEY = "energy-brawl.room-code";
 
 export type NetworkListener = () => void;
 
@@ -79,6 +82,8 @@ export class GameNetworkClient {
   playerSessionReady = false;
   snapshotMode: PerformanceHint["snapshotMode"] = "full";
   room: RoomSnapshot | null = null;
+  roomDirectory: RoomDirectorySnapshot = { rooms: [] };
+  roomCode: string | null = localStorage.getItem(ROOM_KEY);
   game: GameSnapshot | null = null;
   diagnosticsMatchId: string | null = null;
   hostDiagnostics: HostDiagnosticsSnapshot | null = null;
@@ -136,6 +141,10 @@ export class GameNetworkClient {
       this.notice = message;
       this.notify();
     });
+    this.socket.on("roomDirectory", (snapshot) => {
+      this.roomDirectory = snapshot;
+      this.notify();
+    });
     this.socket.on("teamSignal", (event) => {
       this.latestTeamSignal = event;
       this.notify();
@@ -168,6 +177,28 @@ export class GameNetworkClient {
   async join(payload: JoinPayload): Promise<Ack<JoinResult>> {
     const result = await new Promise<Ack<JoinResult>>((resolve) => this.socket.emit("join", payload, resolve));
     if (result.ok && result.data) this.storeIdentity(result.data);
+    return result;
+  }
+
+  async listRooms(): Promise<Ack<RoomDirectorySnapshot>> {
+    return new Promise((resolve) => this.socket.emit("listRooms", resolve));
+  }
+
+  async createRoom(): Promise<Ack<RoomSelectionResult>> {
+    const result = await new Promise<Ack<RoomSelectionResult>>((resolve) => this.socket.emit("createRoom", resolve));
+    if (result.ok && result.data) this.storeRoomSelection(result.data);
+    return result;
+  }
+
+  async joinRoom(roomCode: string): Promise<Ack<RoomSelectionResult>> {
+    const result = await new Promise<Ack<RoomSelectionResult>>((resolve) => this.socket.emit("joinRoom", roomCode, resolve));
+    if (result.ok && result.data) this.storeRoomSelection(result.data);
+    return result;
+  }
+
+  async quickJoin(): Promise<Ack<RoomSelectionResult>> {
+    const result = await new Promise<Ack<RoomSelectionResult>>((resolve) => this.socket.emit("quickJoin", resolve));
+    if (result.ok && result.data) this.storeRoomSelection(result.data);
     return result;
   }
 
@@ -301,7 +332,7 @@ export class GameNetworkClient {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return;
     const result = await new Promise<Ack<JoinResult>>((resolve) =>
-      this.socket.emit("reconnectPlayer", { token }, resolve),
+      this.socket.emit("reconnectPlayer", { token, roomCode: this.roomCode ?? undefined }, resolve),
     );
     if (result.ok && result.data) {
       this.storeIdentity(result.data);
@@ -319,7 +350,19 @@ export class GameNetworkClient {
     this.playerSessionReady = true;
     localStorage.setItem(TOKEN_KEY, result.reconnectToken);
     localStorage.setItem(PLAYER_KEY, result.playerId);
+    if (result.roomCode) this.setRoomCode(result.roomCode);
     this.notify();
+  }
+
+  private storeRoomSelection(result: RoomSelectionResult): void {
+    this.setRoomCode(result.roomCode);
+    this.room = result.room;
+    this.notify();
+  }
+
+  private setRoomCode(roomCode: string): void {
+    this.roomCode = roomCode;
+    localStorage.setItem(ROOM_KEY, roomCode);
   }
 
   private notify(): void {

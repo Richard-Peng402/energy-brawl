@@ -6,6 +6,7 @@ import type {
   DiagnosticReport,
   HostDiagnosticsSnapshot,
 } from "../src/shared/diagnostics";
+import type { Ack, RoomDirectorySnapshot, RoomSelectionResult } from "../src/shared/protocol";
 
 const sockets: FakeSocket[] = [];
 
@@ -43,6 +44,21 @@ beforeEach(() => {
 });
 
 describe("diagnostic network client", () => {
+  it("exposes room discovery and persists the selected room for reconnect", async () => {
+    const client = new GameNetworkClient(false);
+    const socket = sockets[0]!;
+    socket.trigger("roomDirectory", { rooms: [{ code: "ABC234", playerCount: 1, maxPlayers: 6, phase: "lobby", matchMode: "solo", mapSelection: "reactor-core" }] } satisfies RoomDirectorySnapshot);
+    expect(client.roomDirectory.rooms[0]?.code).toBe("ABC234");
+
+    socket.emit.mockImplementation((event: string, ...args: unknown[]) => {
+      const acknowledge = args.at(-1) as (result: Ack<RoomSelectionResult>) => void;
+      if (event === "joinRoom") acknowledge({ ok: true, data: { roomCode: "ABC234", room: null as never } });
+    });
+    await expect(client.joinRoom("abc234")).resolves.toMatchObject({ ok: true });
+    expect(client.roomCode).toBe("ABC234");
+    expect(localStorage.getItem("energy-brawl.room-code")).toBe("ABC234");
+  });
+
   it("uses volatile transport for one-second samples", () => {
     const client = new GameNetworkClient(false);
     const socket = sockets[0]!;

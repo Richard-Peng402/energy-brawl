@@ -125,6 +125,7 @@ export class MobileApp {
   private acceptingInput = false;
   private toastTimer = 0;
   private lastRoomUiRevision = "";
+  private lastRoomDirectoryRevision = "";
   private lastLeaderboardRevision = "";
   private lastKillFeedRevision = "";
   private lastResultsRevision = "";
@@ -208,6 +209,20 @@ export class MobileApp {
       } else {
         this.showToast(result.error ?? "加入失败");
       }
+    });
+    this.find("#create-room").addEventListener("click", async () => {
+      const result = await this.network.createRoom();
+      if (!result.ok) this.showToast(result.error ?? "创建房间失败");
+    });
+    this.find("#quick-join").addEventListener("click", async () => {
+      const result = await this.network.quickJoin();
+      if (!result.ok) this.showToast(result.error ?? "快速加入失败");
+    });
+    this.find("#join-room-by-code").addEventListener("click", async () => {
+      const code = this.find<HTMLInputElement>("#room-code-input").value.trim();
+      if (!code) return;
+      const result = await this.network.joinRoom(code);
+      if (!result.ok) this.showToast(result.error ?? "加入房间失败");
     });
 
     this.find("#color-list").addEventListener("click", (event) => {
@@ -626,6 +641,7 @@ export class MobileApp {
 
   private render(): void {
     this.renderConnection();
+    this.renderLifecycleCountdown();
     const nextRoomUiRevision = roomUiRevision(this.network.room);
     if (nextRoomUiRevision !== this.lastRoomUiRevision) {
       this.lastRoomUiRevision = nextRoomUiRevision;
@@ -633,6 +649,13 @@ export class MobileApp {
       this.renderRoster();
       this.renderMapMechanicLobby();
       this.renderMapEventLobby();
+    }
+    const nextRoomDirectoryRevision = this.network.roomDirectory.rooms
+      .map((entry) => `${entry.code}:${entry.playerCount}:${entry.phase}:${entry.matchMode ?? ""}:${entry.mapSelection ?? ""}`)
+      .join("|");
+    if (nextRoomDirectoryRevision !== this.lastRoomDirectoryRevision) {
+      this.lastRoomDirectoryRevision = nextRoomDirectoryRevision;
+      this.renderRoomDirectory();
     }
 
     if (!this.network.playerSessionReady) {
@@ -704,6 +727,16 @@ export class MobileApp {
     element.textContent = `${this.network.connected ? "已连接" : "正在重连"} · ${levelLabel} · ${rtt} · 丢失 ${health.lossPercent}% · 重连 ${health.reconnects}`;
   }
 
+  private renderLifecycleCountdown(): void {
+    const element = this.find<HTMLElement>("#lifecycle-countdown");
+    const room = this.network.room;
+    const active = room?.lifecyclePhase === "countdown" && room.countdownRemainingMs != null;
+    element.classList.toggle("is-hidden", !active);
+    if (active) {
+      element.textContent = `开战倒计时 ${Math.ceil(room.countdownRemainingMs! / 1_000)} 秒`;
+    }
+  }
+
   private renderColors(): void {
     const ownSeat = this.network.room?.players.find((player) => player.id === this.network.playerId);
     if (ownSeat) {
@@ -733,6 +766,21 @@ export class MobileApp {
       <div class="character-stats" aria-label="${selected.name}精确数值"><span>生命 <b>${selected.maxHealth}</b></span><span>伤害 <b>${selected.damage}</b></span><span>移速 <b>${selected.moveSpeed}</b></span><span>射速 <b>${selected.fireCooldownMs}ms</b></span><span>弹速 <b>${selected.projectileSpeed}</b></span></div>
       ${renderTacticalModuleCards(this.selectedTacticalModuleId, ownSeat?.ready === true)}`;
     this.renderLobbyCharacterPreview(selected);
+  }
+
+  private renderRoomDirectory(): void {
+    const current = this.network.roomCode;
+    this.find("#current-room-code").textContent = current ? `房间码：${current}` : "尚未选择房间";
+    const rooms = this.network.roomDirectory.rooms.filter((entry) => entry.code !== current);
+    this.find("#room-list").innerHTML = rooms.length
+      ? rooms.map((entry) => `<button type="button" class="room-list-item" data-room-code="${entry.code}"><b>${entry.code}</b><span>${entry.playerCount}/${entry.maxPlayers} · ${entry.phase === "lobby" ? "大厅" : entry.phase === "playing" ? "对局中" : "已结束"}</span></button>`).join("")
+      : `<small class="room-list-empty">暂无其他可加入房间</small>`;
+    for (const button of this.root.querySelectorAll<HTMLButtonElement>("[data-room-code]")) {
+      button.addEventListener("click", () => {
+        const code = button.dataset.roomCode;
+        if (code) void this.network.joinRoom(code);
+      });
+    }
   }
 
   private renderLobbyCharacterPreview(character: (typeof CHARACTER_CATALOG)[number]): void {
@@ -1382,6 +1430,7 @@ function mobileTemplate(): string {
           <div id="lobby-intro-copy" class="lobby-intro-copy"><span class="eyebrow">LAN ARENA · 6 PLAYERS</span>
           <h1>能量乱斗</h1>
           <p id="lobby-status">正在连接房间</p></div>
+        <div id="lifecycle-countdown" class="lifecycle-countdown is-hidden" aria-live="polite"></div>
         </div>
         <div class="lobby-workspace">
           <section class="character-panel">
@@ -1393,6 +1442,12 @@ function mobileTemplate(): string {
             <label for="nickname">你的昵称</label>
             <input id="nickname" maxlength="12" autocomplete="nickname" placeholder="输入昵称" required />
             <button class="primary-button" type="submit">加入房间</button>
+            <div class="room-tools" aria-label="多人房间">
+              <strong id="current-room-code">尚未选择房间</strong>
+              <div class="room-tool-row"><button id="create-room" type="button">创建房间</button><button id="quick-join" type="button">快速加入</button></div>
+              <div class="room-tool-row"><input id="room-code-input" maxlength="6" inputmode="text" placeholder="输入六位房间码" /><button id="join-room-by-code" type="button">按码加入</button></div>
+              <div id="room-list" class="room-list" aria-live="polite"></div>
+            </div>
           </form>
           <div class="roster-panel">
             <div class="section-heading"><span>参战席位</span><small>空位由 AI 补齐</small></div>
