@@ -831,9 +831,9 @@ export class MobileApp {
       .map((player, index) =>
         player
           ? `<div class="roster-slot${player.id === this.network.playerId ? " is-you" : ""}">
-              <span class="player-dot" style="--player-color:${player.color}"></span>
+              <span class="player-dot" style="--player-color:${player.color}"></span><i class="team-marker team-marker-${player.teamId ?? "solo"}" aria-hidden="true"></i>
               <span class="roster-name">${escapeHtml(player.nickname)}</span>
-              <span class="roster-status"><b>${teamLabel(player.teamId)}</b>${player.isBot ? "AI" : player.ready ? "已准备" : player.connected ? "未准备" : "离线"}</span>
+              <span class="roster-status"><b>${teamLabel(player.teamId)}</b>${player.isBot ? "AI 接管" : player.ready ? "已准备" : player.connected ? "未准备" : "离线"}</span>
             </div>`
           : `<div class="roster-slot is-empty"><span class="slot-number">${index + 1}</span><span class="roster-name">等待加入</span><span class="roster-status">空位</span></div>`,
       )

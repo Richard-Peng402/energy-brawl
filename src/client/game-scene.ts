@@ -62,6 +62,7 @@ import { resolveRenderMetrics, type RenderMetrics } from "./render-metrics";
 import { getMapVisualProfile } from "./map-visuals";
 import { mapMechanicRenderProfile, mapMechanicVisualRevision } from "./map-mechanic-visuals";
 import { mapEventVisualModel, mapEventVisualRevision } from "./map-event-visuals";
+import { resolveTeamIdentityVisual, type TeamIdentityVisual } from "./team-identity";
 import { resolveExclusiveSkillTargeting } from "../shared/exclusive-skill-targeting";
 import {
   getExclusiveSkillVfxProfile,
@@ -91,6 +92,9 @@ interface PlayerView {
   healthFill: Phaser.GameObjects.Rectangle;
   shadow: Phaser.GameObjects.Ellipse;
   ring: Phaser.GameObjects.Arc;
+  identityMarker: Phaser.GameObjects.Graphics;
+  directionIndicator: Phaser.GameObjects.Graphics;
+  botBadge: Phaser.GameObjects.Text;
   shield: Phaser.GameObjects.Arc | null;
   lastHealth: number;
   wasAlive: boolean;
@@ -100,6 +104,7 @@ interface PlayerView {
   lastHealEffectAt: number;
   visualState: CharacterVisualState;
   direction: CharacterDirection;
+  identityVisual: TeamIdentityVisual;
 }
 
 interface MovingView {
@@ -707,6 +712,15 @@ class ArenaScene extends Phaser.Scene {
 
     for (const player of snapshot.players) {
       const view = this.playerViews.get(player.id) ?? this.createPlayerView(player);
+      const localPlayer = snapshot.players.find((candidate) => candidate.id === this.localPlayerId);
+      const identityVisual = resolveTeamIdentityVisual({
+        matchMode: snapshot.matchMode ?? "solo",
+        playerTeamId: player.teamId,
+        localTeamId: localPlayer?.teamId,
+        isLocal: player.id === this.localPlayerId,
+        isBot: player.isBot,
+      });
+      view.identityVisual = identityVisual;
       if (player.id === this.localPlayerId) {
         this.diagnosticHooks.onAuthoritativeInput(player.lastProcessedInput);
         localPlayerRespawned = shouldSnapCameraOnRespawn(view.wasAlive, player.alive) || (eliminationRoundChanged && player.alive);
@@ -755,6 +769,7 @@ class ArenaScene extends Phaser.Scene {
       view.lastHealth = player.health;
       view.wasAlive = player.alive;
       this.updatePlayerVisual(view, player, now);
+      this.syncTeamIdentityVisual(view, player, identityVisual);
       this.syncCombatStateVisual(view, player, snapshot.serverTime, identity);
       this.syncExclusiveSkillEffect(player);
     }
@@ -1098,13 +1113,58 @@ class ArenaScene extends Phaser.Scene {
     const active = priority.map((id) => states.find((state) => state.id === id)).find(Boolean);
     view.name.setText(`${player.isBot ? `${identity} · AI` : identity}${active ? ` · ${getStatusEffectVisualProfile(active.id).label}` : ""}`);
     const playerColor = Phaser.Display.Color.HexStringToColor(player.color).color;
-    view.ring.setStrokeStyle(4, playerColor, 0.78);
+    view.ring.setStrokeStyle(view.identityVisual.ringWidth, playerColor, view.identityVisual.ringAlpha);
     view.weapon.clearTint();
     if (!active) return;
     const profile = getStatusEffectVisualProfile(active.id);
     view.ring.setStrokeStyle(active.id === "phase-reveal" ? 7 : 5, profile.color, 0.98).setAlpha(0.92);
     if (active.id === "phase-reveal") view.sprite.setTint(profile.color);
     if (active.id === "phase-fire-lock") view.weapon.setTint(profile.color).setAlpha(0.58);
+  }
+
+  private syncTeamIdentityVisual(view: PlayerView, player: PlayerSnapshot, visual: TeamIdentityVisual): void {
+    const color = Phaser.Display.Color.HexStringToColor(player.color).color;
+    view.ring.setStrokeStyle(visual.ringWidth, color, visual.ringAlpha);
+    view.identityMarker.clear();
+    view.identityMarker.setVisible(player.alive && visual.relation !== "local");
+    view.identityMarker.lineStyle(3, color, Math.min(1, visual.ringAlpha + 0.08));
+    view.identityMarker.fillStyle(color, visual.relation === "teammate" ? 0.95 : 0.78);
+    if (visual.marker === "diamond") {
+      view.identityMarker.fillPoints([
+        new Phaser.Geom.Point(0, -82),
+        new Phaser.Geom.Point(9, -73),
+        new Phaser.Geom.Point(0, -64),
+        new Phaser.Geom.Point(-9, -73),
+      ], true);
+    } else if (visual.marker === "chevron") {
+      view.identityMarker.beginPath();
+      view.identityMarker.moveTo(-9, -80);
+      view.identityMarker.lineTo(0, -70);
+      view.identityMarker.lineTo(9, -80);
+      view.identityMarker.lineTo(6, -84);
+      view.identityMarker.lineTo(0, -77);
+      view.identityMarker.lineTo(-6, -84);
+      view.identityMarker.closePath();
+      view.identityMarker.fillPath();
+      view.identityMarker.strokePath();
+    } else {
+      view.identityMarker.fillCircle(0, -73, 5);
+      view.identityMarker.strokeCircle(0, -73, 7);
+    }
+    view.directionIndicator.clear();
+    view.directionIndicator.setVisible(player.alive && visual.directionIndicator);
+    if (visual.directionIndicator) {
+      view.directionIndicator.lineStyle(3, color, 0.9);
+      view.directionIndicator.fillStyle(color, 0.82);
+      view.directionIndicator.beginPath();
+      view.directionIndicator.moveTo(0, -74);
+      view.directionIndicator.lineTo(25, -74);
+      view.directionIndicator.strokePath();
+      view.directionIndicator.fillTriangle(30, -74, 20, -80, 20, -68);
+      view.directionIndicator.setRotation(player.angle);
+    }
+    view.botBadge.setText(visual.badge ?? "");
+    view.botBadge.setVisible(player.alive && visual.badge !== null);
   }
 
   private playCombatFeedback(events: readonly CombatFeedbackEvent[]): void {
@@ -1471,6 +1531,18 @@ class ArenaScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setY(-58);
+    const identityMarker = this.add.graphics().setDepth(1);
+    const directionIndicator = this.add.graphics().setDepth(1);
+    const botBadge = this.add
+      .text(28, -77, "", {
+        fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
+        fontSize: "13px",
+        color: "#071019",
+        backgroundColor: "#dff7ff",
+        padding: { left: 4, right: 4, top: 2, bottom: 2 },
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
     const childrenByLayer = { shadow, ring, sprite, weapon, aim, "health-bg": healthBg, "health-fill": healthFill, name };
     const container = this.add.container(
       player.x,
@@ -1480,6 +1552,7 @@ class ArenaScene extends Phaser.Scene {
     // Keep this relationship explicit: Phaser renders later Container children on top,
     // while the HUD labels remain above both gameplay sprites.
     container.moveAbove(weapon, sprite);
+    container.add([identityMarker, directionIndicator, botBadge]);
     const view: PlayerView = {
       container,
       sprite,
@@ -1489,6 +1562,9 @@ class ArenaScene extends Phaser.Scene {
       healthFill,
       shadow,
       ring,
+      identityMarker,
+      directionIndicator,
+      botBadge,
       shield: null,
       lastHealth: player.health,
       wasAlive: player.alive,
@@ -1498,6 +1574,13 @@ class ArenaScene extends Phaser.Scene {
       lastHealEffectAt: 0,
       visualState: "idle",
       direction: initialDirection,
+      identityVisual: resolveTeamIdentityVisual({
+        matchMode: "solo",
+        playerTeamId: null,
+        localTeamId: null,
+        isLocal: player.id === this.localPlayerId,
+        isBot: player.isBot,
+      }),
     };
     this.playerViews.set(player.id, view);
     return view;

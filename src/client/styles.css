@@ -688,7 +688,7 @@ button:disabled {
   min-width: 0;
   height: 52px;
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) minmax(0, auto);
+  grid-template-columns: 10px 12px minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   gap: 4px;
   padding: 0 7px;
@@ -719,6 +719,35 @@ button:disabled {
   border-radius: 50%;
   background: var(--player-color);
   box-shadow: 0 0 0 3px rgb(255 255 255 / 8%);
+}
+
+.team-marker {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+  justify-self: center;
+  opacity: 0.9;
+}
+
+.team-marker-red {
+  border: 2px solid #ff5a5f;
+  background: #ff5a5f;
+  transform: rotate(45deg);
+}
+
+.team-marker-blue {
+  border: 2px solid #4da3ff;
+  border-radius: 50%;
+}
+
+.team-marker-gold {
+  background: #ffd166;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.team-marker-solo {
+  border: 2px solid #8ca4b3;
+  border-radius: 50%;
 }
 
 .slot-number {
@@ -2806,7 +2835,7 @@ button:disabled {
   }
 
   .roster-slot {
-    grid-template-columns: 10px minmax(0, 1fr);
+    grid-template-columns: 10px 12px minmax(0, 1fr);
   }
 }
 
@@ -3421,4 +3450,187 @@ button:disabled {
   .character-selection-stage .character-detail.is-entering {
     animation: none !important;
   }
+}
+
+/* Arena terminal visual pass: restrained materials, crisp hierarchy, and
+   consistent square geometry without altering gameplay or asset resolution. */
+:root {
+  --terminal-bg: #090e11;
+  --terminal-surface: #11191d;
+  --terminal-raised: #172228;
+  --terminal-line: #34464d;
+  --terminal-line-strong: #536970;
+  --terminal-text: #edf4f1;
+  --terminal-muted: #91a3a7;
+  --terminal-teal: #58d6b9;
+  --terminal-amber: #e6b651;
+  --terminal-red: #e3686c;
+}
+
+.game-header {
+  height: 48px;
+  border-bottom: 1px solid var(--terminal-line-strong);
+  background: var(--terminal-bg);
+  box-shadow: 0 4px 0 rgb(0 0 0 / 22%);
+}
+
+.mini-brand strong,
+.host-brand strong { letter-spacing: .08em; }
+
+.brand-bolt {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--terminal-amber);
+  border-radius: 2px;
+  background: var(--terminal-raised);
+  color: var(--terminal-amber);
+  transform: none;
+}
+
+.lobby-screen { background: var(--terminal-bg); }
+
+.lobby-intro {
+  justify-content: flex-end;
+  padding: 34px 30px max(24px, env(safe-area-inset-bottom)) max(30px, env(safe-area-inset-left));
+  border-right: 1px solid var(--terminal-line-strong);
+  background: #192328;
+  color: var(--terminal-text);
+}
+
+.lobby-intro::after { opacity: .18; }
+.lobby-intro .eyebrow { color: var(--terminal-teal); letter-spacing: .16em; }
+.lobby-intro h1 { max-width: none; color: #f4f8f6; font-size: clamp(32px, 4.2vw, 52px); letter-spacing: .08em; }
+.lobby-intro p { max-width: 24ch; color: #b6c5c6; font-size: 12px; line-height: 1.6; }
+
+.lobby-intro-copy::before {
+  content: "ARENA / 06";
+  display: block;
+  margin-bottom: 12px;
+  color: #6c858b;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .18em;
+}
+
+.lobby-workspace {
+  gap: 10px;
+  padding: 14px max(18px, env(safe-area-inset-right)) 14px 14px;
+  background-color: #0e161a;
+  background-image: linear-gradient(90deg, rgb(88 120 125 / 8%) 1px, transparent 1px), linear-gradient(rgb(88 120 125 / 6%) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.join-panel,
+.character-panel,
+.roster-panel,
+.lobby-info-panel,
+.results-panel {
+  border: 1px solid var(--terminal-line);
+  border-radius: 2px;
+  background: var(--terminal-surface);
+  box-shadow: 4px 4px 0 rgb(0 0 0 / 28%);
+}
+
+.section-heading { min-height: 40px; border-bottom-color: var(--terminal-line); background: #141e23; }
+.section-heading span { color: var(--terminal-text); letter-spacing: .08em; }
+.section-heading span::before { content: "// "; color: var(--terminal-teal); }
+.section-heading small,
+.tactical-module-heading span { color: var(--terminal-muted); }
+.join-panel input { border-color: var(--terminal-line-strong); border-radius: 2px; background: #0a1013; }
+.room-tools { border-top-color: var(--terminal-line); }
+.room-tools strong { color: var(--terminal-teal); letter-spacing: .1em; }
+.room-tool-row button,
+.room-list-item { border-color: #3d565f; border-radius: 2px; background: #162329; }
+
+.primary-button,
+.ready-button {
+  border: 1px solid var(--terminal-amber);
+  border-radius: 2px;
+  background: #3a301b;
+  color: #ffe7a6;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 25%);
+}
+
+.primary-button:active:not(:disabled) { box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%); }
+.color-list { gap: 6px; padding: 8px; }
+
+.color-swatch {
+  min-height: 64px;
+  border: 1px solid #3a4c53;
+  border-radius: 2px;
+  background: #111b20;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+}
+
+.color-swatch::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--swatch);
+  background: var(--swatch);
+}
+
+.color-swatch.is-selected {
+  border-color: var(--swatch);
+  box-shadow: inset 0 -2px 0 var(--swatch), 0 0 0 1px rgb(255 255 255 / 22%);
+}
+
+.character-portrait { border-radius: 1px; background: #0c1418; }
+.character-detail { border-top-color: var(--terminal-line); background: #131e23; }
+.character-detail-heading strong,
+.tactical-module-heading b { color: var(--terminal-text); }
+.tactical-module-section { padding-top: 2px; }
+.tactical-module-list { gap: 7px; overflow: visible; }
+
+.tactical-module-option {
+  min-height: 108px;
+  border: 1px solid #3a5058;
+  border-radius: 2px;
+  padding: 8px 9px;
+  background: #0d161a;
+}
+
+.tactical-module-option strong { color: #f2f8f5; letter-spacing: .04em; }
+.tactical-module-option.is-selected {
+  border-color: var(--terminal-teal);
+  box-shadow: inset 3px 0 0 var(--terminal-teal), inset 0 1px 0 rgb(255 255 255 / 8%);
+  background: #13262a;
+}
+
+.roster-slot { background: #152026; border-color: #2c4048; }
+.roster-slot.is-you { background: #1a2b2d; box-shadow: inset 3px 0 0 var(--terminal-teal); }
+
+.self-status,
+.leaderboard,
+.team-score,
+.match-clock,
+.elimination-hud,
+.elimination-round-panel,
+.capture-status {
+  border-radius: 2px;
+  background: rgb(7 13 17 / 92%);
+  box-shadow: 4px 4px 0 rgb(0 0 0 / 24%);
+}
+
+.match-clock { border-bottom: 2px solid var(--terminal-amber); color: #fff0be; }
+.team-score { border-color: #46616a; }
+.kill-feed { border-left: 2px solid var(--terminal-red); }
+.game-root { background: #091013; }
+
+.skill-button,
+.virtual-stick,
+.map-mechanic-opening,
+.map-mechanic-status,
+.map-event-status {
+  box-shadow: 3px 3px 0 rgb(0 0 0 / 22%);
+}
+
+@media (max-width: 720px) and (orientation: landscape) {
+  .lobby-intro { padding-left: max(18px, env(safe-area-inset-left)); padding-right: 18px; }
+  .lobby-intro h1 { font-size: 28px; }
+  .lobby-intro-copy::before { margin-bottom: 6px; font-size: 7px; }
+  .color-swatch { min-height: 48px; }
 }
